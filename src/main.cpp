@@ -3,46 +3,67 @@
 using namespace drogon;
 
 int main() {
-  // 1. Подключаемся к базе (данные такие же, как в docker-compose.yml)
-  app().createDbClient("postgresql",             // тип базы
-                       "127.0.0.1",              // адрес: твой компьютер
-                       5433,                     // порт
-                       "iot_platform",           // имя базы
-                       "postgres",               // логин
-                       "postgres",               // пароль
-                       4,                        // сколько соединений держать
-                       "", "default", false, "", // эти 4 значения не трогаем
-                       3.0 // ждать ответа базу максимум 3 секунды
-  );
+  // Подключение к PostgreSQL
+  app().createDbClient("postgresql", "127.0.0.1", 5433, "iot_platform",
+                       "postgres", "postgres", 4, "", "default", false, "",
+                       3.0);
 
-  // 2. Создаём адрес /db-check
+  // Endpoint для получения телеметрии
   app().registerHandler(
-      "/db-check",
+      "/telemetry",
+
       [](const HttpRequestPtr &req,
          std::function<void(const HttpResponsePtr &)> &&callback) {
+        // Получаем JSON из HTTP-запроса
+        auto json = req->getJsonObject();
+
+        // Проверяем, что JSON вообще пришёл
+        if (!json) {
+          Json::Value response;
+          response["status"] = "error";
+          response["message"] = "Invalid JSON";
+
+          callback(HttpResponse::newHttpJsonResponse(response));
+
+          return;
+        }
+
+        // Получаем данные из JSON
+        int deviceId = (*json)["device_id"].asInt();
+        double temperature = (*json)["temperature"].asDouble();
+
+        // Получаем подключение к БД
         auto db = app().getDbClient();
 
-        // спрашиваем у базы: "ты жива?"
+        // Записываем данные в таблицу
         db->execSqlAsync(
-            "SELECT 1",
+            "INSERT INTO telemetry (device_id, temperature) "
+            "VALUES ($1, $2)",
 
-            // база ответила -> пишем "ok"
+            // Если запись прошла успешно
             [callback](const orm::Result &result) {
-              Json::Value json;
-              json["db"] = "ok";
-              callback(HttpResponse::newHttpJsonResponse(json));
+              Json::Value response;
+              response["status"] = "ok";
+
+              callback(HttpResponse::newHttpJsonResponse(response));
             },
 
-            // база не ответила -> пишем "error"
+            // Если произошла ошибка
             [callback](const orm::DrogonDbException &e) {
-              Json::Value json;
-              json["db"] = "error";
-              json["message"] = e.base().what();
-              callback(HttpResponse::newHttpJsonResponse(json));
-            });
-      },
-      {Get});
+              Json::Value response;
+              response["status"] = "error";
+              response["message"] = e.base().what();
 
-  // 3. Запускаем сервер на порту 8080
+              callback(HttpResponse::newHttpJsonResponse(response));
+            },
+
+            deviceId, temperature);
+      },
+
+      {Post});
+
+  // Запускаем HTTP-сервер
   app().addListener("0.0.0.0", 8080).run();
+
+  return 0;
 }
