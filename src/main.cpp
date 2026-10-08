@@ -3,15 +3,16 @@
 using namespace drogon;
 
 int main() {
-  // 1. Говорим программе, где лежит база
-  //    (порт 5432, потому что так ты запустил Docker)
-  app().createDbClient("postgresql",   // тип базы
-                       "127.0.0.1",    // адрес: твой компьютер
-                       5432,           // порт
-                       "iot_platform", // имя базы
-                       "postgres",     // логин
-                       "postgres",     // пароль
-                       4               // сколько соединений держать
+  // 1. Подключаемся к базе (данные такие же, как в docker-compose.yml)
+  app().createDbClient("postgresql",             // тип базы
+                       "127.0.0.1",              // адрес: твой компьютер
+                       5433,                     // порт
+                       "iot_platform",           // имя базы
+                       "postgres",               // логин
+                       "postgres",               // пароль
+                       4,                        // сколько соединений держать
+                       "", "default", false, "", // эти 4 значения не трогаем
+                       3.0 // ждать ответа базу максимум 3 секунды
   );
 
   // 2. Создаём адрес /db-check
@@ -19,21 +20,20 @@ int main() {
       "/db-check",
       [](const HttpRequestPtr &req,
          std::function<void(const HttpResponsePtr &)> &&callback) {
-        // берём подключение к базе
         auto db = app().getDbClient();
 
-        // задаём базе вопрос "SELECT 1" (ты жива?)
+        // спрашиваем у базы: "ты жива?"
         db->execSqlAsync(
-            "SELECT 1 AS ok",
+            "SELECT 1",
 
-            // если база ответила:
+            // база ответила -> пишем "ok"
             [callback](const orm::Result &result) {
               Json::Value json;
               json["db"] = "ok";
               callback(HttpResponse::newHttpJsonResponse(json));
             },
 
-            // если ошибка:
+            // база не ответила -> пишем "error"
             [callback](const orm::DrogonDbException &e) {
               Json::Value json;
               json["db"] = "error";
