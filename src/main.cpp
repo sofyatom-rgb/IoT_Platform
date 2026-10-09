@@ -1,54 +1,12 @@
 #include <drogon/drogon.h>
 
-#include <cstdlib>
-
 using namespace drogon;
 
 int main() {
   // Подключение к PostgreSQL
-  app().addDbClient(orm::PostgresConfig{"127.0.0.1",
-                                        5433,
-                                        "iot_platform",
-                                        "postgres",
-                                        "postgres",
-                                        4,
-                                        "default",
-                                        false,
-                                        "",
-                                        3.0,
-                                        false,
-                                        {}});
-
-  // Endpoint для проверки соединения с БД
-  app().registerHandler(
-      "/db-check",
-      [](const HttpRequestPtr &req,
-         std::function<void(const HttpResponsePtr &)> &&callback) {
-        auto db = app().getDbClient();
-        if (!db) {
-          Json::Value response;
-          response["status"] = "error";
-          response["message"] = "Database client is not initialized";
-          callback(HttpResponse::newHttpJsonResponse(response));
-          return;
-        }
-
-        db->execSqlAsync(
-            "SELECT 1",
-            [callback](const orm::Result &result) {
-              Json::Value response;
-              response["status"] = "ok";
-              response["db"] = "connected";
-              callback(HttpResponse::newHttpJsonResponse(response));
-            },
-            [callback](const orm::DrogonDbException &e) {
-              Json::Value response;
-              response["status"] = "error";
-              response["message"] = e.base().what();
-              callback(HttpResponse::newHttpJsonResponse(response));
-            });
-      },
-      {Get});
+  app().createDbClient("postgresql", "127.0.0.1", 5433, "iot_platform",
+                       "postgres", "postgres", 4, "", "default", false, "",
+                       3.0);
 
   // Endpoint для получения телеметрии
   app().registerHandler(
@@ -104,18 +62,8 @@ int main() {
 
       {Post});
 
-  // Запускаем HTTP-сервер на порту из переменной PORT или по умолчанию 8080.
-  int port = 8080;
-  const char *portEnv = std::getenv("PORT");
-  if (portEnv != nullptr && portEnv[0] != '\0') {
-    char *end = nullptr;
-    long envPort = std::strtol(portEnv, &end, 10);
-    if (end != portEnv && envPort >= 1 && envPort <= 65535) {
-      port = static_cast<int>(envPort);
-    }
-  }
-
-  app().addListener("0.0.0.0", port).run();
+  // Запускаем HTTP-сервер
+  app().addListener("0.0.0.0", 8080).run();
 
   return 0;
 }
