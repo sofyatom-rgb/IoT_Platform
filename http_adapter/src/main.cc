@@ -9,13 +9,18 @@ void handlePing(const HttpRequestPtr& req,
 
     // 2. Создаем HTTP-запрос
     auto reqOut = HttpRequest::newHttpRequest();
-     reqOut->setMethod(Post);                 // ВАЖНО: /telemetry принимает POST
+    reqOut->setMethod(Post);                 // ВАЖНО: /telemetry принимает POST
     reqOut->setPath("/telemetry");
+    
 
+    std::string idStr   = req->getParameter("device_id");
+    std::string tempStr = req->getParameter("temperature");
+    int    device_id   = std::stoi(idStr);
+    double temperature = std::stod(tempStr);
     // Тело запроса — то, что ждёт /telemetry
     Json::Value body;
-    body["device_id"]   = 1;
-    body["temperature"] = 25.5;
+    body["device_id"]   = device_id;
+    body["temperature"] = temperature;
     
     // Устанавливаем тело запроса как сериализованный JSON и указываем Content-Type
     reqOut->setContentTypeCode(CT_APPLICATION_JSON); // Указываем, что тело - это JSON
@@ -30,10 +35,10 @@ void handlePing(const HttpRequestPtr& req,
 
             if (result == ReqResult::Ok && respOut) {
                 resp->setStatusCode(k200OK);
-                resp->setBody(std::string(respOut->getBody()));
+                resp->setBody(std::string(respOut->getBody()) + '\n');
             } else {
                 resp->setStatusCode(k502BadGateway);
-                resp->setBody("Upstream error");
+                resp->setBody("Upstream error\n");
             }
 
             // 4. Возвращаем ответ через callback
@@ -42,21 +47,21 @@ void handlePing(const HttpRequestPtr& req,
     );
 }
 int main() {
-    // Регистрируем обработчик для /ping
-    // drogon::app().registerHandler(
-    //     "/ping",
-    //     [](const drogon::HttpRequestPtr &req,
-    //        std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-    //         auto resp = drogon::HttpResponse::newHttpResponse();
-    //         resp->setBody("pong");
-    //         callback(resp);
-    //     },
-    //     {drogon::Get}
-    // );
+    //Регистрируем обработчик для /ping
+    drogon::app().registerHandler(
+        "/ping",
+        [](const drogon::HttpRequestPtr &req,
+           std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
+            auto resp = drogon::HttpResponse::newHttpResponse();
+            resp->setBody("pong\n");
+            callback(resp);
+        },
+        {drogon::Get}
+    );
 
 
     drogon::app().registerHandler(
-        "/ping",
+        "/set_telemetry",
         &handlePing,
         {drogon::Get}
     );
