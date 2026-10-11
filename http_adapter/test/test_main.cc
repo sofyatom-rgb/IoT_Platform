@@ -1,4 +1,4 @@
-ше#define DROGON_TEST_MAIN
+#define DROGON_TEST_MAIN
 #include <drogon/drogon_test.h>
 #include <drogon/drogon.h>
 
