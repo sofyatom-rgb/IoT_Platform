@@ -1,7 +1,6 @@
 #include <drogon/drogon.h>
 #include<drogon/HttpAppFramework.h>
 #include <drogon/orm/Exception.h>
-#include "httplib.h"
 using namespace drogon;
 void handlePing(const HttpRequestPtr& req,
                 std::function<void(const HttpResponsePtr&)> &&callback) {

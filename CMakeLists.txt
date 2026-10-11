@@ -5,17 +5,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Drogon CONFIG REQUIRED)
-find_package(OpenSSL REQUIRED)
-
-include(FetchContent)
-
-FetchContent_Declare(
-  cpp-httplib
-  GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-  GIT_TAG        v0.16.0
-)
-
-FetchContent_MakeAvailable(cpp-httplib)
 
 add_subdirectory(http_adapter)
 
