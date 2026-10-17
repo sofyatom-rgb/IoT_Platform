@@ -1,0 +1,21 @@
+#pragma once
+
+#include <functional>
+#include <string>
+
+#include "users/repositories/UsersRepository.h"
+
+// Сервисный слой пользователей.
+class UsersService {
+ public:
+  explicit UsersService(drogon::orm::DbClientPtr db);
+
+  void save(const std::string &email,
+            const std::string &password,
+            const std::string &name,
+            std::function<void(int)> success,
+            std::function<void(const std::string &)> error) const;
+
+ private:
+  UsersRepository repository_;
+};
