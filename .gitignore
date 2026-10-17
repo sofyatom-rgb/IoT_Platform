@@ -72,3 +72,5 @@ Testing/
 .vscode/
 !.vscode/
 !.vscode/settings.json
+# External submodules / nested repos
+drogon/
