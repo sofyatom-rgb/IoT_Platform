@@ -1,6 +1,8 @@
 #include <drogon/drogon.h>
 
 #include "telemetry/controllers/TelemetryController.h"
+#include "users/controllers/UsersController.h"
+#include "devices/controllers/DevicesController.h"
 
 int main() {
   // Сначала загружаем HTTP-настройки, затем подключение к PostgreSQL.
@@ -8,9 +10,15 @@ int main() {
       .loadConfigFile("iot_core/src/telemetry/config/HTTPConfig.json")
       .loadConfigFile("iot_core/src/telemetry/config/PostgreSQLConfig.json");
 
-  // Контроллер регистрирует HTTP-маршруты. Клиент БД пока ещё не создан.
-  TelemetryController controller;
-  controller.registerRoutes();
+  // Контроллеры регистрируют HTTP-маршруты.
+  TelemetryController telemetryController;
+  telemetryController.registerRoutes();
+
+  UsersController usersController;
+  usersController.registerRoutes();
+
+  DevicesController devicesController;
+  devicesController.registerRoutes();
 
   // Адрес и порт сервера берутся из telemetry/config/HTTPConfig.json.
   drogon::app().run();
