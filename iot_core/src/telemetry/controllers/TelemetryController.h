@@ -2,7 +2,7 @@
 
 #include <drogon/drogon.h>
 
-#include "services/telemetry/TelemetryService.h"
+#include "telemetry/services/TelemetryService.h"
 
 // HTTP-слой: принимает JSON и отправляет показание в сервис.
 class TelemetryController {

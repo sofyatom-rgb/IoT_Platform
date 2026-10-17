@@ -2,9 +2,9 @@ cmake_minimum_required(VERSION 3.16)
 
 add_executable(iot_core
     src/main.cpp
-    src/controllers/telemetry/TelemetryController.cpp
-    src/services/telemetry/TelemetryService.cpp
-    src/repositories/telemetry/TelemetryRepository.cpp
+    src/telemetry/controllers/TelemetryController.cpp
+    src/telemetry/services/TelemetryService.cpp
+    src/telemetry/repositories/TelemetryRepository.cpp
 )
 target_include_directories(iot_core PRIVATE src)
 set_target_properties(iot_core PROPERTIES

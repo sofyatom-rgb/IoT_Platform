@@ -1,0 +1,15 @@
+{
+  "db_clients": [
+    {
+      "rdbms": "postgresql",
+      "host": "127.0.0.1",
+      "port": 5433,
+      "dbname": "iot_platform",
+      "user": "postgres",
+      "passwd": "postgres",
+      "name": "default",
+      "number_of_connections": 4,
+      "timeout": 3.0
+    }
+  ]
+}

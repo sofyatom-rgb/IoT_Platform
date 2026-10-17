@@ -3,7 +3,7 @@
 #include <functional>
 #include <string>
 
-#include "repositories/telemetry/TelemetryRepository.h"
+#include "telemetry/repositories/TelemetryRepository.h"
 
 // Сервисный слой: получает данные от контроллера и просит репозиторий сохранить их.
 class TelemetryService {

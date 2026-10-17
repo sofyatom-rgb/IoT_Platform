@@ -1,20 +1,18 @@
 #include <drogon/drogon.h>
 
-#include "controllers/telemetry/TelemetryController.h"
-
-using namespace drogon;
+#include "telemetry/controllers/TelemetryController.h"
 
 int main() {
-  // Параметры PostgreSQL из docker-compose.yml.
-  orm::PostgresConfig dbConfig{"127.0.0.1", 5433, "iot_platform", "postgres",
-                               "postgres", 4, "default", false, "", 3.0,
-                               false, {}};
-  app().addDbClient(dbConfig);
+  // Сначала загружаем HTTP-настройки, затем подключение к PostgreSQL.
+  drogon::app()
+      .loadConfigFile("iot_core/src/telemetry/config/HTTPConfig.json")
+      .loadConfigFile("iot_core/src/telemetry/config/PostgreSQLConfig.json");
 
   // Контроллер регистрирует HTTP-маршруты. Клиент БД пока ещё не создан.
   TelemetryController controller;
   controller.registerRoutes();
 
-  app().addListener("0.0.0.0", 8080).run();
+  // Адрес и порт сервера берутся из telemetry/config/HTTPConfig.json.
+  drogon::app().run();
   return 0;
 }

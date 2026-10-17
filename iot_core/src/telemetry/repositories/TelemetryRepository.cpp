@@ -1,4 +1,4 @@
-#include "repositories/telemetry/TelemetryRepository.h"
+#include "telemetry/repositories/TelemetryRepository.h"
 
 #include <utility>
 

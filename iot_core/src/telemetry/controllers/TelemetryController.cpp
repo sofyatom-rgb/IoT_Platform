@@ -1,4 +1,4 @@
-#include "controllers/telemetry/TelemetryController.h"
+#include "telemetry/controllers/TelemetryController.h"
 
 #include <utility>
 
