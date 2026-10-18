@@ -67,3 +67,8 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# vscode
+.vscode/
+!.vscode/
+!.vscode/settings.json
