@@ -15,3 +15,15 @@ set_target_properties(iot_core PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 target_link_libraries(iot_core PRIVATE Drogon::Drogon)
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/telemetry/config/HTTPConfig.json
+    ${CMAKE_BINARY_DIR}/bin/HTTPConfig.json
+    COPYONLY
+)
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/telemetry/config/PostgreSQLConfig.json
+    ${CMAKE_BINARY_DIR}/bin/PostgreSQLConfig.json
+    COPYONLY
+)

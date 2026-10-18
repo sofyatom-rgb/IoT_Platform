@@ -1,0 +1,11 @@
+{
+  "listeners": [
+    {
+      "address": "0.0.0.0",
+      "port": 8081
+    }
+  ],
+  "custom_config": {
+    "iot_core_url": "http://127.0.0.1:8080"
+  }
+}

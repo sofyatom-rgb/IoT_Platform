@@ -7,8 +7,8 @@
 int main() {
   // Сначала загружаем HTTP-настройки, затем подключение к PostgreSQL.
   drogon::app()
-      .loadConfigFile("iot_core/src/telemetry/config/HTTPConfig.json")
-      .loadConfigFile("iot_core/src/telemetry/config/PostgreSQLConfig.json");
+      .loadConfigFile("./bin/HTTPConfig.json")
+      .loadConfigFile("./bin/PostgreSQLConfig.json");
 
   // Контроллеры регистрируют HTTP-маршруты.
   TelemetryController telemetryController;
