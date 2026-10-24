@@ -1,6 +1,8 @@
 #include "ingest/controllers/IngestController.h"
 
+#include <string>
 #include <utility>
+#include <sstream>
 
 void IngestController::registerRoutes() {
   // POST /ingest -> принять данные и отправить в iot_core.
@@ -11,6 +13,15 @@ void IngestController::registerRoutes() {
         ingest(request, std::move(callback));
       },
       {drogon::Post});
+
+  // GET /telemetry?device_id=X -> получить телеметрию устройства через iot_core.
+  drogon::app().registerHandler(
+      "/telemetry",
+      [this](const drogon::HttpRequestPtr &request,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
+        getTelemetry(request, std::move(callback));
+      },
+      {drogon::Get});
 }
 
 void IngestController::ingest(
@@ -41,6 +52,55 @@ void IngestController::ingest(
         body["message"] = "Data forwarded to IoT Core";
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
       },
+      [callback](const std::string &error) {
+        Json::Value body;
+        body["status"] = "error";
+        body["message"] = error;
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+      });
+}
+
+void IngestController::getTelemetry(
+    const drogon::HttpRequestPtr &request,
+    std::function<void(const drogon::HttpResponsePtr &)> callback) {
+  // Извлекаем device_id из query-параметров
+  std::string deviceIdStr = request->getParameter("device_id");
+  if (deviceIdStr.empty()) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "Missing device_id parameter";
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    return;
+  }
+
+  int deviceId = std::stoi(deviceIdStr);
+
+  // Получаем URL iot_core из конфигурации
+  std::string iotCoreUrl = drogon::app().getCustomConfig()["iot_core_url"].asString();
+
+  // Инициализируем сервис
+  AdapterService service(iotCoreUrl);
+
+  service.getTelemetry(
+    deviceId,
+    [callback](const std::string &responseBody) {
+      Json::Value body;
+      body["status"] = "ok";
+
+      // Парсим строку JSON обратно в объект
+      Json::CharReaderBuilder builder;
+      std::string errs;
+      Json::Value dataArray;
+      std::istringstream iss(responseBody);
+      if (Json::parseFromStream(builder, iss, &dataArray, &errs)) {
+        body["data"] = dataArray;
+      } else {
+        // Если не распарсилось — кладём как строку (fallback)
+        body["data_raw"] = responseBody;
+      }
+
+      callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    },
       [callback](const std::string &error) {
         Json::Value body;
         body["status"] = "error";

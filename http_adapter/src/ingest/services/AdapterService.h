@@ -15,6 +15,10 @@ class AdapterService {
                         std::function<void()> success,
                         std::function<void(const std::string &)> error) const;
 
+  void getTelemetry(int deviceId,
+                    std::function<void(const std::string &)> success,
+                    std::function<void(const std::string &)> error) const;
+
  private:
   IoTClient client_;
 };

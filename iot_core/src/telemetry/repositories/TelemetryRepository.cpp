@@ -19,3 +19,27 @@ void TelemetryRepository::save(
       },
       deviceId, temperature);
 }
+
+void TelemetryRepository::getByDeviceId(
+    int deviceId,
+    std::function<void(const std::string &)> success,
+    std::function<void(const std::string &)> error) const {
+  db_->execSqlAsync(
+      "SELECT id, device_id, temperature, time FROM telemetry WHERE device_id = $1 ORDER BY id DESC LIMIT 10",
+      [success](const drogon::orm::Result &r) {
+        Json::Value array(Json::arrayValue);
+        for (const auto &row : r) {
+          Json::Value item;
+          item["id"] = row["id"].as<int>();
+          item["device_id"] = row["device_id"].as<int>();
+          item["temperature"] = row["temperature"].as<double>();
+          item["time"] = row["time"].as<std::string>();
+          array.append(item);
+        }
+        success(Json::FastWriter().write(array));
+      },
+      [error](const drogon::orm::DrogonDbException &e) {
+        error(e.base().what());
+      },
+      deviceId);
+}

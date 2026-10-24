@@ -15,3 +15,10 @@ void AdapterService::processTelemetry(
   // Пока просто передаем данные клиенту.
   client_.sendTelemetry(deviceId, temperature, std::move(success), std::move(error));
 }
+
+void AdapterService::getTelemetry(
+    int deviceId,
+    std::function<void(const std::string &)> success,
+    std::function<void(const std::string &)> error) const {
+  client_.getTelemetry(deviceId, std::move(success), std::move(error));
+}

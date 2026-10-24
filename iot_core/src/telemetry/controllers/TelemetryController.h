@@ -12,4 +12,8 @@ class TelemetryController {
   void create(
       const drogon::HttpRequestPtr &request,
       std::function<void(const drogon::HttpResponsePtr &)> callback);
+
+  void getTelemetry(
+      const drogon::HttpRequestPtr &request,
+      std::function<void(const drogon::HttpResponsePtr &)> callback);
 };

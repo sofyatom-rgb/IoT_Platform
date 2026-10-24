@@ -14,6 +14,10 @@ class IoTClient {
                      std::function<void()> success,
                      std::function<void(const std::string &)> error) const;
 
+  void getTelemetry(int deviceId,
+                    std::function<void(const std::string &)> success,
+                    std::function<void(const std::string &)> error) const;
+
  private:
   std::string baseUrl_;
 };
