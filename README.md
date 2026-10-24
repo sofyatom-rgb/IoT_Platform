@@ -1,238 +1,588 @@
 # IoT Platform
 
-Небольшой IoT-бэкенд на C++ и Drogon с PostgreSQL. В проекте два HTTP-сервиса:
+IoT Platform — учебный backend для регистрации пользователей и устройств, приёма температурных показаний и чтения телеметрии. Серверная часть написана на C++ с Drogon, данные хранятся в PostgreSQL.
 
-- **IoT Core** — основной API: пользователи, устройства и телеметрия. По умолчанию слушает порт `8080`.
-- **HTTP Adapter** — входная точка для передачи и чтения телеметрии; пересылает запросы в Core. По умолчанию слушает порт `8081`.
+В проекте есть два HTTP-сервиса:
+
+1. **IoT Core** — основной сервис и единственный компонент, который работает с PostgreSQL. Адрес по умолчанию: `http://localhost:8080`.
+2. **HTTP Adapter** — дополнительный HTTP-вход для интеграций и IoT-клиентов. Адрес по умолчанию: `http://localhost:8081`. Он принимает телеметрию и проксирует запросы к IoT Core.
+
+## Содержание
+
+- [Как устроен проект](#как-устроен-проект)
+- [Поток данных](#поток-данных)
+- [Требования](#требования)
+- [Сборка](#сборка)
+- [Запуск и автоматическая инициализация базы](#запуск-и-автоматическая-инициализация-базы)
+- [Общий сценарий использования](#общий-сценарий-использования)
+- [HTTP API](#http-api)
+- [Изменение и удаление данных](#изменение-и-удаление-данных)
+- [Работа с PostgreSQL вручную](#работа-с-postgresql-вручную)
+- [Остановка и сброс базы](#остановка-и-сброс-базы)
+- [Ограничения и безопасность](#ограничения-и-безопасность)
+
+## Как устроен проект
+
+```text
+IoT_Platform/
+├── CMakeLists.txt                    # Корневая сборка: C++26, Drogon, оба приложения
+├── docker-compose.yml                # PostgreSQL, проверка готовности, автоматический db-init
+├── init.sql                          # Создание таблиц и внешних ключей
+├── README.md                         # Это руководство
+│
+├── iot_core/                         # Основной HTTP API и доступ к данным
+│   ├── CMakeLists.txt                # Цель сборки iot_core и копирование конфигов
+│   ├── config/
+│   │   ├── HTTPConfig.json           # Адрес и порт Core (по умолчанию 8080)
+│   │   └── PostgreSQLConfig.json    # Параметры подключения к БД
+│   └── src/
+│       ├── main.cpp                  # Загружает конфиги, регистрирует контроллеры, запускает Core
+│       ├── telemetry/
+│       │   ├── controllers/
+│       │   │   └── TelemetryController.cpp # HTTP-маршруты телеметрии и /ping
+│       │   ├── services/
+│       │   │   └── TelemetryService.cpp # Слой бизнес-логики телеметрии
+│       │   └── repositories/
+│       │       └── TelemetryRepository.cpp # SQL для таблицы telemetry
+│       ├── users/
+│       │   ├── controllers/
+│       │   │   └── UsersController.cpp # HTTP-маршруты пользователей
+│       │   ├── services/
+│       │   │   └── UsersService.cpp  # Слой бизнес-логики пользователей
+│       │   └── repositories/
+│       │       └── UsersRepository.cpp # SQL для таблицы users
+│       └── devices/
+│           ├── controllers/
+│           │   └── DevicesController.cpp # HTTP-маршруты устройств
+│           ├── services/
+│           │   └── DevicesService.cpp # Слой бизнес-логики устройств
+│           └── repositories/
+│               └── DevicesRepository.cpp # SQL для таблицы devices
+│
+├── http_adapter/                     # HTTP-шлюз к IoT Core
+│   ├── CMakeLists.txt                # Цель сборки http_adapter и копирование конфига
+│   └── src/
+│       ├── main.cpp                  # Загружает конфиг, регистрирует маршруты, запускает Adapter
+│       ├── config/
+│       │   └── AdapterConfig.json    # Порт Adapter и URL IoT Core
+│       └── ingest/
+│           ├── controllers/
+│           │   └── IngestController.cpp # Входные HTTP-маршруты Adapter
+│           ├── services/
+│           │   └── AdapterService.cpp # Координирует проксирование запросов
+│           └── clients/
+│               └── IoTClient.cpp    # HTTP-клиент для вызова IoT Core
+│
+└── build/                            # Генерируется CMake; здесь находятся бинарники
+    └── bin/
+        ├── iot_core
+        ├── http_adapter
+        └── *.json                    # Копии конфигов, загружаемые приложениями
+```
+
+### Роли слоёв
+
+- **Controller** разбирает HTTP-запрос, проверяет входной JSON и формирует HTTP-ответ.
+- **Service** передаёт операцию репозиторию. Здесь располагается бизнес-логика.
+- **Repository** выполняет SQL-запросы через Drogon ORM.
+- В Adapter контроллер вызывает сервис, сервис использует HTTP-клиент, а HTTP-клиент обращается к Core.
+
+В Core данные из SQL привязываются параметрами (`$1`, `$2`, …), а не подставляются конкатенацией в SQL-строку.
+
+## Поток данных
+
+```text
+IoT-устройство / curl / клиентское приложение
+                  │
+                  ├── напрямую: HTTP :8080
+                  │              │
+                  │              ▼
+                  │       IoT Core Controller
+                  │              │
+                  │       Service → Repository
+                  │              │
+                  │              ▼
+                  │         PostgreSQL
+                  │
+                  └── через Adapter: HTTP :8081
+                                 │
+                                 ▼
+                         Adapter Controller
+                                 │
+                       Adapter Service → IoTClient
+                                 │ HTTP-запрос на :8080
+                                 └──────────────► IoT Core
+```
+
+### Когда обращаться напрямую, а когда через Adapter
+
+**Напрямую в Core** удобно для локальной разработки, тестирования API и внутренних клиентов, которым доступен порт Core. Core предоставляет операции пользователей, устройств и телеметрии.
+
+**Через Adapter** удобно направлять телеметрию от внешних клиентов через отдельную точку входа. Adapter отделяет внешний ingest API от внутреннего Core и может служить местом для будущей интеграционной логики. Сейчас он пересылает телеметрию без дополнительной обработки; пользователей и устройства он не обслуживает.
+
+Оба пути записи сохраняют данные в одну и ту же базу: Adapter не имеет собственного подключения к PostgreSQL. Если нужен только один процесс при локальной проверке, запросы телеметрии можно направлять напрямую в Core; для работы Adapter должны быть запущены оба сервиса.
 
 ## Требования
 
-- CMake;
+- Linux/macOS или другая среда, где доступны инструменты проекта;
+- CMake версии 3.16 или новее;
 - C++-компилятор с поддержкой C++26;
-- Drogon и его зависимости;
-- Docker Compose.
+- установленный Drogon и его зависимости;
+- Docker и Docker Compose plugin;
+- `curl` для примеров ниже (необязательно, можно использовать любой HTTP-клиент).
 
-## Сборка и запуск
+Проект вызывает `find_package(Drogon CONFIG REQUIRED)`, поэтому установленный пакет Drogon должен быть виден CMake.
 
-Все команды ниже выполняются из корня репозитория, если отдельно не указано иное.
+## Сборка
 
-Соберите оба приложения:
+Команды выполняются из корня репозитория:
 
 ```sh
 cmake -S . -B build
 cmake --build build
 ```
 
-Запустите PostgreSQL:
+CMake собирает две цели:
+
+- `iot_core`;
+- `http_adapter`.
+
+Бинарники и копии конфигурационных файлов создаются в `build/bin/`. После изменения исходников пересоберите проект:
+
+```sh
+cmake --build build
+```
+
+Для чистой генерации файлов CMake можно указать другой пустой каталог, например `build-clean`:
+
+```sh
+cmake -S . -B build-clean
+cmake --build build-clean
+```
+
+## Запуск и автоматическая инициализация базы
+
+### 1. Запустить контейнеры и дождаться базы
+
+Из корня проекта:
 
 ```sh
 docker compose up -d
 ```
 
-При каждом запуске `docker compose up` Compose дождётся готовности PostgreSQL, затем сервис `db-init` применит `init.sql` и создаст отсутствующие таблицы `users`, `devices` и `telemetry`. Скрипт использует `CREATE TABLE IF NOT EXISTS`, поэтому существующие таблицы и данные не удаляются.
+В Compose описаны два сервиса:
 
-Запустите Core и Adapter в **двух отдельных терминалах**. Оба приложения нужно запускать из папки `build`, так как они загружают конфиги из `./bin/`:
+- `postgres` запускает PostgreSQL 16 и сохраняет данные в Docker volume `postgres_data`;
+- `db-init` ждёт успешного healthcheck PostgreSQL, затем запускает `psql` с файлом `init.sql`.
+
+То есть схема инициализируется автоматически при `docker compose up`; вручную выполнять `psql` для обычного запуска не требуется. Это работает и с уже созданным volume. Скрипт `init.sql` использует `CREATE TABLE IF NOT EXISTS`: он создаёт отсутствующие таблицы и не удаляет существующие строки.
+
+Успешная инициализация `db-init` завершается кодом `0`. Это одноразовый контейнер-задача, поэтому после запуска он может отображаться как `Exited (0)` — это нормально. Проверить таблицы можно командой из раздела [Работа с PostgreSQL вручную](#работа-с-postgresql-вручную).
+
+Параметры локальной БД заданы в `docker-compose.yml`:
+
+| Параметр | Значение |
+|---|---|
+| Хост для приложений на компьютере | `127.0.0.1` |
+| Опубликованный порт | `5433` |
+| Порт PostgreSQL внутри Compose-сети | `5432` |
+| База | `iot_platform` |
+| Пользователь | `postgres` |
+| Пароль | `postgres` |
+
+Core подключается к БД на `127.0.0.1:5433` согласно `iot_core/config/PostgreSQLConfig.json`. У Adapter соединения с БД нет.
+
+### 2. Запустить IoT Core
+
+Core загружает конфиги по относительному пути `./bin/...`, поэтому запускайте бинарник из каталога `build`:
 
 ```sh
 cd build
 ./bin/iot_core
 ```
 
-Во втором терминале:
+Ожидаемый порт по умолчанию: `8080`.
+
+### 3. Запустить HTTP Adapter
+
+Оставьте Core запущенным. Откройте **второй терминал**, вернитесь в корень репозитория и выполните:
 
 ```sh
 cd build
 ./bin/http_adapter
 ```
 
-Порты и настройки подключения задаются файлами:
+Ожидаемый порт по умолчанию: `8081`. В конфигурации Adapter задан адрес Core `http://127.0.0.1:8080`.
 
-- `iot_core/src/telemetry/config/HTTPConfig.json` — порт Core;
-- `iot_core/src/telemetry/config/PostgreSQLConfig.json` — подключение Core к PostgreSQL;
-- `http_adapter/src/config/AdapterConfig.json` — порт Adapter и URL Core.
+Удобно держать PostgreSQL, Core и Adapter в трёх терминалах. Для прямых запросов к Core достаточно PostgreSQL и Core; для запросов через Adapter должны работать все три компонента.
 
-PostgreSQL опубликован на `localhost:5433`; имя базы — `iot_platform`, пользователь — `postgres`, пароль для локальной разработки — `postgres` ([docker-compose.yml](./docker-compose.yml)).
+### Конфигурационные файлы
 
-## Общий порядок работы
+Исходные настройки хранятся здесь:
 
-Сначала создайте пользователя, затем устройство для этого пользователя и после этого отправляйте показания с `device_id`, полученным при создании устройства.
+- `iot_core/config/HTTPConfig.json` — адрес и порт Core;
+- `iot_core/config/PostgreSQLConfig.json` — host, порт, база и учётные данные PostgreSQL;
+- `http_adapter/src/config/AdapterConfig.json` — адрес/порт Adapter и URL Core.
 
-### 1. Создать пользователя
+CMake копирует их в `build/bin`. После изменения конфигов повторите конфигурацию/сборку или скопируйте файлы в `build/bin`, чтобы приложение получило обновлённые настройки.
+
+## Общий сценарий использования
+
+Обычный порядок действий:
+
+1. Создать пользователя через Core и получить `user_id`.
+2. Создать устройство для пользователя и получить `device_id`.
+3. Записывать показания напрямую в Core или через Adapter.
+4. Читать показания.
+5. При необходимости удалить телеметрию, устройство или пользователя.
+
+Все данные запросов в этом руководстве передаются **в JSON-теле** (`-d` у `curl`). Ни один идентификатор или значение не помещается в query-параметры URL. Исключение — `GET /ping`: ему тело не требуется, и он не принимает входные данные.
+
+Для JSON-запросов используйте заголовок:
+
+```text
+Content-Type: application/json
+```
+
+## HTTP API
+
+### Сводная таблица маршрутов
+
+#### IoT Core (`http://localhost:8080`)
+
+| Метод | Путь | Тело JSON | Назначение |
+|---|---|---|---|
+| `GET` | `/ping` | нет | Проверка доступности |
+| `POST` | `/users` | `email`, `password`, `name` | Создать пользователя |
+| `DELETE` | `/users` | `user_id` | Удалить пользователя |
+| `POST` | `/devices` | `owner_id`, `name`, `type` | Создать устройство |
+| `DELETE` | `/devices` | `device_id` | Удалить устройство |
+| `POST` | `/telemetry` | `device_id`, `temperature` | Добавить показание |
+| `POST` | `/telemetry/query` | `device_id` | Получить до 10 последних показаний |
+| `DELETE` | `/telemetry` | `device_id` | Удалить все показания устройства |
+
+#### HTTP Adapter (`http://localhost:8081`)
+
+| Метод | Путь | Тело JSON | Назначение |
+|---|---|---|---|
+| `POST` | `/ingest` | `device_id`, `temperature` | Переслать показание в Core |
+| `POST` | `/telemetry/query` | `device_id` | Получить показания через Core |
+| `DELETE` | `/telemetry` | `device_id` | Удалить показания через Core |
+
+Adapter не реализует маршруты пользователей и устройств. Их нужно создавать и удалять напрямую через Core.
+
+### Проверить Core — `GET /ping`
 
 ```sh
-curl -X POST http://localhost:8080/users \
+curl -i http://localhost:8080/ping
+```
+
+Тело ответа:
+
+```text
+pong
+```
+
+Маршрут зарегистрирован только в Core.
+
+### Создать пользователя — `POST /users`
+
+```sh
+curl -i -X POST http://localhost:8080/users \
   -H 'Content-Type: application/json' \
   -d '{"email":"user@example.com","password":"secret","name":"Alex"}'
 ```
 
-Тело запроса:
+Поля:
 
-| Поле | Тип | Описание |
+| Поле | Тип | Значение |
 |---|---|---|
-| `email` | строка | Email пользователя; должен быть уникальным |
-| `password` | строка | Пароль |
-| `name` | строка | Имя пользователя |
+| `email` | строка | Email; в БД должен быть уникальным |
+| `password` | строка | Пароль пользователя |
+| `name` | строка | Отображаемое имя |
 
-Пример успешного ответа:
+Успешный ответ содержит созданный идентификатор:
 
 ```json
 {"status":"ok","user_id":1}
 ```
 
-Запомните `user_id`: он нужен при создании устройства. Сейчас пароль сохраняется в базе **как обычный текст**; API не предназначен для использования с реальными паролями или в production без реализации безопасного хеширования и аутентификации.
+При ошибке БД ответ имеет вид `{"status":"error","message":"..."}`. Например, повторный email не проходит ограничение уникальности.
 
-### 2. Создать устройство
+### Удалить пользователя — `DELETE /users`
 
-Подставьте `user_id` из ответа выше:
+ID передаётся телом запроса, не URL:
 
 ```sh
-curl -X POST http://localhost:8080/devices \
+curl -i -X DELETE http://localhost:8080/users \
+  -H 'Content-Type: application/json' \
+  -d '{"user_id":1}'
+```
+
+Успешный ответ:
+
+```json
+{"status":"ok","message":"User deleted"}
+```
+
+При удалении пользователя PostgreSQL каскадно удаляет все его устройства и телеметрию этих устройств.
+
+### Создать устройство — `POST /devices`
+
+```sh
+curl -i -X POST http://localhost:8080/devices \
   -H 'Content-Type: application/json' \
   -d '{"owner_id":1,"name":"Living room sensor","type":"temperature"}'
 ```
 
-Тело запроса:
+Поля:
 
-| Поле | Тип | Описание |
+| Поле | Тип | Значение |
 |---|---|---|
-| `owner_id` | целое число | ID существующего пользователя |
+| `owner_id` | целое число | ID ранее созданного пользователя |
 | `name` | строка | Название устройства |
-| `type` | строка | Тип устройства |
+| `type` | строка | Категория/тип устройства |
 
-Пример успешного ответа:
+Успешный ответ:
 
 ```json
 {"status":"ok","device_id":1}
 ```
 
-Запомните `device_id`: он используется для отправки, чтения и удаления телеметрии.
+`owner_id` должен ссылаться на существующую строку в `users`.
 
-### 3. Записать показание телеметрии
-
-**Напрямую в IoT Core:**
+### Удалить устройство — `DELETE /devices`
 
 ```sh
-curl -X POST http://localhost:8080/telemetry \
+curl -i -X DELETE http://localhost:8080/devices \
+  -H 'Content-Type: application/json' \
+  -d '{"device_id":1}'
+```
+
+Успешный ответ:
+
+```json
+{"status":"ok","message":"Device deleted"}
+```
+
+Показания этого устройства удаляются каскадно.
+
+### Записать показание напрямую — `POST /telemetry` в Core
+
+```sh
+curl -i -X POST http://localhost:8080/telemetry \
   -H 'Content-Type: application/json' \
   -d '{"device_id":1,"temperature":23.5}'
 ```
 
-**Через HTTP Adapter:**
+Поля:
 
-```sh
-curl -X POST http://localhost:8081/ingest \
-  -H 'Content-Type: application/json' \
-  -d '{"device_id":1,"temperature":23.5}'
-```
-
-Тело обоих запросов содержит:
-
-| Поле | Тип | Описание |
+| Поле | Тип | Значение |
 |---|---|---|
 | `device_id` | целое число | ID существующего устройства |
-| `temperature` | число | Значение температуры |
+| `temperature` | число | Показание температуры |
 
-Core сохраняет показание и время записи. Adapter принимает `POST /ingest` и пересылает данные в Core. Успешный ответ Core:
+Успешный ответ:
 
 ```json
 {"status":"ok"}
 ```
 
-Успешный ответ Adapter:
+Каждый запрос вставляет **новую** запись. Время ставится базой автоматически. `device_id` должен ссылаться на существующее устройство.
+
+### Записать показание через Adapter — `POST /ingest`
+
+```sh
+curl -i -X POST http://localhost:8081/ingest \
+  -H 'Content-Type: application/json' \
+  -d '{"device_id":1,"temperature":23.5}'
+```
+
+Тело совпадает с прямым запросом к Core. Успешный ответ Adapter:
 
 ```json
 {"status":"ok","message":"Data forwarded to IoT Core"}
 ```
 
-Каждый такой запрос **добавляет новую строку**, а не заменяет предыдущее показание.
+Adapter делает внутренний HTTP `POST /telemetry` в Core. Если Core недоступен или отвергает запрос, Adapter возвращает `status: error` и описание ошибки. Запись в любом случае создаётся в таблице `telemetry` Core, а не в отдельном хранилище Adapter.
 
-### 4. Получить последние показания устройства
+### Получить телеметрию напрямую — `POST /telemetry/query` в Core
 
-```sh
-curl 'http://localhost:8080/telemetry?device_id=1'
-```
-
-Можно запросить через Adapter:
+Для чтения используется `POST`, чтобы передавать `device_id` в JSON-теле: тела у `GET` не поддерживаются одинаково всеми HTTP-клиентами и промежуточными прокси.
 
 ```sh
-curl 'http://localhost:8081/telemetry?device_id=1'
+curl -i -X POST http://localhost:8080/telemetry/query \
+  -H 'Content-Type: application/json' \
+  -d '{"device_id":1}'
 ```
 
-Core возвращает массив максимум из 10 последних записей, от новых к старым:
+Core возвращает JSON-массив максимум из 10 последних строк, отсортированных от новых к старым:
 
 ```json
 [
-  {"id":15,"device_id":1,"temperature":23.5,"time":"2026-10-25 01:35:00"},
-  {"id":14,"device_id":1,"temperature":22.9,"time":"2026-10-25 01:30:00"}
+  {
+    "id": 15,
+    "device_id": 1,
+    "temperature": 23.5,
+    "time": "2026-10-25 01:35:00"
+  },
+  {
+    "id": 14,
+    "device_id": 1,
+    "temperature": 22.9,
+    "time": "2026-10-25 01:30:00"
+  }
 ]
 ```
 
-Adapter оборачивает этот массив:
+Если записей нет, результатом будет пустой массив `[]`.
+
+### Получить телеметрию через Adapter — `POST /telemetry/query`
+
+```sh
+curl -i -X POST http://localhost:8081/telemetry/query \
+  -H 'Content-Type: application/json' \
+  -d '{"device_id":1}'
+```
+
+Adapter отправит запрос в Core и обернёт результат:
 
 ```json
 {
-  "status":"ok",
-  "data":[
-    {"id":15,"device_id":1,"temperature":23.5,"time":"2026-10-25 01:35:00"}
+  "status": "ok",
+  "data": [
+    {
+      "id": 15,
+      "device_id": 1,
+      "temperature": 23.5,
+      "time": "2026-10-25 01:35:00"
+    }
   ]
 }
 ```
 
-### 5. Проверить доступность Core
+### Удалить телеметрию напрямую — `DELETE /telemetry` в Core
 
 ```sh
+curl -i -X DELETE http://localhost:8080/telemetry \
+  -H 'Content-Type: application/json' \
+  -d '{"device_id":1}'
+```
+
+Успешный ответ:
+
+```json
+{"status":"ok","message":"Telemetry deleted"}
+```
+
+Удаляются **все показания устройства**, а не одна запись.
+
+### Удалить телеметрию через Adapter — `DELETE /telemetry`
+
+```sh
+curl -i -X DELETE http://localhost:8081/telemetry \
+  -H 'Content-Type: application/json' \
+  -d '{"device_id":1}'
+```
+
+Adapter проксирует удаление в Core. Успешный ответ:
+
+```json
+{"status":"ok","message":"Telemetry deleted via adapter"}
+```
+
+### Сводка всех примеров запросов
+
+Во всех примерах с ID запрос не содержит query-параметров; значения находятся в JSON:
+
+```sh
+# Проверка Core — у этого запроса нет входных данных
 curl http://localhost:8080/ping
+
+# Создание пользователя и устройства
+curl -X POST http://localhost:8080/users -H 'Content-Type: application/json' \
+  -d '{"email":"user@example.com","password":"secret","name":"Alex"}'
+curl -X POST http://localhost:8080/devices -H 'Content-Type: application/json' \
+  -d '{"owner_id":1,"name":"Sensor","type":"temperature"}'
+
+# Запись: непосредственно в Core или через Adapter
+curl -X POST http://localhost:8080/telemetry -H 'Content-Type: application/json' \
+  -d '{"device_id":1,"temperature":23.5}'
+curl -X POST http://localhost:8081/ingest -H 'Content-Type: application/json' \
+  -d '{"device_id":1,"temperature":23.5}'
+
+# Чтение: непосредственно из Core или через Adapter
+curl -X POST http://localhost:8080/telemetry/query -H 'Content-Type: application/json' \
+  -d '{"device_id":1}'
+curl -X POST http://localhost:8081/telemetry/query -H 'Content-Type: application/json' \
+  -d '{"device_id":1}'
+
+# Удаление телеметрии, устройства и пользователя
+curl -X DELETE http://localhost:8080/telemetry -H 'Content-Type: application/json' \
+  -d '{"device_id":1}'
+curl -X DELETE http://localhost:8080/devices -H 'Content-Type: application/json' \
+  -d '{"device_id":1}'
+curl -X DELETE http://localhost:8080/users -H 'Content-Type: application/json' \
+  -d '{"user_id":1}'
 ```
 
-Ответ: `pong`. Этот маршрут зарегистрирован в Core; у Adapter отдельного маршрута `/ping` нет.
+Обратите внимание: удаление пользователя удалит его устройства и телеметрию, поэтому отдельный вызов удаления устройства после этого не нужен.
 
-## Все реализованные HTTP-методы
+## Изменение и удаление данных
 
-Все пользовательские методы находятся в IoT Core (`http://localhost:8080`), кроме приёма и проксирования телеметрии через Adapter (`http://localhost:8081`).
+В HTTP API реализованы создание и удаление, но **не реализованы `PUT`/`PATCH` для изменения существующего пользователя или устройства**. Отправка нового показания не меняет старое — она создаёт ещё одну строку.
 
-| Сервис | Метод и путь | Назначение |
-|---|---|---|
-| Core | `GET /ping` | Проверка доступности |
-| Core | `POST /users` | Создать пользователя |
-| Core | `DELETE /users?id=<user_id>` | Удалить пользователя |
-| Core | `POST /devices` | Создать устройство |
-| Core | `DELETE /devices?id=<device_id>` | Удалить устройство |
-| Core | `POST /telemetry` | Добавить показание |
-| Core | `GET /telemetry?device_id=<device_id>` | Получить до 10 последних показаний |
-| Core | `DELETE /telemetry?device_id=<device_id>` | Удалить все показания устройства |
-| Adapter | `POST /ingest` | Переслать показание в Core |
-| Adapter | `GET /telemetry?device_id=<device_id>` | Получить телеметрию через Core |
-| Adapter | `DELETE /telemetry?device_id=<device_id>` | Удалить телеметрию через Core |
-
-Для методов `DELETE` передавайте ID в query-параметре. Например:
-
-```sh
-curl -X DELETE 'http://localhost:8080/telemetry?device_id=1'
-curl -X DELETE 'http://localhost:8080/devices?id=1'
-curl -X DELETE 'http://localhost:8080/users?id=1'
-```
-
-Удаление устройства каскадно удаляет его показания. Удаление пользователя каскадно удаляет его устройства и их показания.
-
-## Как изменять и удалять уже сохранённые данные
-
-В API **пока нет методов `PUT` или `PATCH`**: существующие данные пользователя или устройства нельзя изменить HTTP-запросом. Показание можно исправить напрямую в PostgreSQL, указав его `id`:
+Изменить отдельное показание можно напрямую SQL-командой по `id` записи:
 
 ```sh
 docker compose exec -T postgres psql -U postgres -d iot_platform \
   -c 'UPDATE telemetry SET temperature = 24.0 WHERE id = 15;'
 ```
 
-Так же можно изменить данные устройства, например его название:
+Например, изменить название устройства:
 
 ```sh
 docker compose exec -T postgres psql -U postgres -d iot_platform \
   -c "UPDATE devices SET name = 'Kitchen sensor' WHERE id = 1;"
 ```
 
-Будьте осторожны с `DELETE /telemetry`: он удаляет **все** показания указанного устройства, а не одну запись.
+## Структура базы данных
 
-## Просмотр данных в PostgreSQL
+Инициализирующий скрипт `init.sql` задаёт три таблицы:
+
+```text
+users
+  id          SERIAL, первичный ключ
+  email       TEXT, уникальный и обязательный
+  password    TEXT, обязательный
+  name        TEXT
+      │
+      │ users.id ← devices.owner_id (ON DELETE CASCADE)
+      ▼
+devices
+  id          SERIAL, первичный ключ
+  owner_id    INTEGER, обязательная ссылка на users.id
+  name        TEXT, обязательное название
+  type        TEXT, обязательный тип
+      │
+      │ devices.id ← telemetry.device_id (ON DELETE CASCADE)
+      ▼
+telemetry
+  id          SERIAL, первичный ключ
+  device_id   INTEGER, обязательная ссылка на devices.id
+  temperature REAL, обязательное показание
+  time        TIMESTAMP, по умолчанию текущее время
+```
+
+Удаление пользователя автоматически удаляет зависимые устройства и их телеметрию. Удаление устройства автоматически удаляет его телеметрию.
+
+## Работа с PostgreSQL вручную
+
+Посмотреть статус контейнеров:
+
+```sh
+docker compose ps -a
+```
 
 Посмотреть таблицы:
 
@@ -240,44 +590,72 @@ docker compose exec -T postgres psql -U postgres -d iot_platform \
 docker compose exec postgres psql -U postgres -d iot_platform -c '\dt'
 ```
 
-Посмотреть пользователей и устройства:
+Посмотреть пользователей:
 
 ```sh
 docker compose exec postgres psql -U postgres -d iot_platform \
   -c 'SELECT id, email, name FROM users ORDER BY id;'
+```
+
+Посмотреть устройства:
+
+```sh
 docker compose exec postgres psql -U postgres -d iot_platform \
   -c 'SELECT id, owner_id, name, type FROM devices ORDER BY id;'
 ```
 
-Посмотреть показания:
+Посмотреть новые показания:
 
 ```sh
 docker compose exec postgres psql -U postgres -d iot_platform \
   -c 'SELECT id, device_id, temperature, time FROM telemetry ORDER BY id DESC;'
 ```
 
-## Повторное применение схемы
-
-Текущий `init.sql` можно повторно применить вручную без удаления данных:
+Посмотреть логи автоматической инициализации:
 
 ```sh
-docker compose exec -T postgres psql -U postgres -d iot_platform < init.sql
+docker compose logs db-init
 ```
 
-Чтобы пересоздать таблицы с нуля для теста, удалите объекты схемы `public`, затем запустите Compose снова. **Данные будут потеряны**:
+## Остановка и сброс базы
 
-```sh
-docker compose exec -T postgres psql -U postgres -d iot_platform \
-  -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
-docker compose up -d
-```
-
-После запуска `db-init` автоматически создаст таблицы заново. `docker compose down` останавливает контейнер, но сохраняет данные в volume.
-
-## Остановка
-
-Остановить контейнер PostgreSQL, сохранив данные:
+Остановить Compose-сервисы, оставив данные в volume:
 
 ```sh
 docker compose down
 ```
+
+После следующего `docker compose up -d` PostgreSQL запустится с сохранёнными данными, а `db-init` снова применит `init.sql`. Благодаря `IF NOT EXISTS` существующие таблицы не пересоздаются.
+
+### Сбросить данные и заново создать чистую базу
+
+**Осторожно: это безвозвратно удалит volume со всеми данными.**
+
+```sh
+docker compose down -v
+docker compose up -d
+```
+
+После создания чистой базы автоматический `db-init` создаст таблицы из актуального `init.sql`.
+
+### Повторно применить `init.sql` вручную
+
+В обычном режиме это не нужно: `db-init` выполняет скрипт при запуске Compose. Если требуется вызвать его отдельно:
+
+```sh
+docker compose exec -T postgres psql -U postgres -d iot_platform \
+  -v ON_ERROR_STOP=1 < init.sql
+```
+
+`CREATE TABLE IF NOT EXISTS` добавляет отсутствующие таблицы, но **не изменяет структуру уже созданной таблицы**. Для изменения существующей схемы нужны SQL-миграции или сброс базы.
+
+## Ограничения и безопасность
+
+- Проект предназначен для учебного/локального использования; в API пока нет аутентификации и проверки прав доступа.
+- Пароль пользователя сохраняется в PostgreSQL как обычный текст. Не отправляйте реальные пароли и не используйте эту схему в production без безопасного хеширования.
+- Настройки PostgreSQL в Compose (`postgres` / `postgres`) — локальные демонстрационные значения.
+- Список пользователей и устройств через HTTP не выдаётся; для просмотра используйте PostgreSQL.
+- Чтение телеметрии возвращает не более 10 последних записей.
+- Телеметрия сейчас хранит только `temperature`; другие показатели не предусмотрены.
+- API не предоставляет `PUT`/`PATCH` для изменения пользователя или устройства.
+- Adapter предназначен только для телеметрии; создание и удаление пользователей/устройств выполняется через Core.

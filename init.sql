@@ -1,5 +1,6 @@
--- Инициализация базы данных IoT Platform
--- Выполняется автоматически при первом запуске контейнера postgres
+-- Идемпотентная инициализация схемы IoT Platform.
+-- Вызывается сервисом db-init при запуске Docker Compose.
+-- IF NOT EXISTS создаёт отсутствующие таблицы, не пересоздавая существующие.
 
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,

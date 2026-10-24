@@ -17,13 +17,13 @@ set_target_properties(iot_core PROPERTIES
 target_link_libraries(iot_core PRIVATE Drogon::Drogon)
 
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/telemetry/config/HTTPConfig.json
+    ${CMAKE_CURRENT_SOURCE_DIR}/config/HTTPConfig.json
     ${CMAKE_BINARY_DIR}/bin/HTTPConfig.json
     COPYONLY
 )
 
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/telemetry/config/PostgreSQLConfig.json
+    ${CMAKE_CURRENT_SOURCE_DIR}/config/PostgreSQLConfig.json
     ${CMAKE_BINARY_DIR}/bin/PostgreSQLConfig.json
     COPYONLY
 )

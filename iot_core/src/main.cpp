@@ -20,7 +20,7 @@ int main() {
   DevicesController devicesController;
   devicesController.registerRoutes();
 
-  // Адрес и порт сервера берутся из telemetry/config/HTTPConfig.json.
+  // Адрес и порт сервера берутся из config/HTTPConfig.json.
   drogon::app().run();
   return 0;
 }

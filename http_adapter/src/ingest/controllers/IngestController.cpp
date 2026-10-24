@@ -14,16 +14,16 @@ void IngestController::registerRoutes() {
       },
       {drogon::Post});
 
-  // GET /telemetry?device_id=X -> получить телеметрию устройства через iot_core.
+  // POST /telemetry/query with JSON {"device_id": X} -> получить телеметрию.
   drogon::app().registerHandler(
-      "/telemetry",
+      "/telemetry/query",
       [this](const drogon::HttpRequestPtr &request,
              std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
         getTelemetry(request, std::move(callback));
       },
-      {drogon::Get});
+      {drogon::Post});
 
-  // DELETE /telemetry?device_id=X -> удалить телеметрию через iot_core.
+  // DELETE /telemetry with JSON {"device_id": X} -> удалить телеметрию.
   drogon::app().registerHandler(
       "/telemetry",
       [this](const drogon::HttpRequestPtr &request,
@@ -72,17 +72,17 @@ void IngestController::ingest(
 void IngestController::getTelemetry(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
-  // Извлекаем device_id из query-параметров
-  std::string deviceIdStr = request->getParameter("device_id");
-  if (deviceIdStr.empty()) {
+  const auto json = request->getJsonObject();
+  if (!json || !(*json)["device_id"].isInt() ||
+      (*json)["device_id"].asInt() <= 0) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "Missing device_id parameter";
+    body["message"] = "Expected a positive integer device_id in JSON body";
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
     return;
   }
 
-  int deviceId = std::stoi(deviceIdStr);
+  const int deviceId = (*json)["device_id"].asInt();
 
   // Получаем URL iot_core из конфигурации
   std::string iotCoreUrl = drogon::app().getCustomConfig()["iot_core_url"].asString();
@@ -121,16 +121,17 @@ void IngestController::getTelemetry(
 void IngestController::deleteTelemetry(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
-  std::string deviceIdStr = request->getParameter("device_id");
-  if (deviceIdStr.empty()) {
+  const auto json = request->getJsonObject();
+  if (!json || !(*json)["device_id"].isInt() ||
+      (*json)["device_id"].asInt() <= 0) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "Missing device_id parameter";
+    body["message"] = "Expected a positive integer device_id in JSON body";
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
     return;
   }
 
-  int deviceId = std::stoi(deviceIdStr);
+  const int deviceId = (*json)["device_id"].asInt();
 
   std::string iotCoreUrl = drogon::app().getCustomConfig()["iot_core_url"].asString();
   AdapterService service(iotCoreUrl);

@@ -45,10 +45,14 @@ void IoTClient::getTelemetry(
   // Создаем HTTP клиент
   auto client = drogon::HttpClient::newHttpClient(baseUrl_);
 
-  // Формируем GET-запрос с query-параметром device_id
+  // Передаём device_id в JSON, не помещая данные в URL.
   auto req = drogon::HttpRequest::newHttpRequest();
-  req->setMethod(drogon::Get);
-  req->setPath("/telemetry?device_id=" + std::to_string(deviceId));
+  req->setMethod(drogon::Post);
+  req->setPath("/telemetry/query");
+  Json::Value body;
+  body["device_id"] = deviceId;
+  req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+  req->setBody(body.toStyledString());
 
   // Отправляем асинхронный запрос
   client->sendRequest(
@@ -71,7 +75,11 @@ void IoTClient::deleteTelemetry(
   auto client = drogon::HttpClient::newHttpClient(baseUrl_);
   auto req = drogon::HttpRequest::newHttpRequest();
   req->setMethod(drogon::Delete);
-  req->setPath("/telemetry?device_id=" + std::to_string(deviceId));
+  req->setPath("/telemetry");
+  Json::Value body;
+  body["device_id"] = deviceId;
+  req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+  req->setBody(body.toStyledString());
   client->sendRequest(
       req,
       [success, error](drogon::ReqResult result, const drogon::HttpResponsePtr &response) {

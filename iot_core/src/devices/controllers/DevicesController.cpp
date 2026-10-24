@@ -13,7 +13,7 @@ void DevicesController::registerRoutes() {
       },
       {drogon::Post});
 
-  // DELETE /devices?id=X -> удалить устройство и его telemetry.
+  // DELETE /devices with JSON {"device_id": X} -> удалить устройство.
   drogon::app().registerHandler(
       "/devices",
       [this](const drogon::HttpRequestPtr &request,
@@ -58,16 +58,17 @@ void DevicesController::create(
 void DevicesController::deleteDevice(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
-  std::string deviceIdStr = request->getParameter("id");
-  if (deviceIdStr.empty()) {
+  const auto json = request->getJsonObject();
+  if (!json || !(*json)["device_id"].isInt() ||
+      (*json)["device_id"].asInt() <= 0) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "Missing id parameter";
+    body["message"] = "Expected a positive integer device_id in JSON body";
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
     return;
   }
 
-  int deviceId = std::stoi(deviceIdStr);
+  const int deviceId = (*json)["device_id"].asInt();
 
   DevicesService service(drogon::app().getDbClient());
   service.deleteById(

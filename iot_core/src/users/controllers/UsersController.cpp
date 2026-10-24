@@ -13,7 +13,7 @@ void UsersController::registerRoutes() {
       },
       {drogon::Post});
 
-  // DELETE /users?id=X -> удалить пользователя и все его устройства/telemetry.
+  // DELETE /users with JSON {"user_id": X} -> удалить пользователя.
   drogon::app().registerHandler(
       "/users",
       [this](const drogon::HttpRequestPtr &request,
@@ -58,16 +58,16 @@ void UsersController::create(
 void UsersController::deleteUser(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
-  std::string userIdStr = request->getParameter("id");
-  if (userIdStr.empty()) {
+  const auto json = request->getJsonObject();
+  if (!json || !(*json)["user_id"].isInt() || (*json)["user_id"].asInt() <= 0) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "Missing id parameter";
+    body["message"] = "Expected a positive integer user_id in JSON body";
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
     return;
   }
 
-  int userId = std::stoi(userIdStr);
+  const int userId = (*json)["user_id"].asInt();
 
   UsersService service(drogon::app().getDbClient());
   service.deleteById(
