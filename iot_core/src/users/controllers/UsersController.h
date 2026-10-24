@@ -11,4 +11,7 @@ class UsersController {
 
   void create(const drogon::HttpRequestPtr &request,
               std::function<void(const drogon::HttpResponsePtr &)> callback);
+
+  void deleteUser(const drogon::HttpRequestPtr &request,
+                  std::function<void(const drogon::HttpResponsePtr &)> callback);
 };

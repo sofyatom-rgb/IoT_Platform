@@ -12,3 +12,9 @@ void UsersService::save(const std::string &email,
                         std::function<void(const std::string &)> error) const {
   repository_.save(email, password, name, std::move(success), std::move(error));
 }
+
+void UsersService::deleteById(int userId,
+                              std::function<void()> success,
+                              std::function<void(const std::string &)> error) const {
+  repository_.deleteById(userId, std::move(success), std::move(error));
+}

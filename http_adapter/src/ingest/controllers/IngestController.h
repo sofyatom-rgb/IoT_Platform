@@ -14,4 +14,7 @@ class IngestController {
 
   void getTelemetry(const drogon::HttpRequestPtr &request,
                     std::function<void(const drogon::HttpResponsePtr &)> callback);
+
+  void deleteTelemetry(const drogon::HttpRequestPtr &request,
+                       std::function<void(const drogon::HttpResponsePtr &)> callback);
 };

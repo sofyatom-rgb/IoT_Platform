@@ -1,5 +1,6 @@
 #include "devices/controllers/DevicesController.h"
 
+#include <string>
 #include <utility>
 
 void DevicesController::registerRoutes() {
@@ -11,6 +12,15 @@ void DevicesController::registerRoutes() {
         create(request, std::move(callback));
       },
       {drogon::Post});
+
+  // DELETE /devices?id=X -> удалить устройство и его telemetry.
+  drogon::app().registerHandler(
+      "/devices",
+      [this](const drogon::HttpRequestPtr &request,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
+        deleteDevice(request, std::move(callback));
+      },
+      {drogon::Delete});
 }
 
 void DevicesController::create(
@@ -35,6 +45,37 @@ void DevicesController::create(
         Json::Value body;
         body["status"] = "ok";
         body["device_id"] = deviceId;
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+      },
+      [callback](const std::string &error) {
+        Json::Value body;
+        body["status"] = "error";
+        body["message"] = error;
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+      });
+}
+
+void DevicesController::deleteDevice(
+    const drogon::HttpRequestPtr &request,
+    std::function<void(const drogon::HttpResponsePtr &)> callback) {
+  std::string deviceIdStr = request->getParameter("id");
+  if (deviceIdStr.empty()) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "Missing id parameter";
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    return;
+  }
+
+  int deviceId = std::stoi(deviceIdStr);
+
+  DevicesService service(drogon::app().getDbClient());
+  service.deleteById(
+      deviceId,
+      [callback]() {
+        Json::Value body;
+        body["status"] = "ok";
+        body["message"] = "Device deleted";
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
       },
       [callback](const std::string &error) {

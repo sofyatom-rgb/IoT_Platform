@@ -20,3 +20,10 @@ void TelemetryService::getByDeviceId(
     std::function<void(const std::string &)> error) const {
   repository_.getByDeviceId(deviceId, std::move(success), std::move(error));
 }
+
+void TelemetryService::deleteByDeviceId(
+    int deviceId,
+    std::function<void()> success,
+    std::function<void(const std::string &)> error) const {
+  repository_.deleteByDeviceId(deviceId, std::move(success), std::move(error));
+}

@@ -24,3 +24,17 @@ void DevicesRepository::save(int ownerId,
       },
       ownerId, name, type);
 }
+
+void DevicesRepository::deleteById(int deviceId,
+                                   std::function<void()> success,
+                                   std::function<void(const std::string &)> error) const {
+  db_->execSqlAsync(
+      "DELETE FROM devices WHERE id = $1",
+      [success](const drogon::orm::Result &r) {
+        success();
+      },
+      [error](const drogon::orm::DrogonDbException &e) {
+        error(e.base().what());
+      },
+      deviceId);
+}

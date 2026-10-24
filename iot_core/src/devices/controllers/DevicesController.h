@@ -11,4 +11,7 @@ class DevicesController {
 
   void create(const drogon::HttpRequestPtr &request,
               std::function<void(const drogon::HttpResponsePtr &)> callback);
+
+  void deleteDevice(const drogon::HttpRequestPtr &request,
+                    std::function<void(const drogon::HttpResponsePtr &)> callback);
 };

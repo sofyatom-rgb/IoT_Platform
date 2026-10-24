@@ -22,3 +22,10 @@ void AdapterService::getTelemetry(
     std::function<void(const std::string &)> error) const {
   client_.getTelemetry(deviceId, std::move(success), std::move(error));
 }
+
+void AdapterService::deleteTelemetry(
+    int deviceId,
+    std::function<void()> success,
+    std::function<void(const std::string &)> error) const {
+  client_.deleteTelemetry(deviceId, std::move(success), std::move(error));
+}

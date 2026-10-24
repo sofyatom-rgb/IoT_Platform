@@ -24,3 +24,17 @@ void UsersRepository::save(const std::string &email,
       },
       email, password, name);
 }
+
+void UsersRepository::deleteById(int userId,
+                                 std::function<void()> success,
+                                 std::function<void(const std::string &)> error) const {
+  db_->execSqlAsync(
+      "DELETE FROM users WHERE id = $1",
+      [success](const drogon::orm::Result &r) {
+        success();
+      },
+      [error](const drogon::orm::DrogonDbException &e) {
+        error(e.base().what());
+      },
+      userId);
+}

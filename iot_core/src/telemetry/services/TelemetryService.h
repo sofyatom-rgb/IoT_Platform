@@ -19,6 +19,10 @@ class TelemetryService {
                      std::function<void(const std::string &)> success,
                      std::function<void(const std::string &)> error) const;
 
+  void deleteByDeviceId(int deviceId,
+                        std::function<void()> success,
+                        std::function<void(const std::string &)> error) const;
+
  private:
   TelemetryRepository repository_;
 };

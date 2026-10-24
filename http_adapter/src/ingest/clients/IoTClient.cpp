@@ -63,3 +63,24 @@ void IoTClient::getTelemetry(
         }
       });
 }
+
+void IoTClient::deleteTelemetry(
+    int deviceId,
+    std::function<void()> success,
+    std::function<void(const std::string &)> error) const {
+  auto client = drogon::HttpClient::newHttpClient(baseUrl_);
+  auto req = drogon::HttpRequest::newHttpRequest();
+  req->setMethod(drogon::Delete);
+  req->setPath("/telemetry?device_id=" + std::to_string(deviceId));
+  client->sendRequest(
+      req,
+      [success, error](drogon::ReqResult result, const drogon::HttpResponsePtr &response) {
+        if (result == drogon::ReqResult::Ok && response->getStatusCode() == drogon::k200OK) {
+          success();
+        } else {
+          std::string errMsg = "Failed to delete telemetry from iot_core. HTTP Status: " +
+                               std::to_string(response ? static_cast<int>(response->getStatusCode()) : 0);
+          error(errMsg);
+        }
+      });
+}

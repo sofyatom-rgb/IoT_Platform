@@ -12,3 +12,9 @@ void DevicesService::save(int ownerId,
                           std::function<void(const std::string &)> error) const {
   repository_.save(ownerId, name, type, std::move(success), std::move(error));
 }
+
+void DevicesService::deleteById(int deviceId,
+                                std::function<void()> success,
+                                std::function<void(const std::string &)> error) const {
+  repository_.deleteById(deviceId, std::move(success), std::move(error));
+}
