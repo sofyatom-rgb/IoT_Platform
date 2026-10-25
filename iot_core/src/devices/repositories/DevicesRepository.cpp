@@ -56,6 +56,33 @@ void DevicesRepository::updateById(int deviceId,
       ownerId, name, type, deviceId);
 }
 
+void DevicesRepository::getById(
+    int deviceId,
+    std::function<void(const std::string &)> success,
+    std::function<void(const std::string &)> error) const {
+  db_->execSqlAsync(
+      "SELECT id, owner_id, name, type FROM devices WHERE id = $1",
+      [success, error](const drogon::orm::Result &r) {
+        if (r.empty()) {
+          Json::Value body;
+          body["status"] = "error";
+          body["message"] = "Device not found";
+          success(Json::FastWriter().write(body));
+          return;
+        }
+        Json::Value item;
+        item["id"] = r[0]["id"].as<int>();
+        item["owner_id"] = r[0]["owner_id"].as<int>();
+        item["name"] = r[0]["name"].as<std::string>();
+        item["type"] = r[0]["type"].as<std::string>();
+        success(Json::FastWriter().write(item));
+      },
+      [error](const drogon::orm::DrogonDbException &e) {
+        error(e.base().what());
+      },
+      deviceId);
+}
+
 void DevicesRepository::getNotificationInfo(
     int deviceId,
     std::function<void(int, const std::string &)> success,

@@ -63,6 +63,15 @@ void UsersController::registerRoutes() {
         updateUser(request, std::move(callback));
       },
       {drogon::Put});
+
+  // GET /users?id=X -> получить пользователя.
+  drogon::app().registerHandler(
+      "/users",
+      [this](const drogon::HttpRequestPtr &request,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
+        getUser(request, std::move(callback));
+      },
+      {drogon::Get});
 }
 
 void UsersController::create(
@@ -178,6 +187,45 @@ void UsersController::updateUser(
         body["status"] = "ok";
         body["message"] = "User updated";
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
+      },
+      [callback](const std::string &error) {
+        Json::Value body;
+        body["status"] = "error";
+        body["message"] = error;
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+      });
+}
+
+void UsersController::getUser(
+    const drogon::HttpRequestPtr &request,
+    std::function<void(const drogon::HttpResponsePtr &)> callback) {
+  std::string userIdStr = request->getParameter("id");
+  if (userIdStr.empty()) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "Missing id parameter";
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    return;
+  }
+
+  int userId = std::stoi(userIdStr);
+
+  UsersService service(drogon::app().getDbClient());
+  service.getById(
+      userId,
+      [callback](const std::string &responseBody) {
+        Json::Value body;
+        Json::CharReaderBuilder builder;
+        std::string errs;
+        std::istringstream iss(responseBody);
+        if (Json::parseFromStream(builder, iss, &body, &errs)) {
+          callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        } else {
+          Json::Value errorBody;
+          errorBody["status"] = "error";
+          errorBody["message"] = "Failed to parse user data";
+          callback(drogon::HttpResponse::newHttpJsonResponse(errorBody));
+        }
       },
       [callback](const std::string &error) {
         Json::Value body;

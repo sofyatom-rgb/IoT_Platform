@@ -34,6 +34,10 @@ class UsersRepository {
                   std::function<void()> success,
                   std::function<void(const std::string &)> error) const;
 
+  void getById(int userId,
+               std::function<void(const std::string &)> success,
+               std::function<void(const std::string &)> error) const;
+
  private:
   drogon::orm::DbClientPtr db_;
 };

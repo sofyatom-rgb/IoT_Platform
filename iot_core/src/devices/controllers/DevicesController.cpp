@@ -30,6 +30,15 @@ void DevicesController::registerRoutes() {
         updateDevice(request, std::move(callback));
       },
       {drogon::Put});
+
+  // GET /devices?id=X -> получить устройство.
+  drogon::app().registerHandler(
+      "/devices",
+      [this](const drogon::HttpRequestPtr &request,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
+        getDevice(request, std::move(callback));
+      },
+      {drogon::Get});
 }
 
 void DevicesController::create(
@@ -129,6 +138,45 @@ void DevicesController::updateDevice(
         body["status"] = "ok";
         body["message"] = "Device updated";
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
+      },
+      [callback](const std::string &error) {
+        Json::Value body;
+        body["status"] = "error";
+        body["message"] = error;
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+      });
+}
+
+void DevicesController::getDevice(
+    const drogon::HttpRequestPtr &request,
+    std::function<void(const drogon::HttpResponsePtr &)> callback) {
+  std::string deviceIdStr = request->getParameter("id");
+  if (deviceIdStr.empty()) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "Missing id parameter";
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    return;
+  }
+
+  int deviceId = std::stoi(deviceIdStr);
+
+  DevicesService service(drogon::app().getDbClient());
+  service.getById(
+      deviceId,
+      [callback](const std::string &responseBody) {
+        Json::Value body;
+        Json::CharReaderBuilder builder;
+        std::string errs;
+        std::istringstream iss(responseBody);
+        if (Json::parseFromStream(builder, iss, &body, &errs)) {
+          callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        } else {
+          Json::Value errorBody;
+          errorBody["status"] = "error";
+          errorBody["message"] = "Failed to parse device data";
+          callback(drogon::HttpResponse::newHttpJsonResponse(errorBody));
+        }
       },
       [callback](const std::string &error) {
         Json::Value body;

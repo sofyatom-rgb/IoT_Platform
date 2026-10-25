@@ -17,4 +17,7 @@ class DevicesController {
 
   void updateDevice(const drogon::HttpRequestPtr &request,
                     std::function<void(const drogon::HttpResponsePtr &)> callback);
+
+  void getDevice(const drogon::HttpRequestPtr &request,
+                 std::function<void(const drogon::HttpResponsePtr &)> callback);
 };

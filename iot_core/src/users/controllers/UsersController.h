@@ -17,4 +17,7 @@ class UsersController {
 
   void updateUser(const drogon::HttpRequestPtr &request,
                   std::function<void(const drogon::HttpResponsePtr &)> callback);
+
+  void getUser(const drogon::HttpRequestPtr &request,
+               std::function<void(const drogon::HttpResponsePtr &)> callback);
 };

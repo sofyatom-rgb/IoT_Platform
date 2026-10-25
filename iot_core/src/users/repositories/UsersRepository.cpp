@@ -59,6 +59,35 @@ void UsersRepository::updateById(int userId,
       email, password, name, telegramChatId, userId);
 }
 
+void UsersRepository::getById(
+    int userId,
+    std::function<void(const std::string &)> success,
+    std::function<void(const std::string &)> error) const {
+  db_->execSqlAsync(
+      "SELECT id, email, password, name, telegram_chat_id FROM users WHERE id = $1",
+      [success, error](const drogon::orm::Result &r) {
+        if (r.empty()) {
+          Json::Value body;
+          body["status"] = "error";
+          body["message"] = "User not found";
+          success(Json::FastWriter().write(body));
+          return;
+        }
+        Json::Value item;
+        item["id"] = r[0]["id"].as<int>();
+        item["email"] = r[0]["email"].as<std::string>();
+        item["password"] = r[0]["password"].as<std::string>();
+        item["name"] = r[0]["name"].as<std::string>();
+        auto tg = r[0]["telegram_chat_id"];
+        item["telegram_chat_id"] = tg.isNull() ? Json::Value::null : tg.as<std::string>();
+        success(Json::FastWriter().write(item));
+      },
+      [error](const drogon::orm::DrogonDbException &e) {
+        error(e.base().what());
+      },
+      userId);
+}
+
 void UsersRepository::getTelegramChatId(
     int userId,
     std::function<void(const std::string &)> success,
