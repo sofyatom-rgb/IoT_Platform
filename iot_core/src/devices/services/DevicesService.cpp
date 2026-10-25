@@ -18,3 +18,11 @@ void DevicesService::deleteById(int deviceId,
                                 std::function<void(const std::string &)> error) const {
   repository_.deleteById(deviceId, std::move(success), std::move(error));
 }
+
+void DevicesService::getNotificationInfo(
+    int deviceId,
+    std::function<void(int, const std::string &)> success,
+    std::function<void(const std::string &)> error) const {
+  repository_.getNotificationInfo(deviceId, std::move(success),
+                                  std::move(error));
+}

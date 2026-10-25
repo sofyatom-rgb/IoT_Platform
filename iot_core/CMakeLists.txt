@@ -3,6 +3,7 @@ add_executable(iot_core
     src/telemetry/controllers/TelemetryController.cpp
     src/telemetry/services/TelemetryService.cpp
     src/telemetry/repositories/TelemetryRepository.cpp
+    src/telemetry/clients/NotificationServiceClient.cpp
     src/users/controllers/UsersController.cpp
     src/users/services/UsersService.cpp
     src/users/repositories/UsersRepository.cpp

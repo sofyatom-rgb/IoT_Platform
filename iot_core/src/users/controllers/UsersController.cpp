@@ -1,7 +1,40 @@
 #include "users/controllers/UsersController.h"
 
+#include <cctype>
 #include <string>
 #include <utility>
+
+namespace {
+bool getTelegramChatId(const Json::Value &json, std::string &chatId) {
+  if (!json.isMember("telegram_chat_id") || json["telegram_chat_id"].isNull()) {
+    return true;
+  }
+
+  const auto &value = json["telegram_chat_id"];
+  if (value.isString()) {
+    chatId = value.asString();
+  } else if (value.isInt64()) {
+    chatId = std::to_string(value.asInt64());
+  } else {
+    return false;
+  }
+
+  if (chatId.empty()) {
+    return true;
+  }
+
+  std::size_t firstDigit = chatId.front() == '-' ? 1 : 0;
+  if (firstDigit == chatId.size()) {
+    return false;
+  }
+  for (std::size_t i = firstDigit; i < chatId.size(); ++i) {
+    if (!std::isdigit(static_cast<unsigned char>(chatId[i]))) {
+      return false;
+    }
+  }
+  return true;
+}
+}  // namespace
 
 void UsersController::registerRoutes() {
   // POST /users -> создать пользователя.
@@ -36,11 +69,23 @@ void UsersController::create(
     return;
   }
 
+  std::string telegramChatId;
+  if (!getTelegramChatId(*json, telegramChatId)) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "telegram_chat_id must be an integer or numeric string";
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
+    return;
+  }
+
   UsersService service(drogon::app().getDbClient());
   service.save(
       (*json)["email"].asString(),
       (*json)["password"].asString(),
       (*json)["name"].asString(),
+      telegramChatId,
       [callback](int userId) {
         Json::Value body;
         body["status"] = "ok";

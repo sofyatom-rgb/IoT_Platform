@@ -8,10 +8,12 @@ UsersRepository::UsersRepository(drogon::orm::DbClientPtr db)
 void UsersRepository::save(const std::string &email,
                            const std::string &password,
                            const std::string &name,
+                           const std::string &telegramChatId,
                            std::function<void(int)> success,
                            std::function<void(const std::string &)> error) const {
   db_->execSqlAsync(
-      "INSERT INTO users (email, password, name) VALUES ($1, $2, $3) RETURNING id",
+      "INSERT INTO users (email, password, name, telegram_chat_id) "
+      "VALUES ($1, $2, $3, NULLIF($4, '')) RETURNING id",
       [success](const drogon::orm::Result &r) {
         if (!r.empty()) {
           success(r[0]["id"].as<int>());
@@ -22,7 +24,7 @@ void UsersRepository::save(const std::string &email,
       [error](const drogon::orm::DrogonDbException &e) {
         error(e.base().what());
       },
-      email, password, name);
+      email, password, name, telegramChatId);
 }
 
 void UsersRepository::deleteById(int userId,
@@ -32,6 +34,26 @@ void UsersRepository::deleteById(int userId,
       "DELETE FROM users WHERE id = $1",
       [success](const drogon::orm::Result &r) {
         success();
+      },
+      [error](const drogon::orm::DrogonDbException &e) {
+        error(e.base().what());
+      },
+      userId);
+}
+
+void UsersRepository::getTelegramChatId(
+    int userId,
+    std::function<void(const std::string &)> success,
+    std::function<void(const std::string &)> error) const {
+  db_->execSqlAsync(
+      "SELECT telegram_chat_id FROM users WHERE id = $1",
+      [success, error](const drogon::orm::Result &result) {
+        if (result.empty()) {
+          error("User not found");
+          return;
+        }
+        const auto value = result[0]["telegram_chat_id"];
+        success(value.isNull() ? std::string{} : value.as<std::string>());
       },
       [error](const drogon::orm::DrogonDbException &e) {
         error(e.base().what());

@@ -6,8 +6,16 @@ CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     email TEXT NOT NULL UNIQUE,
     password TEXT NOT NULL,
-    name TEXT
+    name TEXT,
+    telegram_chat_id TEXT
 );
+
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_chat_id_unique
+    ON users (telegram_chat_id)
+    WHERE telegram_chat_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS devices (
     id SERIAL PRIMARY KEY,

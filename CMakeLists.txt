@@ -9,3 +9,4 @@ find_package(Drogon CONFIG REQUIRED)
 
 add_subdirectory(iot_core)
 add_subdirectory(http_adapter)
+add_subdirectory(notification_service)

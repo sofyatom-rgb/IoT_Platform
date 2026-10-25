@@ -38,3 +38,23 @@ void DevicesRepository::deleteById(int deviceId,
       },
       deviceId);
 }
+
+void DevicesRepository::getNotificationInfo(
+    int deviceId,
+    std::function<void(int, const std::string &)> success,
+    std::function<void(const std::string &)> error) const {
+  db_->execSqlAsync(
+      "SELECT owner_id, name FROM devices WHERE id = $1",
+      [success, error](const drogon::orm::Result &result) {
+        if (result.empty()) {
+          error("Device not found");
+          return;
+        }
+        success(result[0]["owner_id"].as<int>(),
+                result[0]["name"].as<std::string>());
+      },
+      [error](const drogon::orm::DrogonDbException &e) {
+        error(e.base().what());
+      },
+      deviceId);
+}

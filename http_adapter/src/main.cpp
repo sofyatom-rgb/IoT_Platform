@@ -1,11 +1,14 @@
 #include <drogon/drogon.h>
+
+#include <filesystem>
 #include <iostream>
 
 #include "ingest/controllers/IngestController.h"
 
-int main() {
-  // Загружаем настройки адаптера
-  drogon::app().loadConfigFile("./bin/AdapterConfig.json");
+int main(int, char *argv[]) {
+  const auto configPath =
+      std::filesystem::absolute(argv[0]).parent_path() / "AdapterConfig.json";
+  drogon::app().loadConfigFile(configPath.string());
 
   // Регистрируем маршруты
   IngestController ingestController;

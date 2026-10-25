@@ -4,5 +4,9 @@
       "address": "0.0.0.0",
       "port": 8080
     }
-  ]
+  ],
+  "custom_config": {
+    "temperature_threshold": 30.0,
+    "notification_service_url": "http://127.0.0.1:8082"
+  }
 }

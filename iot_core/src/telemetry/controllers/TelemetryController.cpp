@@ -1,5 +1,6 @@
 #include "telemetry/controllers/TelemetryController.h"
 
+#include <cmath>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -57,14 +58,32 @@ void TelemetryController::create(
     return;
   }
 
-  // Из HTTP JSON берём два числа и передаём их сервису.
-  // К этому моменту сервер уже запущен и Drogon создал клиент БД.
-  TelemetryService service(drogon::app().getDbClient());
+  if (!(*json)["device_id"].isInt() || (*json)["device_id"].asInt() <= 0 ||
+      !(*json)["temperature"].isNumeric() ||
+      !std::isfinite((*json)["temperature"].asDouble())) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] =
+        "Expected a positive integer device_id and finite numeric temperature";
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
+    return;
+  }
+
+  const auto config = drogon::app().getCustomConfig();
+  NotificationServiceClient notificationClient(
+      config["notification_service_url"].asString());
+  TelemetryService service(
+      drogon::app().getDbClient(),
+      config["temperature_threshold"].asDouble(),
+      std::move(notificationClient));
   service.save(
       (*json)["device_id"].asInt(), (*json)["temperature"].asDouble(),
-      [callback]() {
+      [callback](const std::string &notificationStatus) {
         Json::Value body;
         body["status"] = "ok";
+        body["notification_status"] = notificationStatus;
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
       },
       [callback](const std::string &error) {

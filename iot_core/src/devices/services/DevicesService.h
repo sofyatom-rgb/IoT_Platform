@@ -20,6 +20,11 @@ class DevicesService {
                   std::function<void()> success,
                   std::function<void(const std::string &)> error) const;
 
+  void getNotificationInfo(
+      int deviceId,
+      std::function<void(int, const std::string &)> success,
+      std::function<void(const std::string &)> error) const;
+
  private:
   DevicesRepository repository_;
 };

@@ -1,11 +1,12 @@
 # IoT Platform
 
-IoT Platform — учебный backend для регистрации пользователей и устройств, приёма температурных показаний и чтения телеметрии. Серверная часть написана на C++ с Drogon, данные хранятся в PostgreSQL.
+IoT Platform — учебный backend для регистрации пользователей и устройств, приёма температурных показаний, чтения телеметрии и отправки уведомлений в Telegram. Сервисы написаны на C++ с Drogon, данные хранятся в PostgreSQL.
 
-В проекте есть два HTTP-сервиса:
+В проекте есть три HTTP-сервиса:
 
 1. **IoT Core** — основной сервис и единственный компонент, который работает с PostgreSQL. Адрес по умолчанию: `http://localhost:8080`.
 2. **HTTP Adapter** — дополнительный HTTP-вход для интеграций и IoT-клиентов. Адрес по умолчанию: `http://localhost:8081`. Он принимает телеметрию и проксирует запросы к IoT Core.
+3. **Notification Service** — внутренний HTTP-сервис, принимающий события от Core и отправляющий сообщения через Telegram Bot API. Адрес по умолчанию: `http://localhost:8082`.
 
 ## Содержание
 
@@ -25,7 +26,7 @@ IoT Platform — учебный backend для регистрации польз
 
 ```text
 IoT_Platform/
-├── CMakeLists.txt                    # Корневая сборка: C++26, Drogon, оба приложения
+├── CMakeLists.txt                    # Корневая сборка: C++26, Drogon и приложения
 ├── docker-compose.yml                # PostgreSQL, проверка готовности, автоматический db-init
 ├── init.sql                          # Создание таблиц и внешних ключей
 ├── README.md                         # Это руководство
@@ -42,6 +43,8 @@ IoT_Platform/
 │       │   │   └── TelemetryController.cpp # HTTP-маршруты телеметрии и /ping
 │       │   ├── services/
 │       │   │   └── TelemetryService.cpp # Слой бизнес-логики телеметрии
+│       │   ├── clients/
+│       │   │   └── NotificationServiceClient.cpp # HTTP-клиент для Notification Service
 │       │   └── repositories/
 │       │       └── TelemetryRepository.cpp # SQL для таблицы telemetry
 │       ├── users/
@@ -73,10 +76,20 @@ IoT_Platform/
 │           └── clients/
 │               └── IoTClient.cpp    # HTTP-клиент для вызова IoT Core
 │
+├── notification_service/             # Отдельный HTTP-сервис Telegram-уведомлений
+│   ├── CMakeLists.txt
+│   ├── config/HTTPConfig.json        # HTTP-порт 8082
+│   └── src/
+│       ├── main.cpp
+│       ├── controllers/              # Принимает внутренние запросы от Core
+│       ├── services/                 # Формирует содержание уведомления
+│       └── clients/                  # Отправляет сообщения в Telegram Bot API
+│
 └── build/                            # Генерируется CMake; здесь находятся бинарники
     └── bin/
         ├── iot_core
         ├── http_adapter
+        ├── notification_service
         └── *.json                    # Копии конфигов, загружаемые приложениями
 ```
 
@@ -86,6 +99,7 @@ IoT_Platform/
 - **Service** передаёт операцию репозиторию. Здесь располагается бизнес-логика.
 - **Repository** выполняет SQL-запросы через Drogon ORM.
 - В Adapter контроллер вызывает сервис, сервис использует HTTP-клиент, а HTTP-клиент обращается к Core.
+- Core вызывает Notification Service через `NotificationServiceClient`; его контроллер вызывает сервис уведомлений, а тот — Telegram Bot API через `TelegramBotClient`.
 
 В Core данные из SQL привязываются параметрами (`$1`, `$2`, …), а не подставляются конкатенацией в SQL-строку.
 
@@ -112,6 +126,18 @@ IoT-устройство / curl / клиентское приложение
                        Adapter Service → IoTClient
                                  │ HTTP-запрос на :8080
                                  └──────────────► IoT Core
+                                                      │
+                                  если температура выше порога
+                                                      ▼
+                                          NotificationServiceClient
+                                                      │ HTTP :8082
+                                                      ▼
+                                           Notification Controller
+                                                      │
+                                   Notification Service → TelegramBotClient
+                                                      │ HTTPS
+                                                      ▼
+                                              Telegram Bot API
 ```
 
 ### Когда обращаться напрямую, а когда через Adapter
@@ -121,6 +147,8 @@ IoT-устройство / curl / клиентское приложение
 **Через Adapter** удобно направлять телеметрию от внешних клиентов через отдельную точку входа. Adapter отделяет внешний ingest API от внутреннего Core и может служить местом для будущей интеграционной логики. Сейчас он пересылает телеметрию без дополнительной обработки; пользователей и устройства он не обслуживает.
 
 Оба пути записи сохраняют данные в одну и ту же базу: Adapter не имеет собственного подключения к PostgreSQL. Если нужен только один процесс при локальной проверке, запросы телеметрии можно направлять напрямую в Core; для работы Adapter должны быть запущены оба сервиса.
+
+Если превышен температурный порог, Core запрашивает владельца устройства и его Telegram chat ID из PostgreSQL, затем отправляет событие в отдельный Notification Service.
 
 ## Требования
 
@@ -194,27 +222,43 @@ Core подключается к БД на `127.0.0.1:5433` согласно `io
 
 ### 2. Запустить IoT Core
 
-Core загружает конфиги по относительному пути `./bin/...`, поэтому запускайте бинарник из каталога `build`:
+Core ищет конфиги рядом с исполняемым файлом, поэтому его можно запускать из корня проекта:
 
 ```sh
-cd build
-./bin/iot_core
+./build/bin/iot_core
 ```
 
 Ожидаемый порт по умолчанию: `8080`.
 
-### 3. Запустить HTTP Adapter
+### 3. Запустить Notification Service
 
-Оставьте Core запущенным. Откройте **второй терминал**, вернитесь в корень репозитория и выполните:
+Создайте бота через BotFather и задайте токен бота в окружении. Не добавляйте его в файлы проекта:
 
 ```sh
-cd build
-./bin/http_adapter
+export TELEGRAM_BOT_TOKEN='<token-from-BotFather>'
+```
+
+Пользователь должен заранее открыть бота и нажать **Start**. Укажите его Telegram `chat_id` при создании пользователя в Core (см. HTTP API ниже).
+
+В отдельном терминале из корня проекта запустите:
+
+```sh
+./build/bin/notification_service
+```
+
+Сервис слушает только локальный интерфейс `127.0.0.1:8082`; поэтому этот вариант рассчитан на запуск Core и Notification Service на одном компьютере. Токен бота нужен только Notification Service.
+
+### 4. Запустить HTTP Adapter
+
+Оставьте Core запущенным. Откройте отдельный терминал в корне проекта:
+
+```sh
+./build/bin/http_adapter
 ```
 
 Ожидаемый порт по умолчанию: `8081`. В конфигурации Adapter задан адрес Core `http://127.0.0.1:8080`.
 
-Удобно держать PostgreSQL, Core и Adapter в трёх терминалах. Для прямых запросов к Core достаточно PostgreSQL и Core; для запросов через Adapter должны работать все три компонента.
+Удобно держать PostgreSQL, Core, Notification Service и Adapter в отдельных терминалах. Для уведомлений должны быть запущены Core и Notification Service.
 
 ### Конфигурационные файлы
 
@@ -222,7 +266,9 @@ cd build
 
 - `iot_core/config/HTTPConfig.json` — адрес и порт Core;
 - `iot_core/config/PostgreSQLConfig.json` — host, порт, база и учётные данные PostgreSQL;
-- `http_adapter/src/config/AdapterConfig.json` — адрес/порт Adapter и URL Core.
+- `http_adapter/src/config/AdapterConfig.json` — адрес/порт Adapter и URL Core;
+- `notification_service/config/HTTPConfig.json` — адрес и порт Notification Service.
+- В `iot_core/config/HTTPConfig.json` в `custom_config` задаются `temperature_threshold` и `notification_service_url`.
 
 CMake копирует их в `build/bin`. После изменения конфигов повторите конфигурацию/сборку или скопируйте файлы в `build/bin`, чтобы приложение получило обновлённые настройки.
 
@@ -290,7 +336,7 @@ pong
 ```sh
 curl -i -X POST http://localhost:8080/users \
   -H 'Content-Type: application/json' \
-  -d '{"email":"user@example.com","password":"secret","name":"Alex"}'
+  -d '{"email":"user@example.com","password":"secret","name":"Alex","telegram_chat_id":"123456789"}'
 ```
 
 Поля:
@@ -300,6 +346,7 @@ curl -i -X POST http://localhost:8080/users \
 | `email` | строка | Email; в БД должен быть уникальным |
 | `password` | строка | Пароль пользователя |
 | `name` | строка | Отображаемое имя |
+| `telegram_chat_id` | строка или целое число | Необязательный ID чата с ботом; без него уведомления отправляться не будут |
 
 Успешный ответ содержит созданный идентификатор:
 
@@ -389,6 +436,8 @@ curl -i -X POST http://localhost:8080/telemetry \
 ```
 
 Каждый запрос вставляет **новую** запись. Время ставится базой автоматически. `device_id` должен ссылаться на существующее устройство.
+
+Если температура выше `temperature_threshold` из `iot_core/config/HTTPConfig.json`, Core находит владельца устройства и его `telegram_chat_id`, затем вызывает Notification Service. Ошибка доставки логируется отдельно и не отменяет уже сохранённую телеметрию.
 
 ### Записать показание через Adapter — `POST /ingest`
 
@@ -647,11 +696,14 @@ docker compose exec -T postgres psql -U postgres -d iot_platform \
   -v ON_ERROR_STOP=1 < init.sql
 ```
 
-`CREATE TABLE IF NOT EXISTS` добавляет отсутствующие таблицы, но **не изменяет структуру уже созданной таблицы**. Для изменения существующей схемы нужны SQL-миграции или сброс базы.
+`init.sql` создаёт отсутствующие таблицы и добавляет отсутствующую колонку `telegram_chat_id` к уже существующей таблице `users`. Для других изменений схемы нужны отдельные SQL-миграции или сброс базы.
 
 ## Ограничения и безопасность
 
 - Проект предназначен для учебного/локального использования; в API пока нет аутентификации и проверки прав доступа.
+- Notification Service не использует внутренний токен и слушает только `127.0.0.1`. Если сервисы будут размещены на разных машинах или endpoint станет доступен из сети, добавьте аутентификацию и защищённый канал связи до публикации.
+- Telegram-уведомления отправляются только если пользователь заранее начал диалог с ботом и у него задан `telegram_chat_id`.
+- Отправка выполняется синхронным по смыслу HTTP-вызовом после записи телеметрии; устойчивой очереди и автоматических повторов пока нет.
 - Пароль пользователя сохраняется в PostgreSQL как обычный текст. Не отправляйте реальные пароли и не используйте эту схему в production без безопасного хеширования.
 - Настройки PostgreSQL в Compose (`postgres` / `postgres`) — локальные демонстрационные значения.
 - Список пользователей и устройств через HTTP не выдаётся; для просмотра используйте PostgreSQL.
