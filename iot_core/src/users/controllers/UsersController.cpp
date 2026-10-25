@@ -54,6 +54,15 @@ void UsersController::registerRoutes() {
         deleteUser(request, std::move(callback));
       },
       {drogon::Delete});
+
+  // PUT /users?id=X -> обновить пользователя.
+  drogon::app().registerHandler(
+      "/users",
+      [this](const drogon::HttpRequestPtr &request,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
+        updateUser(request, std::move(callback));
+      },
+      {drogon::Put});
 }
 
 void UsersController::create(
@@ -121,6 +130,53 @@ void UsersController::deleteUser(
         Json::Value body;
         body["status"] = "ok";
         body["message"] = "User deleted";
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+      },
+      [callback](const std::string &error) {
+        Json::Value body;
+        body["status"] = "error";
+        body["message"] = error;
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+      });
+}
+
+void UsersController::updateUser(
+    const drogon::HttpRequestPtr &request,
+    std::function<void(const drogon::HttpResponsePtr &)> callback) {
+  const auto json = request->getJsonObject();
+  if (!json) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "Invalid JSON";
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    return;
+  }
+
+  std::string userIdStr = request->getParameter("id");
+  if (userIdStr.empty()) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "Missing id parameter";
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    return;
+  }
+
+  int userId = std::stoi(userIdStr);
+  std::string email = (*json)["email"].asString();
+  std::string password = (*json)["password"].asString();
+  std::string name = (*json)["name"].asString();
+  std::string telegramChatId;
+  if ((*json).isMember("telegram_chat_id") && !(*json)["telegram_chat_id"].isNull()) {
+    telegramChatId = (*json)["telegram_chat_id"].asString();
+  }
+
+  UsersService service(drogon::app().getDbClient());
+  service.updateById(
+      userId, email, password, name, telegramChatId,
+      [callback]() {
+        Json::Value body;
+        body["status"] = "ok";
+        body["message"] = "User updated";
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
       },
       [callback](const std::string &error) {

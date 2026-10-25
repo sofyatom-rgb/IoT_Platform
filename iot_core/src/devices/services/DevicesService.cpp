@@ -26,3 +26,12 @@ void DevicesService::getNotificationInfo(
   repository_.getNotificationInfo(deviceId, std::move(success),
                                   std::move(error));
 }
+
+void DevicesService::updateById(int deviceId,
+                                int ownerId,
+                                const std::string &name,
+                                const std::string &type,
+                                std::function<void()> success,
+                                std::function<void(const std::string &)> error) const {
+  repository_.updateById(deviceId, ownerId, name, type, std::move(success), std::move(error));
+}

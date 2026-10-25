@@ -21,6 +21,15 @@ void DevicesController::registerRoutes() {
         deleteDevice(request, std::move(callback));
       },
       {drogon::Delete});
+
+  // PUT /devices?id=X -> обновить устройство.
+  drogon::app().registerHandler(
+      "/devices",
+      [this](const drogon::HttpRequestPtr &request,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
+        updateDevice(request, std::move(callback));
+      },
+      {drogon::Put});
 }
 
 void DevicesController::create(
@@ -77,6 +86,48 @@ void DevicesController::deleteDevice(
         Json::Value body;
         body["status"] = "ok";
         body["message"] = "Device deleted";
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+      },
+      [callback](const std::string &error) {
+        Json::Value body;
+        body["status"] = "error";
+        body["message"] = error;
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+      });
+}
+void DevicesController::updateDevice(
+    const drogon::HttpRequestPtr &request,
+    std::function<void(const drogon::HttpResponsePtr &)> callback) {
+  const auto json = request->getJsonObject();
+  if (!json) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "Invalid JSON";
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    return;
+  }
+
+  std::string deviceIdStr = request->getParameter("id");
+  if (deviceIdStr.empty()) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "Missing id parameter";
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    return;
+  }
+
+  int deviceId = std::stoi(deviceIdStr);
+  int ownerId = (*json)["owner_id"].asInt();
+  std::string name = (*json)["name"].asString();
+  std::string type = (*json)["type"].asString();
+
+  DevicesService service(drogon::app().getDbClient());
+  service.updateById(
+      deviceId, ownerId, name, type,
+      [callback]() {
+        Json::Value body;
+        body["status"] = "ok";
+        body["message"] = "Device updated";
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
       },
       [callback](const std::string &error) {

@@ -25,6 +25,13 @@ class DevicesRepository {
       std::function<void(int, const std::string &)> success,
       std::function<void(const std::string &)> error) const;
 
+  void updateById(int deviceId,
+                  int ownerId,
+                  const std::string &name,
+                  const std::string &type,
+                  std::function<void()> success,
+                  std::function<void(const std::string &)> error) const;
+
  private:
   drogon::orm::DbClientPtr db_;
 };

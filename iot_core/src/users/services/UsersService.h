@@ -26,6 +26,14 @@ class UsersService {
       std::function<void(const std::string &)> success,
       std::function<void(const std::string &)> error) const;
 
+  void updateById(int userId,
+                  const std::string &email,
+                  const std::string &password,
+                  const std::string &name,
+                  const std::string &telegramChatId,
+                  std::function<void()> success,
+                  std::function<void(const std::string &)> error) const;
+
  private:
   UsersRepository repository_;
 };

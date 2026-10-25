@@ -21,6 +21,17 @@ void UsersService::deleteById(int userId,
   repository_.deleteById(userId, std::move(success), std::move(error));
 }
 
+void UsersService::updateById(int userId,
+                              const std::string &email,
+                              const std::string &password,
+                              const std::string &name,
+                              const std::string &telegramChatId,
+                              std::function<void()> success,
+                              std::function<void(const std::string &)> error) const {
+  repository_.updateById(userId, email, password, name, telegramChatId,
+                         std::move(success), std::move(error));
+}
+
 void UsersService::getTelegramChatId(
     int userId,
     std::function<void(const std::string &)> success,

@@ -41,6 +41,24 @@ void UsersRepository::deleteById(int userId,
       userId);
 }
 
+void UsersRepository::updateById(int userId,
+                                 const std::string &email,
+                                 const std::string &password,
+                                 const std::string &name,
+                                 const std::string &telegramChatId,
+                                 std::function<void()> success,
+                                 std::function<void(const std::string &)> error) const {
+  db_->execSqlAsync(
+      "UPDATE users SET email = $1, password = $2, name = $3, telegram_chat_id = NULLIF($4, '') WHERE id = $5",
+      [success](const drogon::orm::Result &) {
+        success();
+      },
+      [error](const drogon::orm::DrogonDbException &e) {
+        error(e.base().what());
+      },
+      email, password, name, telegramChatId, userId);
+}
+
 void UsersRepository::getTelegramChatId(
     int userId,
     std::function<void(const std::string &)> success,

@@ -39,6 +39,23 @@ void DevicesRepository::deleteById(int deviceId,
       deviceId);
 }
 
+void DevicesRepository::updateById(int deviceId,
+                                   int ownerId,
+                                   const std::string &name,
+                                   const std::string &type,
+                                   std::function<void()> success,
+                                   std::function<void(const std::string &)> error) const {
+  db_->execSqlAsync(
+      "UPDATE devices SET owner_id = $1, name = $2, type = $3 WHERE id = $4",
+      [success](const drogon::orm::Result &) {
+        success();
+      },
+      [error](const drogon::orm::DrogonDbException &e) {
+        error(e.base().what());
+      },
+      ownerId, name, type, deviceId);
+}
+
 void DevicesRepository::getNotificationInfo(
     int deviceId,
     std::function<void(int, const std::string &)> success,
