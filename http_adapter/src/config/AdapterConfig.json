@@ -6,6 +6,8 @@
     }
   ],
   "custom_config": {
-    "iot_core_url": "http://127.0.0.1:8080"
+    "iot_core_url": "http://127.0.0.1:8080",
+    "codec_key": "0123456789abcdef0123456789abcdef",
+    "codec_enabled": true
   }
 }
