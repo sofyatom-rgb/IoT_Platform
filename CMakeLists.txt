@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Drogon CONFIG REQUIRED)
+find_package(TgBot CONFIG REQUIRED)
 
 add_subdirectory(iot_core)
 add_subdirectory(http_adapter)

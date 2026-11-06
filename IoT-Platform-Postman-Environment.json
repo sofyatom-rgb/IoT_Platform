@@ -1,0 +1,10 @@
+{
+  "id": "iot-platform-local-env",
+  "name": "IoT Platform - Local",
+  "values": [
+    { "key": "core_url", "value": "http://localhost:8080", "type": "default", "enabled": true },
+    { "key": "adapter_url", "value": "http://localhost:8081", "type": "default", "enabled": true },
+    { "key": "notify_url", "value": "http://localhost:8082", "type": "default", "enabled": true }
+  ],
+  "_postman_variable_scope": "environment"
+}

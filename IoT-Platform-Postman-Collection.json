@@ -1,0 +1,194 @@
+{
+  "info": {
+    "_postman_id": "iot-platform-collection-001",
+    "name": "IoT Platform",
+    "description": "IoT Core (8080), HTTP Adapter (8081), Notification Service (8082). Для Adapter нужен codec_enabled=false или кодировка через codec_cli.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "core_url", "value": "http://localhost:8080" },
+    { "key": "adapter_url", "value": "http://localhost:8081" },
+    { "key": "notify_url", "value": "http://localhost:8082" },
+    { "key": "user_id", "value": "1" },
+    { "key": "device_id", "value": "1" }
+  ],
+  "item": [
+    {
+      "name": "Core",
+      "item": [
+        {
+          "name": "Ping",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{core_url}}/ping", "host": ["{{core_url}}"], "path": ["ping"] },
+            "description": "Проверка живости Core. Тело нет."
+          },
+          "response": []
+        },
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json", "type": "text" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"secret\",\n  \"name\": \"Alex\",\n  \"telegram_chat_id\": \"123456789\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{core_url}}/users", "host": ["{{core_url}}"], "path": ["users"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{core_url}}/users?id=1", "host": ["{{core_url}}"], "path": ["users"], "query": [{ "key": "id", "value": "1" }] }
+          },
+          "response": []
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json", "type": "text" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"user2@example.com\",\n  \"password\": \"secret\",\n  \"name\": \"Alex Updated\",\n  \"telegram_chat_id\": \"123456789\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{core_url}}/users?id=1", "host": ["{{core_url}}"], "path": ["users"], "query": [{ "key": "id", "value": "1" }] }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Content-Type", "value": "application/json", "type": "text" }],
+            "body": { "mode": "raw", "raw": "{\n  \"user_id\": 1\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{core_url}}/users", "host": ["{{core_url}}"], "path": ["users"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Device",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json", "type": "text" }],
+            "body": { "mode": "raw", "raw": "{\n  \"owner_id\": 1,\n  \"name\": \"Living room sensor\",\n  \"type\": \"temperature\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{core_url}}/devices", "host": ["{{core_url}}"], "path": ["devices"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Device",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{core_url}}/devices?id=1", "host": ["{{core_url}}"], "path": ["devices"], "query": [{ "key": "id", "value": "1" }] }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Device",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json", "type": "text" }],
+            "body": { "mode": "raw", "raw": "{\n  \"owner_id\": 1,\n  \"name\": \"Kitchen sensor\",\n  \"type\": \"temperature\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{core_url}}/devices?id=1", "host": ["{{core_url}}"], "path": ["devices"], "query": [{ "key": "id", "value": "1" }] }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Device",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Content-Type", "value": "application/json", "type": "text" }],
+            "body": { "mode": "raw", "raw": "{\n  \"device_id\": 1\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{core_url}}/devices", "host": ["{{core_url}}"], "path": ["devices"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Save Telemetry - Core",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json", "type": "text" }],
+            "body": { "mode": "raw", "raw": "{\n  \"device_id\": 1,\n  \"temperature\": 31.0\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{core_url}}/telemetry", "host": ["{{core_url}}"], "path": ["telemetry"] },
+            "description": "Если temp > threshold (30.0) — придёт notification_status: sent"
+          },
+          "response": []
+        },
+        {
+          "name": "Query Telemetry - Core",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json", "type": "text" }],
+            "body": { "mode": "raw", "raw": "{\n  \"device_id\": 1\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{core_url}}/telemetry/query", "host": ["{{core_url}}"], "path": ["telemetry", "query"] },
+            "description": "Последние 10 записей. POST, не GET — device_id в теле."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Telemetry - Core",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Content-Type", "value": "application/json", "type": "text" }],
+            "body": { "mode": "raw", "raw": "{\n  \"device_id\": 1\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{core_url}}/telemetry", "host": ["{{core_url}}"], "path": ["telemetry"] }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Adapter",
+      "item": [
+        {
+          "name": "Ingest via Adapter",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json", "type": "text" }],
+            "body": { "mode": "raw", "raw": "{\n  \"device_id\": 1,\n  \"temperature\": 23.5\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{adapter_url}}/ingest", "host": ["{{adapter_url}}"], "path": ["ingest"] },
+            "description": "Работает только если codec_enabled=false. Иначе кодируй через codec_cli."
+          },
+          "response": []
+        },
+        {
+          "name": "Query via Adapter",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json", "type": "text" }],
+            "body": { "mode": "raw", "raw": "{\n  \"device_id\": 1\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{adapter_url}}/telemetry/query", "host": ["{{adapter_url}}"], "path": ["telemetry", "query"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete via Adapter",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Content-Type", "value": "application/json", "type": "text" }],
+            "body": { "mode": "raw", "raw": "{\n  \"device_id\": 1\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{adapter_url}}/telemetry", "host": ["{{adapter_url}}"], "path": ["telemetry"] }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Notification",
+      "item": [
+        {
+          "name": "Send Temperature Alert",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json", "type": "text" }],
+            "body": { "mode": "raw", "raw": "{\n  \"chat_id\": \"123456789\",\n  \"device_name\": \"Living room sensor\",\n  \"temperature\": 31.0,\n  \"threshold\": 30.0\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{notify_url}}/notifications/temperature", "host": ["{{notify_url}}"], "path": ["notifications", "temperature"] },
+            "description": "Ручной тест notification_service. Нужен TELEGRAM_BOT_TOKEN."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

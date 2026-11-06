@@ -156,10 +156,26 @@ IoT-устройство / curl / клиентское приложение
 - CMake версии 3.16 или новее;
 - C++-компилятор с поддержкой C++26;
 - установленный Drogon и его зависимости;
+- установленная библиотека [tgbot-cpp](https://github.com/reo7sp/tgbot-cpp) и её зависимости: Boost (headers), libcurl, nlohmann_json;
 - Docker и Docker Compose plugin;
 - `curl` для примеров ниже (необязательно, можно использовать любой HTTP-клиент).
 
-Проект вызывает `find_package(Drogon CONFIG REQUIRED)`, поэтому установленный пакет Drogon должен быть виден CMake.
+Проект вызывает `find_package(Drogon CONFIG REQUIRED)` и `find_package(TgBot CONFIG REQUIRED)`, поэтому установленные пакеты Drogon и TgBot должны быть видны CMake.
+
+На Debian/Ubuntu зависимости tgbot-cpp ставятся так:
+
+```sh
+sudo apt install -y libboost-dev libcurl4-openssl-dev nlohmann-json3-dev
+```
+
+Затем соберите и установите саму библиотеку:
+
+```sh
+git clone --depth 1 https://github.com/reo7sp/tgbot-cpp.git
+cmake -S tgbot-cpp -B tgbot-cpp/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake --build tgbot-cpp/build -j
+sudo cmake --install tgbot-cpp/build
+```
 
 ## Сборка
 
@@ -170,10 +186,12 @@ cmake -S . -B build
 cmake --build build
 ```
 
-CMake собирает две цели:
+CMake собирает цели:
 
 - `iot_core`;
-- `http_adapter`.
+- `http_adapter`;
+- `notification_service`;
+- `codec_cli` (утилита для работы с кодеком Adapter).
 
 Бинарники и копии конфигурационных файлов создаются в `build/bin/`. После изменения исходников пересоберите проект:
 
@@ -247,6 +265,8 @@ export TELEGRAM_BOT_TOKEN='<token-from-BotFather>'
 ```
 
 Сервис слушает только локальный интерфейс `127.0.0.1:8082`; поэтому этот вариант рассчитан на запуск Core и Notification Service на одном компьютере. Токен бота нужен только Notification Service.
+
+Сообщения отправляются через библиотеку tgbot-cpp с `parse_mode: HTML`: заголовок и имя устройства выделены жирным. Блокирующий вызов Telegram Bot API выполняется в отдельном пуле потоков, поэтому event loop Drogon не блокируется.
 
 ### 4. Запустить HTTP Adapter
 

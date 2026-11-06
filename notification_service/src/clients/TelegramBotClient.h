@@ -1,13 +1,17 @@
 #pragma once
 
-#include <drogon/drogon.h>
+#include <tgbot/Bot.h>
 
 #include <functional>
+#include <memory>
 #include <string>
+
+#include "clients/TelegramThreadPool.h"
 
 class TelegramBotClient {
  public:
-  explicit TelegramBotClient(std::string botToken);
+  TelegramBotClient(std::string botToken,
+                    std::shared_ptr<TelegramThreadPool> threadPool);
 
   void sendMessage(const std::string &chatId,
                    const std::string &text,
@@ -15,5 +19,6 @@ class TelegramBotClient {
                    std::function<void(const std::string &)> error) const;
 
  private:
-  std::string botToken_;
+  std::shared_ptr<TgBot::Bot> bot_;
+  std::shared_ptr<TelegramThreadPool> threadPool_;
 };
