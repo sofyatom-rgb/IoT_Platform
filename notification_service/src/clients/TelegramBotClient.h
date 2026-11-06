@@ -18,6 +18,9 @@ class TelegramBotClient {
                    std::function<void()> success,
                    std::function<void(const std::string &)> error) const;
 
+  // Токен может быть пустым (канал отключён) — тогда bot_ == nullptr.
+  bool isEnabled() const { return bot_ != nullptr; }
+
  private:
   std::shared_ptr<TgBot::Bot> bot_;
   std::shared_ptr<TelegramThreadPool> threadPool_;

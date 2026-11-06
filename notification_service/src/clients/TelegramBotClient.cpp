@@ -32,7 +32,8 @@ std::variant<std::int64_t, std::string> parseChatId(
 
 TelegramBotClient::TelegramBotClient(
     std::string botToken, std::shared_ptr<TelegramThreadPool> threadPool)
-    : bot_(std::make_shared<TgBot::Bot>(std::move(botToken))),
+    : bot_(botToken.empty() ? nullptr
+                            : std::make_shared<TgBot::Bot>(std::move(botToken))),
       threadPool_(std::move(threadPool)) {}
 
 void TelegramBotClient::sendMessage(

@@ -8,6 +8,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Drogon CONFIG REQUIRED)
 find_package(TgBot CONFIG REQUIRED)
 
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/config")
+
 add_subdirectory(iot_core)
 add_subdirectory(http_adapter)
 add_subdirectory(notification_service)

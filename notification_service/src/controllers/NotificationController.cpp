@@ -19,11 +19,18 @@ void NotificationController::sendTemperatureAlert(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
   const auto json = request->getJsonObject();
-  if (!json || !(*json)["chat_id"].isString() ||
-      (*json)["chat_id"].asString().empty() ||
-      !(*json)["device_name"].isString() ||
+  const auto getOptionalString = [json](const char *key) -> std::string {
+    if (!json || !(*json)[key].isString()) {
+      return {};
+    }
+    return (*json)[key].asString();
+  };
+  const std::string chatId = getOptionalString("chat_id");
+  const std::string email = getOptionalString("email");
+
+  if (!json || !(*json)["device_name"].isString() ||
       !(*json)["temperature"].isNumeric() ||
-      !(*json)["threshold"].isNumeric()) {
+      !(*json)["threshold"].isNumeric() || (chatId.empty() && email.empty())) {
     Json::Value body;
     body["status"] = "error";
     body["message"] = "Invalid notification payload";
@@ -34,13 +41,14 @@ void NotificationController::sendTemperatureAlert(
   }
 
   service_.sendTemperatureAlert(
-      (*json)["chat_id"].asString(), (*json)["device_name"].asString(),
+      chatId, email, (*json)["device_name"].asString(),
       (*json)["temperature"].asDouble(), (*json)["threshold"].asDouble(),
-      [callback]() {
+      [callback](const ChannelStatuses &statuses) {
         Json::Value body;
         body["status"] = "ok";
-        auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-        callback(response);
+        body["telegram"] = statuses.telegram;
+        body["email"] = statuses.email;
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
       },
       [callback](const std::string &error) {
         Json::Value body;

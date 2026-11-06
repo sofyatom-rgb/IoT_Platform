@@ -9,7 +9,7 @@
 
 int main(int, char *argv[]) {
   const auto configDirectory =
-      std::filesystem::absolute(argv[0]).parent_path();
+      std::filesystem::absolute(argv[0]).parent_path().parent_path() / "config";
   drogon::app()
       .loadConfigFile((configDirectory / "PostgreSQLConfig.json").string())
       .loadConfigFile((configDirectory / "HTTPConfig.json").string());

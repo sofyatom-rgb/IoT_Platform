@@ -40,6 +40,6 @@ target_link_libraries(codec_cli PRIVATE OpenSSL::Crypto ${JSONCPP_LIBRARY})
 
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/src/config/AdapterConfig.json
-    ${CMAKE_BINARY_DIR}/bin/AdapterConfig.json
+    ${CMAKE_BINARY_DIR}/config/AdapterConfig.json
     COPYONLY
 )

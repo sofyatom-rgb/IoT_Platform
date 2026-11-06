@@ -193,7 +193,7 @@ CMake собирает цели:
 - `notification_service`;
 - `codec_cli` (утилита для работы с кодеком Adapter).
 
-Бинарники и копии конфигурационных файлов создаются в `build/bin/`. После изменения исходников пересоберите проект:
+Бинарники создаются в `build/bin/`, копии конфигурационных файлов — в `build/config/`. После изменения исходников пересоберите проект:
 
 ```sh
 cmake --build build
@@ -290,7 +290,7 @@ export TELEGRAM_BOT_TOKEN='<token-from-BotFather>'
 - `notification_service/config/HTTPConfig.json` — адрес и порт Notification Service.
 - В `iot_core/config/HTTPConfig.json` в `custom_config` задаются `temperature_threshold` и `notification_service_url`.
 
-CMake копирует их в `build/bin`. После изменения конфигов повторите конфигурацию/сборку или скопируйте файлы в `build/bin`, чтобы приложение получило обновлённые настройки.
+CMake копирует их в `build/config/`. После изменения конфигов повторите конфигурацию/сборку или скопируйте файлы в `build/config/`, чтобы приложение получило обновлённые настройки.
 
 ## Общий сценарий использования
 
