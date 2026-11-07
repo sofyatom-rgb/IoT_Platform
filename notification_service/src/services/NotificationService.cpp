@@ -2,6 +2,8 @@
 
 #include <drogon/drogon.h>
 
+#include <chrono>
+#include <ctime>
 #include <iomanip>
 #include <memory>
 #include <sstream>
@@ -10,10 +12,6 @@
 #include <utility>
 
 namespace {
-std::string escapeHtml(const std::string &value) {
-  return EmailTemplate::escapeHtml(value);
-}
-
 std::string formatTemperature(double value) {
   std::ostringstream stream;
   stream << std::fixed << std::setprecision(2) << value;
@@ -30,11 +28,51 @@ std::string formatTemperature(double value) {
   return formatted;
 }
 
+std::string currentMoscowTimestamp() {
+  const std::time_t now =
+      std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+  constexpr std::time_t moscowOffsetSeconds = 3 * 60 * 60;
+  const std::time_t moscowTime = now + moscowOffsetSeconds;
+  std::tm localTime{};
+  if (gmtime_r(&moscowTime, &localTime) == nullptr) {
+    throw std::runtime_error("Could not format Moscow notification timestamp");
+  }
+  std::ostringstream stream;
+  stream << std::put_time(&localTime, "%Y-%m-%d %H:%M:%S MSK (UTC+3)");
+  return stream.str();
+}
+
+std::map<std::string, std::string>
+temperatureTemplateValues(int deviceId, const std::string &deviceName,
+                          double temperature, double threshold) {
+  const std::string formattedTemperature = formatTemperature(temperature);
+  const std::string formattedThreshold = formatTemperature(threshold);
+  return {{"device_id", deviceId > 0 ? std::to_string(deviceId) : "—"},
+          {"device_name", deviceName},
+          {"event_type", "Превышен порог температуры"},
+          {"excess", formatTemperature(temperature - threshold)},
+          {"location", "—"},
+          {"message", "Показание датчика превысило установленный порог."},
+          {"occurred_at", "—"},
+          {"notification_time", currentMoscowTimestamp()},
+          {"platform_name", "IoT Monitor"},
+          {"reading_value", formattedTemperature},
+          {"recipient_name", ""},
+          {"sensor_id", deviceId > 0 ? std::to_string(deviceId) : "—"},
+          {"sensor_name", deviceName},
+          {"severity", "WARNING"},
+          {"temperature", formattedTemperature},
+          {"threshold", formattedThreshold},
+          {"unit", "°C"},
+          {"description",
+           "Показание датчика превысило установленный температурный порог."}};
+}
+
 trantor::EventLoop *currentEventLoop() {
   auto *loop = trantor::EventLoop::getEventLoopOfCurrentThread();
   return loop != nullptr ? loop : drogon::app().getLoop();
 }
-}  // namespace
+} // namespace
 
 NotificationService::NotificationService(
     std::shared_ptr<ITelegramBotClient> telegramBotClient)
@@ -44,22 +82,34 @@ NotificationService::NotificationService(
     std::shared_ptr<ITelegramBotClient> telegramBotClient,
     std::optional<EmailService> emailService,
     std::shared_ptr<WorkerThreadPool> threadPool)
+    : NotificationService(std::move(telegramBotClient), std::move(emailService),
+                          std::move(threadPool), TelegramMessageTemplates()) {}
+
+NotificationService::NotificationService(
+    std::shared_ptr<ITelegramBotClient> telegramBotClient,
+    std::optional<EmailService> emailService,
+    std::shared_ptr<WorkerThreadPool> threadPool,
+    TelegramMessageTemplates telegramTemplates)
     : telegramBotClient_(std::move(telegramBotClient)),
       emailService_(std::move(emailService)),
-      threadPool_(std::move(threadPool)) {
+      threadPool_(std::move(threadPool)),
+      telegramTemplates_(std::move(telegramTemplates)) {
   if (!telegramBotClient_) {
-    throw std::invalid_argument("NotificationService requires a Telegram client");
+    throw std::invalid_argument(
+        "NotificationService requires a Telegram client");
   }
 }
 
 bool NotificationService::reserveTemperatureAlert(int deviceId) const {
-  if (deviceId <= 0) return true;
+  if (deviceId <= 0)
+    return true;
   std::lock_guard lock(alertState_->mutex);
   return alertState_->activeDevices.insert(deviceId).second;
 }
 
 void NotificationService::releaseTemperatureAlert(int deviceId) const {
-  if (deviceId <= 0) return;
+  if (deviceId <= 0)
+    return;
   std::lock_guard lock(alertState_->mutex);
   alertState_->activeDevices.erase(deviceId);
 }
@@ -73,19 +123,25 @@ void NotificationService::sendTemperatureAlert(
     double temperature, double threshold, std::function<void()> success,
     std::function<void(const std::string &)> error) const {
   if (chatId.empty()) {
-    if (error) error("Telegram chat ID is required");
+    if (error)
+      error("Telegram chat ID is required");
     return;
   }
   if (!telegramBotClient_->isEnabled()) {
-    if (error) error("Telegram bot is not configured");
+    if (error)
+      error("Telegram bot is not configured");
     return;
   }
-  const std::string message =
-      "Внимание! На устройстве \"" + deviceName + "\" температура " +
-      std::to_string(temperature) + " °C превысила порог " +
-      std::to_string(threshold) + " °C.";
-  telegramBotClient_->sendMessage(chatId, message, std::move(success),
-                                  std::move(error));
+  try {
+    const auto rendered = telegramTemplates_.render(
+        "temperature_threshold",
+        temperatureTemplateValues(0, deviceName, temperature, threshold));
+    telegramBotClient_->sendMessage(chatId, rendered.text, rendered.parseMode,
+                                    std::move(success), std::move(error));
+  } catch (const std::exception &exception) {
+    if (error)
+      error(exception.what());
+  }
 }
 
 void NotificationService::sendTemperatureAlert(
@@ -95,14 +151,16 @@ void NotificationService::sendTemperatureAlert(
     std::function<void(const std::string &)> error) const {
   ChannelStatuses initial;
   const bool tryTelegram = !chatId.empty() && telegramBotClient_->isEnabled();
-  const bool tryEmail = !email.empty() && emailService_.has_value() &&
-                        emailService_->isEnabled();
+  const bool tryEmail =
+      !email.empty() && emailService_.has_value() && emailService_->isEnabled();
   if (!tryTelegram && !tryEmail) {
     if (chatId.empty() && email.empty()) {
-      if (error) error("No notification channel provided");
+      if (error)
+        error("No notification channel provided");
     } else if (chatId.empty() || !telegramBotClient_->isEnabled()) {
       if (!tryEmail) {
-        if (error) error("No notification channel is configured");
+        if (error)
+          error("No notification channel is configured");
       }
     } else if (!tryTelegram && !tryEmail && error) {
       error("No notification channel is configured");
@@ -113,7 +171,8 @@ void NotificationService::sendTemperatureAlert(
   if (!reserveTemperatureAlert(deviceId)) {
     initial.telegram = tryTelegram ? "skipped_duplicate" : "skipped";
     initial.email = tryEmail ? "skipped_duplicate" : "skipped";
-    if (success) success(initial);
+    if (success)
+      success(initial);
     return;
   }
 
@@ -124,39 +183,47 @@ void NotificationService::sendTemperatureAlert(
                  tryEmail, success = std::move(success),
                  error = std::move(error)]() mutable {
     ++*completed;
-    if (*completed != total) return;
+    if (*completed != total)
+      return;
     if (statuses->telegram == "sent" || statuses->email == "sent") {
-      if (success) success(*statuses);
+      if (success)
+        success(*statuses);
       return;
     }
 
     releaseTemperatureAlert(deviceId);
     std::string details;
-    if (tryTelegram) details = "telegram: " + statuses->telegram;
+    if (tryTelegram)
+      details = "telegram: " + statuses->telegram;
     if (tryEmail) {
-      if (!details.empty()) details += "; ";
+      if (!details.empty())
+        details += "; ";
       details += "email: " + statuses->email;
     }
-    if (error) error(details);
+    if (error)
+      error(details);
   };
 
   if (tryTelegram) {
-    const std::string message =
-        "⚠️ <b>Превышен порог температуры</b>\n\n"
-        "Устройство: <b>" +
-        escapeHtml(deviceName) + "</b>\n" +
-        "Температура: <b>" + formatTemperature(temperature) + " °C</b>\n" +
-        "Порог: " + formatTemperature(threshold) + " °C";
-    telegramBotClient_->sendMessage(
-        chatId, message,
-        [statuses, finish]() mutable {
-          statuses->telegram = "sent";
-          finish();
-        },
-        [statuses, finish](const std::string &messageError) mutable {
-          statuses->telegram = "failed: " + messageError;
-          finish();
-        });
+    try {
+      const auto rendered = telegramTemplates_.render(
+          "temperature_threshold",
+          temperatureTemplateValues(deviceId, deviceName, temperature,
+                                    threshold));
+      telegramBotClient_->sendMessage(
+          chatId, rendered.text, rendered.parseMode,
+          [statuses, finish]() mutable {
+            statuses->telegram = "sent";
+            finish();
+          },
+          [statuses, finish](const std::string &messageError) mutable {
+            statuses->telegram = "failed: " + messageError;
+            finish();
+          });
+    } catch (const std::exception &exception) {
+      statuses->telegram = "failed: " + std::string(exception.what());
+      finish();
+    }
   }
 
   if (tryEmail) {
@@ -188,38 +255,42 @@ void NotificationService::sendEmailAlert(
     std::function<void()> success,
     std::function<void(const std::string &)> error) const {
   if (email.empty()) {
-    if (error) error("Recipient email is required");
+    if (error)
+      error("Recipient email is required");
     return;
   }
   if (!emailService_.has_value() || !emailService_->isEnabled()) {
-    if (error) error("SMTP email notifications are disabled");
+    if (error)
+      error("SMTP email notifications are disabled");
     return;
   }
   if (!threadPool_) {
-    if (error) error("Email worker pool is not available");
+    if (error)
+      error("Email worker pool is not available");
     return;
   }
   auto *loop = currentEventLoop();
   if (loop == nullptr) {
-    if (error) error("Drogon event loop is not available");
+    if (error)
+      error("Drogon event loop is not available");
     return;
   }
 
   const EmailService service = *emailService_;
-  threadPool_->post([service, email, alert, loop,
-                     success = std::move(success),
+  threadPool_->post([service, email, alert, loop, success = std::move(success),
                      error = std::move(error)]() mutable {
     const EmailSendResult result = service.send(email, alert);
     if (!result.sent) {
       const std::string message = result.error;
-      loop->queueInLoop(
-          [error = std::move(error), message]() mutable {
-            if (error) error(message);
-          });
+      loop->queueInLoop([error = std::move(error), message]() mutable {
+        if (error)
+          error(message);
+      });
       return;
     }
     loop->queueInLoop([success = std::move(success)]() mutable {
-      if (success) success();
+      if (success)
+        success();
     });
   });
 }
@@ -228,38 +299,42 @@ void NotificationService::sendTestEmail(
     const std::string &email, std::function<void()> success,
     std::function<void(const std::string &)> error) const {
   if (email.empty()) {
-    if (error) error("Recipient email is required");
+    if (error)
+      error("Recipient email is required");
     return;
   }
   if (!emailService_.has_value() || !emailService_->isEnabled()) {
-    if (error) error("SMTP email notifications are disabled");
+    if (error)
+      error("SMTP email notifications are disabled");
     return;
   }
   if (!threadPool_) {
-    if (error) error("Email worker pool is not available");
+    if (error)
+      error("Email worker pool is not available");
     return;
   }
   auto *loop = currentEventLoop();
   if (loop == nullptr) {
-    if (error) error("Drogon event loop is not available");
+    if (error)
+      error("Drogon event loop is not available");
     return;
   }
 
   const EmailService service = *emailService_;
-  threadPool_->post([service, email, loop,
-                     success = std::move(success),
+  threadPool_->post([service, email, loop, success = std::move(success),
                      error = std::move(error)]() mutable {
     const EmailSendResult result = service.sendTestEmail(email);
     if (!result.sent) {
       const std::string message = result.error;
-      loop->queueInLoop(
-          [error = std::move(error), message]() mutable {
-            if (error) error(message);
-          });
+      loop->queueInLoop([error = std::move(error), message]() mutable {
+        if (error)
+          error(message);
+      });
       return;
     }
     loop->queueInLoop([success = std::move(success)]() mutable {
-      if (success) success();
+      if (success)
+        success();
     });
   });
 }

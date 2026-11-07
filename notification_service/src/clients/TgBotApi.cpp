@@ -9,12 +9,16 @@ TgBotApi::TgBotApi(std::string botToken) {
   }
 }
 
-void TgBotApi::sendMessage(const std::string &chatId,
-                           const std::string &text) const {
+void TgBotApi::sendMessage(const std::string &chatId, const std::string &text,
+                           const std::string &parseMode) const {
   if (!bot_) {
     throw std::runtime_error("Telegram bot is not configured");
   }
 
   std::lock_guard lock(mutex_);
-  bot_->getApi().sendMessage(chatId, text);
+  TgBot::SendMessageArgs request;
+  request.chatId = chatId;
+  request.text = text;
+  request.parseMode = parseMode;
+  bot_->getApi().sendMessage(request);
 }

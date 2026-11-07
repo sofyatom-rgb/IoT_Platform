@@ -10,6 +10,7 @@ add_executable(notification_service
     src/notifications/EmailConfig.cpp
     src/notifications/EmailTemplate.cpp
     src/notifications/EmailService.cpp
+    src/notifications/TelegramMessageTemplates.cpp
 )
 
 target_include_directories(notification_service PRIVATE
@@ -60,5 +61,10 @@ configure_file(
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/config/HTTPConfig.json
     ${CMAKE_BINARY_DIR}/config/NotificationHTTPConfig.json
+    COPYONLY
+)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/config/TelegramTemplates.json
+    ${CMAKE_BINARY_DIR}/config/TelegramTemplates.json
     COPYONLY
 )

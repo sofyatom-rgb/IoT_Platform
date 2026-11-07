@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "defaults": {
+    "parse_mode": "HTML"
+  },
+  "templates": {
+    "temperature_threshold": {
+      "text": [
+        "🚨 <b>ТЕМПЕРАТУРА ВЫШЕ ПОРОГА</b>",
+        "",
+        "📟 Устройство: <b>{{device_name}}</b>",
+        "🌡 Сейчас: <b>{{temperature}} {{unit}}</b>",
+        "🎯 Порог: {{threshold}} {{unit}}",
+        "📈 Превышение: <b>{{excess}} {{unit}}</b>",
+        "",
+        "🆔 ID устройства: <b>{{device_id}}</b>",
+        "⚡ Уровень: {{severity}}",
+        "🕒 Время уведомления: {{notification_time}}"
+      ]
+    },
+    "generic_event": {
+      "text": [
+        "🔔 <b>{{event_type}}</b>",
+        "",
+        "{{message}}",
+        "",
+        "📟 Устройство: <b>{{device_name}}</b>",
+        "🆔 ID: <b>{{device_id}}</b>",
+        "📍 Место: {{location}}",
+        "⚡ Уровень: {{severity}}",
+        "🕒 Время: {{occurred_at}}"
+      ]
+    },
+    "device_offline": {
+      "text": [
+        "🔴 <b>УСТРОЙСТВО НЕ В СЕТИ</b>",
+        "",
+        "📟 Устройство: <b>{{device_name}}</b>",
+        "🆔 ID: <b>{{device_id}}</b>",
+        "📍 Место: {{location}}",
+        "🕒 Последняя активность: {{occurred_at}}",
+        "",
+        "{{description}}"
+      ]
+    }
+  }
+}

@@ -11,16 +11,16 @@
 #include <vector>
 
 #include "clients/ITelegramApi.h"
+#include "clients/TelegramBotClient.h"
+#include "clients/WorkerThreadPool.h"
 #include "common/http/HttpTransport.h"
 #include "ingest/clients/IoTClient.h"
 #include "telemetry/clients/NotificationServiceClient.h"
-#include "clients/TelegramBotClient.h"
-#include "clients/WorkerThreadPool.h"
 
 namespace {
 
 class FakeHttpTransport final : public iot::http::IHttpTransport {
- public:
+public:
   mutable std::vector<iot::http::Request> requests;
   iot::http::Result nextResult{iot::http::Result::Ok};
   std::optional<iot::http::Response> nextResponse{
@@ -29,14 +29,15 @@ class FakeHttpTransport final : public iot::http::IHttpTransport {
   void send(const iot::http::Request &request,
             iot::http::Completion completion) const override {
     requests.push_back(request);
-    if (completion) completion(nextResult, nextResponse);
+    if (completion)
+      completion(nextResult, nextResponse);
   }
 };
 
-iot::http::Response response(
-    int status, std::string body, iot::http::JsonObject parsed = {}) {
-  return iot::http::Response{status, std::move(body), true,
-                             std::move(parsed), {}};
+iot::http::Response response(int status, std::string body,
+                             iot::http::JsonObject parsed = {}) {
+  return iot::http::Response{
+      status, std::move(body), true, std::move(parsed), {}};
 }
 
 const iot::http::Request &lastRequest(const FakeHttpTransport &transport) {
@@ -44,25 +45,27 @@ const iot::http::Request &lastRequest(const FakeHttpTransport &transport) {
 }
 
 class FakeTelegramApi final : public ITelegramApi {
- public:
+public:
   bool enabled{true};
   std::string rejection;
   mutable std::string sentChatId;
   mutable std::string sentText;
+  mutable std::string sentParseMode;
 
   bool isEnabled() const override { return enabled; }
 
-  void sendMessage(const std::string &chatId,
-                   const std::string &text) const override {
+  void sendMessage(const std::string &chatId, const std::string &text,
+                   const std::string &parseMode) const override {
     if (!rejection.empty()) {
       throw std::runtime_error(rejection);
     }
     sentChatId = chatId;
     sentText = text;
+    sentParseMode = parseMode;
   }
 };
 
-}  // namespace
+} // namespace
 
 // IoTClient: проверяем не fake-объект сервиса, а настоящий код HTTP-клиента.
 TEST_CASE(iot_client_send_uses_post_telemetry_and_correct_json_fields) {
@@ -81,10 +84,11 @@ TEST_CASE(iot_client_send_uses_post_telemetry_and_correct_json_fields) {
   EXPECT_EQ(1U, transport->requests.size());
   EXPECT_EQ(iot::http::Method::Post, lastRequest(*transport).method);
   EXPECT_EQ(std::string("/telemetry"), lastRequest(*transport).path);
-  EXPECT_EQ(std::int64_t(42),
-            std::get<std::int64_t>(lastRequest(*transport).jsonBody.at("device_id")));
-  EXPECT_EQ(23.75,
-            std::get<double>(lastRequest(*transport).jsonBody.at("temperature")));
+  EXPECT_EQ(
+      std::int64_t(42),
+      std::get<std::int64_t>(lastRequest(*transport).jsonBody.at("device_id")));
+  EXPECT_EQ(23.75, std::get<double>(
+                       lastRequest(*transport).jsonBody.at("temperature")));
 }
 
 TEST_CASE(iot_client_send_reports_non_200_http_status) {
@@ -94,8 +98,9 @@ TEST_CASE(iot_client_send_reports_non_200_http_status) {
 
   bool succeeded = false;
   std::string errorMessage;
-  client.sendTelemetry(7, 18.0, [&] { succeeded = true; },
-                       [&](const std::string &error) { errorMessage = error; });
+  client.sendTelemetry(
+      7, 18.0, [&] { succeeded = true; },
+      [&](const std::string &error) { errorMessage = error; });
 
   EXPECT_FALSE(succeeded);
   EXPECT_TRUE(errorMessage.find("503") != std::string::npos);
@@ -114,8 +119,9 @@ TEST_CASE(iot_client_get_uses_query_endpoint_and_returns_response_body) {
 
   EXPECT_EQ(iot::http::Method::Post, lastRequest(*transport).method);
   EXPECT_EQ(std::string("/telemetry/query"), lastRequest(*transport).path);
-  EXPECT_EQ(std::int64_t(19),
-            std::get<std::int64_t>(lastRequest(*transport).jsonBody.at("device_id")));
+  EXPECT_EQ(
+      std::int64_t(19),
+      std::get<std::int64_t>(lastRequest(*transport).jsonBody.at("device_id")));
   EXPECT_EQ(std::string("[{\"temperature\":21.5}]"), received);
   EXPECT_TRUE(errorMessage.empty());
 }
@@ -135,8 +141,9 @@ TEST_CASE(iot_client_delete_uses_delete_telemetry_and_device_id) {
   EXPECT_TRUE(errorMessage.empty());
   EXPECT_EQ(iot::http::Method::Delete, lastRequest(*transport).method);
   EXPECT_EQ(std::string("/telemetry"), lastRequest(*transport).path);
-  EXPECT_EQ(std::int64_t(5),
-            std::get<std::int64_t>(lastRequest(*transport).jsonBody.at("device_id")));
+  EXPECT_EQ(
+      std::int64_t(5),
+      std::get<std::int64_t>(lastRequest(*transport).jsonBody.at("device_id")));
 }
 
 TEST_CASE(iot_client_reports_network_failure_without_response) {
@@ -172,21 +179,23 @@ TEST_CASE(notification_client_posts_expected_payload_and_handles_success) {
   EXPECT_EQ(iot::http::Method::Post, lastRequest(*transport).method);
   EXPECT_EQ(std::string("/notifications/temperature"),
             lastRequest(*transport).path);
-  EXPECT_EQ(std::string("chat-123"),
-            std::get<std::string>(lastRequest(*transport).jsonBody.at("chat_id")));
+  EXPECT_EQ(
+      std::string("chat-123"),
+      std::get<std::string>(lastRequest(*transport).jsonBody.at("chat_id")));
   EXPECT_EQ(std::string("Boiler"),
-            std::get<std::string>(lastRequest(*transport).jsonBody.at("device_name")));
-  EXPECT_EQ(81.5,
-            std::get<double>(lastRequest(*transport).jsonBody.at("temperature")));
+            std::get<std::string>(
+                lastRequest(*transport).jsonBody.at("device_name")));
+  EXPECT_EQ(81.5, std::get<double>(
+                      lastRequest(*transport).jsonBody.at("temperature")));
   EXPECT_EQ(70.0,
             std::get<double>(lastRequest(*transport).jsonBody.at("threshold")));
 }
 
 TEST_CASE(notification_client_uses_error_message_from_service_response) {
   auto transport = std::make_shared<FakeHttpTransport>();
-  transport->nextResponse = response(
-      400, "{\"message\":\"invalid chat id\"}",
-      {{"message", std::string("invalid chat id")}});
+  transport->nextResponse =
+      response(400, "{\"message\":\"invalid chat id\"}",
+               {{"message", std::string("invalid chat id")}});
   NotificationServiceClient client("http://notification-service", transport);
 
   bool succeeded = false;
@@ -205,10 +214,9 @@ TEST_CASE(notification_client_rejects_empty_base_url_without_sending) {
   NotificationServiceClient client("", transport);
 
   std::string errorMessage;
-  client.sendTemperatureAlert("1", "Boiler", 80.0, 70.0, [] {},
-                              [&](const std::string &error) {
-                                errorMessage = error;
-                              });
+  client.sendTemperatureAlert(
+      "1", "Boiler", 80.0, 70.0, [] {},
+      [&](const std::string &error) { errorMessage = error; });
 
   EXPECT_EQ(0U, transport->requests.size());
   EXPECT_TRUE(errorMessage.find("not configured") != std::string::npos);
@@ -221,10 +229,9 @@ TEST_CASE(notification_client_reports_generic_http_error) {
   NotificationServiceClient client("http://notification-service", transport);
 
   std::string errorMessage;
-  client.sendTemperatureAlert("1", "Boiler", 80.0, 70.0, [] {},
-                              [&](const std::string &error) {
-                                errorMessage = error;
-                              });
+  client.sendTemperatureAlert(
+      "1", "Boiler", 80.0, 70.0, [] {},
+      [&](const std::string &error) { errorMessage = error; });
   EXPECT_TRUE(errorMessage.find("HTTP 502") != std::string::npos);
 }
 
@@ -247,7 +254,7 @@ TEST_CASE(telegram_client_sends_through_api_on_worker_pool) {
     condition.notify_one();
   };
   client.sendMessage(
-      "chat-7", "Temperature is high",
+      "chat-7", "<b>Temperature is high</b>", "HTML",
       [&] {
         succeeded = true;
         finish();
@@ -258,15 +265,17 @@ TEST_CASE(telegram_client_sends_through_api_on_worker_pool) {
       });
 
   std::unique_lock lock(mutex);
-  const bool finished =
-      condition.wait_for(lock, std::chrono::seconds(5), [&] { return completed; });
+  const bool finished = condition.wait_for(lock, std::chrono::seconds(5),
+                                           [&] { return completed; });
   lock.unlock();
   EXPECT_TRUE(finished);
-  if (!finished) return;
+  if (!finished)
+    return;
   EXPECT_TRUE(succeeded);
   EXPECT_TRUE(errorMessage.empty());
   EXPECT_EQ(std::string("chat-7"), api->sentChatId);
-  EXPECT_EQ(std::string("Temperature is high"), api->sentText);
+  EXPECT_EQ(std::string("<b>Temperature is high</b>"), api->sentText);
+  EXPECT_EQ(std::string("HTML"), api->sentParseMode);
 }
 
 TEST_CASE(telegram_client_reports_api_exception) {
@@ -279,22 +288,24 @@ TEST_CASE(telegram_client_reports_api_exception) {
   std::mutex mutex;
   std::condition_variable condition;
   bool completed = false;
-  client.sendMessage("bad-chat", "hello", [&] { succeeded = true; },
-                     [&](const std::string &error) {
-                       errorMessage = error;
-                       {
-                         std::lock_guard lock(mutex);
-                         completed = true;
-                       }
-                       condition.notify_one();
-                     });
+  client.sendMessage(
+      "bad-chat", "hello", [&] { succeeded = true; },
+      [&](const std::string &error) {
+        errorMessage = error;
+        {
+          std::lock_guard lock(mutex);
+          completed = true;
+        }
+        condition.notify_one();
+      });
 
   std::unique_lock lock(mutex);
-  const bool finished =
-      condition.wait_for(lock, std::chrono::seconds(5), [&] { return completed; });
+  const bool finished = condition.wait_for(lock, std::chrono::seconds(5),
+                                           [&] { return completed; });
   lock.unlock();
   EXPECT_TRUE(finished);
-  if (!finished) return;
+  if (!finished)
+    return;
   EXPECT_FALSE(succeeded);
   EXPECT_TRUE(errorMessage.find("chat not found") != std::string::npos);
 }
@@ -306,8 +317,9 @@ TEST_CASE(telegram_client_rejects_messages_when_not_configured) {
   TelegramBotClient client(api, threadPool);
   bool succeeded = false;
   std::string errorMessage;
-  client.sendMessage("chat-7", "hello", [&] { succeeded = true; },
-                     [&](const std::string &error) { errorMessage = error; });
+  client.sendMessage(
+      "chat-7", "hello", [&] { succeeded = true; },
+      [&](const std::string &error) { errorMessage = error; });
 
   EXPECT_TRUE(errorMessage.find("not configured") != std::string::npos);
 }

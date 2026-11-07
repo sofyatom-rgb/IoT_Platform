@@ -23,10 +23,14 @@ if(BUILD_APPLICATION)
         ${PROJECT_SOURCE_DIR}/notification_service/src/notifications/EmailConfig.cpp
         ${PROJECT_SOURCE_DIR}/notification_service/src/notifications/EmailTemplate.cpp
         ${PROJECT_SOURCE_DIR}/notification_service/src/notifications/EmailService.cpp
+        ${PROJECT_SOURCE_DIR}/notification_service/src/notifications/TelegramMessageTemplates.cpp
     )
     target_include_directories(service_unit_tests PRIVATE
         ${PROJECT_SOURCE_DIR}/notification_service/src
         ${JSONCPP_INCLUDE_DIR}
+    )
+    target_compile_definitions(service_unit_tests PRIVATE
+        TELEGRAM_TEMPLATES_CONFIG_PATH="${PROJECT_SOURCE_DIR}/notification_service/config/TelegramTemplates.json"
     )
     target_link_libraries(service_unit_tests PRIVATE Drogon::Drogon CURL::libcurl)
 endif()
@@ -158,6 +162,7 @@ if(BUILD_CONTROLLER_TESTING)
         ${PROJECT_SOURCE_DIR}/notification_service/src/notifications/EmailConfig.cpp
         ${PROJECT_SOURCE_DIR}/notification_service/src/notifications/EmailTemplate.cpp
         ${PROJECT_SOURCE_DIR}/notification_service/src/notifications/EmailService.cpp
+        ${PROJECT_SOURCE_DIR}/notification_service/src/notifications/TelegramMessageTemplates.cpp
         ${PROJECT_SOURCE_DIR}/iot_core/src/telemetry/services/TelemetryService.cpp
         ${PROJECT_SOURCE_DIR}/http_adapter/src/codec/Base64.cpp
         ${PROJECT_SOURCE_DIR}/http_adapter/src/codec/Checksum.cpp

@@ -13,12 +13,17 @@
 #include "controllers/NotificationController.h"
 #include "notifications/EmailConfig.h"
 #include "notifications/EmailService.h"
+#include "notifications/TelegramMessageTemplates.h"
 
 int main(int, char *argv[]) {
   const auto configPath =
       std::filesystem::absolute(argv[0]).parent_path().parent_path() /
       "config" / "NotificationHTTPConfig.json";
   drogon::app().loadConfigFile(configPath.string());
+  const auto telegramTemplatesPath =
+      std::filesystem::absolute(argv[0]).parent_path().parent_path() /
+      "config" / "TelegramTemplates.json";
+  TelegramMessageTemplates telegramTemplates(telegramTemplatesPath.string());
 
   const char *telegramBotToken = std::getenv("TELEGRAM_BOT_TOKEN");
   const std::string token =
@@ -30,8 +35,7 @@ int main(int, char *argv[]) {
   EmailConfig emailConfig = EmailConfig::fromEnvironment();
   std::optional<EmailService> emailService;
   if (!emailConfig.configurationError.empty()) {
-    LOG_ERROR << "SMTP configuration error: "
-              << emailConfig.configurationError;
+    LOG_ERROR << "SMTP configuration error: " << emailConfig.configurationError;
   }
   if (!emailConfig.enabled) {
     LOG_WARN << "SMTP email notifications are disabled";
@@ -47,8 +51,9 @@ int main(int, char *argv[]) {
   auto telegramApi = std::make_shared<TgBotApi>(token);
   auto telegramClient =
       std::make_shared<TelegramBotClient>(std::move(telegramApi), threadPool);
-  NotificationService notificationService{
-      std::move(telegramClient), std::move(emailService), threadPool};
+  NotificationService notificationService{std::move(telegramClient),
+                                          std::move(emailService), threadPool,
+                                          std::move(telegramTemplates)};
   NotificationController controller(std::move(notificationService));
   controller.registerRoutes();
 

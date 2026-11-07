@@ -9,14 +9,14 @@
 #include "clients/ITelegramApi.h"
 
 class TgBotApi final : public ITelegramApi {
- public:
+public:
   explicit TgBotApi(std::string botToken);
 
   bool isEnabled() const override { return static_cast<bool>(bot_); }
-  void sendMessage(const std::string &chatId,
-                   const std::string &text) const override;
+  void sendMessage(const std::string &chatId, const std::string &text,
+                   const std::string &parseMode) const override;
 
- private:
+private:
   std::unique_ptr<TgBot::Bot> bot_;
   mutable std::mutex mutex_;
 };
