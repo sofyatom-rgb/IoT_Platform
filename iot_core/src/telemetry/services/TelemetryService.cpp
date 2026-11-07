@@ -3,6 +3,7 @@
 #include <drogon/drogon.h>
 
 #include <memory>
+#include <string>
 #include <utility>
 
 #include "devices/services/DevicesService.h"
@@ -11,6 +12,31 @@
 namespace {
 void logNotificationError(const std::string &error) {
   LOG_ERROR << "Could not send temperature notification: " << error;
+}
+
+std::string summarizeChannels(const ChannelStatuses &channels) {
+  auto isFailed = [](const std::string &s) {
+    return s.rfind("failed", 0) == 0;
+  };
+  const bool anySent =
+      (channels.telegram == "sent" || channels.email == "sent");
+  const bool anyFailed =
+      isFailed(channels.telegram) || isFailed(channels.email);
+  if (anySent && !anyFailed) {
+    return "sent";
+  }
+  // notification_service возвращает 200 только при доставке хотя бы в один канал.
+  std::string details;
+  if (!channels.telegram.empty() && channels.telegram != "skipped") {
+    details += "telegram=" + channels.telegram;
+  }
+  if (!channels.email.empty() && channels.email != "skipped") {
+    if (!details.empty()) {
+      details += ", ";
+    }
+    details += "email=" + channels.email;
+  }
+  return "sent_partial" + (details.empty() ? "" : ": " + details);
 }
 }  // namespace
 
@@ -59,23 +85,24 @@ void TelemetryService::save(
               LOG_INFO << "Temperature threshold exceeded for device; "
                           "resolved owner";
               UsersService users(db);
-              users.getTelegramChatId(
+              users.getNotificationTargets(
                   ownerId, [temperature, threshold, notificationClient,
                             deviceName, finishSuccess](
-                      const std::string &chatId) {
-                    if (chatId.empty()) {
+                      const NotificationTargets &targets) {
+                    if (targets.chatId.empty() && targets.email.empty()) {
                       LOG_WARN << "Temperature threshold exceeded, but user "
-                                  "has no Telegram chat ID";
-                      (*finishSuccess)("no_chat_id");
+                                  "has no Telegram chat ID or email";
+                      (*finishSuccess)("no_contact_info");
                       return;
                     }
 
                     notificationClient.sendTemperatureAlert(
-                        chatId, deviceName, temperature, threshold,
-                        [finishSuccess]() {
+                        targets.chatId, targets.email, deviceName, temperature,
+                        threshold,
+                        [finishSuccess](const ChannelStatuses &channels) {
                           LOG_INFO << "Temperature notification accepted by "
                                       "notification service";
-                          (*finishSuccess)("sent");
+                          (*finishSuccess)(summarizeChannels(channels));
                         },
                         [finishSuccess](const std::string &notificationError) {
                           logNotificationError(notificationError);

@@ -5,6 +5,12 @@
 #include <functional>
 #include <string>
 
+// Контакты пользователя для уведомлений: Telegram chat_id и email.
+struct NotificationTargets {
+  std::string chatId;
+  std::string email;
+};
+
 // Репозиторий пользователей: единственное место, где выполняется SQL для users.
 class UsersRepository {
  public:
@@ -20,6 +26,11 @@ class UsersRepository {
   void deleteById(int userId,
                   std::function<void()> success,
                   std::function<void(const std::string &)> error) const;
+
+  void getNotificationTargets(
+      int userId,
+      std::function<void(const NotificationTargets &)> success,
+      std::function<void(const std::string &)> error) const;
 
   void getTelegramChatId(
       int userId,

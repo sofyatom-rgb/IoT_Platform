@@ -88,22 +88,38 @@ void UsersRepository::getById(
       userId);
 }
 
-void UsersRepository::getTelegramChatId(
+void UsersRepository::getNotificationTargets(
     int userId,
-    std::function<void(const std::string &)> success,
+    std::function<void(const NotificationTargets &)> success,
     std::function<void(const std::string &)> error) const {
   db_->execSqlAsync(
-      "SELECT telegram_chat_id FROM users WHERE id = $1",
+      "SELECT telegram_chat_id, email FROM users WHERE id = $1",
       [success, error](const drogon::orm::Result &result) {
         if (result.empty()) {
           error("User not found");
           return;
         }
-        const auto value = result[0]["telegram_chat_id"];
-        success(value.isNull() ? std::string{} : value.as<std::string>());
+        NotificationTargets targets;
+        const auto chatId = result[0]["telegram_chat_id"];
+        targets.chatId = chatId.isNull() ? std::string{} : chatId.as<std::string>();
+        const auto email = result[0]["email"];
+        targets.email = email.isNull() ? std::string{} : email.as<std::string>();
+        success(targets);
       },
       [error](const drogon::orm::DrogonDbException &e) {
         error(e.base().what());
       },
       userId);
+}
+
+void UsersRepository::getTelegramChatId(
+    int userId,
+    std::function<void(const std::string &)> success,
+    std::function<void(const std::string &)> error) const {
+  getNotificationTargets(
+      userId,
+      [success = std::move(success)](const NotificationTargets &targets) {
+        success(targets.chatId);
+      },
+      std::move(error));
 }

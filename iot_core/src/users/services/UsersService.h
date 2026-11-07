@@ -21,6 +21,11 @@ class UsersService {
                   std::function<void()> success,
                   std::function<void(const std::string &)> error) const;
 
+  void getNotificationTargets(
+      int userId,
+      std::function<void(const NotificationTargets &)> success,
+      std::function<void(const std::string &)> error) const;
+
   void getTelegramChatId(
       int userId,
       std::function<void(const std::string &)> success,

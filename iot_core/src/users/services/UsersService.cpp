@@ -39,6 +39,13 @@ void UsersService::getById(
   repository_.getById(userId, std::move(success), std::move(error));
 }
 
+void UsersService::getNotificationTargets(
+    int userId,
+    std::function<void(const NotificationTargets &)> success,
+    std::function<void(const std::string &)> error) const {
+  repository_.getNotificationTargets(userId, std::move(success), std::move(error));
+}
+
 void UsersService::getTelegramChatId(
     int userId,
     std::function<void(const std::string &)> success,

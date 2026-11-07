@@ -6,7 +6,7 @@ IoT Platform — учебный backend для регистрации польз
 
 1. **IoT Core** — основной сервис и единственный компонент, который работает с PostgreSQL. Адрес по умолчанию: `http://localhost:8080`.
 2. **HTTP Adapter** — дополнительный HTTP-вход для интеграций и IoT-клиентов. Адрес по умолчанию: `http://localhost:8081`. Он принимает телеметрию и проксирует запросы к IoT Core.
-3. **Notification Service** — внутренний HTTP-сервис, принимающий события от Core и отправляющий сообщения через Telegram Bot API. Адрес по умолчанию: `http://localhost:8082`.
+3. **Notification Service** — внутренний HTTP-сервис, принимающий события от Core и отправляющий уведомления через Telegram Bot API и/или SMTP (email). Адрес по умолчанию: `http://localhost:8082`.
 
 ## Содержание
 
@@ -44,7 +44,7 @@ IoT_Platform/
 │       │   ├── services/
 │       │   │   └── TelemetryService.cpp # Слой бизнес-логики телеметрии
 │       │   ├── clients/
-│       │   │   └── NotificationServiceClient.cpp # HTTP-клиент для Notification Service
+│       │   │   └── NotificationServiceClient.cpp # HTTP-клиент для Notification Service (chat_id + email)
 │       │   └── repositories/
 │       │       └── TelemetryRepository.cpp # SQL для таблицы telemetry
 │       ├── users/
@@ -83,7 +83,7 @@ IoT_Platform/
 │       ├── main.cpp
 │       ├── controllers/              # Принимает внутренние запросы от Core
 │       ├── services/                 # Формирует содержание уведомления
-│       └── clients/                  # Отправляет сообщения в Telegram Bot API
+│       └── clients/                  # Telegram (tgbot-cpp) и Email (SMTP/libcurl)
 │
 └── build/                            # Генерируется CMake; здесь находятся бинарники
     └── bin/
@@ -99,7 +99,7 @@ IoT_Platform/
 - **Service** передаёт операцию репозиторию. Здесь располагается бизнес-логика.
 - **Repository** выполняет SQL-запросы через Drogon ORM.
 - В Adapter контроллер вызывает сервис, сервис использует HTTP-клиент, а HTTP-клиент обращается к Core.
-- Core вызывает Notification Service через `NotificationServiceClient`; его контроллер вызывает сервис уведомлений, а тот — Telegram Bot API через `TelegramBotClient`.
+- Core вызывает Notification Service через `NotificationServiceClient`; сервис уведомлений параллельно отправляет в настроенные каналы: Telegram (`TelegramBotClient`, tgbot-cpp) и Email (`EmailClient`, SMTP через libcurl, MIME `multipart/alternative` с HTML). Блокирующие вызовы выполняются в общем пуле потоков, event loop Drogon не блокируется.
 
 В Core данные из SQL привязываются параметрами (`$1`, `$2`, …), а не подставляются конкатенацией в SQL-строку.
 
@@ -134,10 +134,8 @@ IoT-устройство / curl / клиентское приложение
                                                       ▼
                                            Notification Controller
                                                       │
-                                   Notification Service → TelegramBotClient
-                                                      │ HTTPS
-                                                      ▼
-                                              Telegram Bot API
+                                   Notification Service ─┬─→ TelegramBotClient → Telegram Bot API
+                                                         └─→ EmailClient (libcurl) → SMTP сервер
 ```
 
 ### Когда обращаться напрямую, а когда через Adapter
@@ -148,7 +146,7 @@ IoT-устройство / curl / клиентское приложение
 
 Оба пути записи сохраняют данные в одну и ту же базу: Adapter не имеет собственного подключения к PostgreSQL. Если нужен только один процесс при локальной проверке, запросы телеметрии можно направлять напрямую в Core; для работы Adapter должны быть запущены оба сервиса.
 
-Если превышен температурный порог, Core запрашивает владельца устройства и его Telegram chat ID из PostgreSQL, затем отправляет событие в отдельный Notification Service.
+Если превышен температурный порог, Core запрашивает у владельца устройства контакты для уведомлений (Telegram `chat_id` и email) из PostgreSQL, затем отправляет событие в Notification Service. Тот параллельно пытается доставить уведомление в каждый настроенный канал. Ошибка доставки логируется отдельно и не отменяет уже сохранённую телеметрию.
 
 ## Требования
 
@@ -157,10 +155,11 @@ IoT-устройство / curl / клиентское приложение
 - C++-компилятор с поддержкой C++26;
 - установленный Drogon и его зависимости;
 - установленная библиотека [tgbot-cpp](https://github.com/reo7sp/tgbot-cpp) и её зависимости: Boost (headers), libcurl, nlohmann_json;
+- libcurl (обычно уже установлен; используется и для SMTP-отправки email в Notification Service);
 - Docker и Docker Compose plugin;
 - `curl` для примеров ниже (необязательно, можно использовать любой HTTP-клиент).
 
-Проект вызывает `find_package(Drogon CONFIG REQUIRED)` и `find_package(TgBot CONFIG REQUIRED)`, поэтому установленные пакеты Drogon и TgBot должны быть видны CMake.
+Проект вызывает `find_package(Drogon CONFIG REQUIRED)`, `find_package(TgBot CONFIG REQUIRED)` и `find_package(CURL REQUIRED)`, поэтому установленные пакеты Drogon, TgBot и libcurl должны быть видны CMake.
 
 На Debian/Ubuntu зависимости tgbot-cpp ставятся так:
 
@@ -250,23 +249,31 @@ Core ищет конфиги рядом с исполняемым файлом, 
 
 ### 3. Запустить Notification Service
 
-Создайте бота через BotFather и задайте токен бота в окружении. Не добавляйте его в файлы проекта:
+Сервис поддерживает два канала уведомлений: **Telegram** и **Email (SMTP)**. Можно включить любой из них или оба.
+
+**Telegram (опционально).** Создайте бота через BotFather и задайте токен в окружении (не добавляйте его в файлы проекта):
 
 ```sh
 export TELEGRAM_BOT_TOKEN='<token-from-BotFather>'
 ```
 
-Пользователь должен заранее открыть бота и нажать **Start**. Укажите его Telegram `chat_id` при создании пользователя в Core (см. HTTP API ниже).
+Пользователь должен заранее открыть бота и нажать **Start**. Укажите его Telegram `chat_id` при создании пользователя в Core. Если `TELEGRAM_BOT_TOKEN` не задан, Telegram-канал отключается с предупреждением в логе.
 
-В отдельном терминале из корня проекта запустите:
+**Email (опционально).** Параметры SMTP задаются в `notification_service/config/HTTPConfig.json` → `custom_config.smtp` (см. раздел «Конфигурация»). По умолчанию сервис настроен на локальный SMTP `127.0.0.1:1025` без TLS — для локальной проверки удобно поднять [Mailpit](https://mailpit.axllent.org/):
+
+```sh
+./scripts/dev-smtp.sh up          # SMTP 127.0.0.1:1025, веб-интерфейс http://127.0.0.1:8025
+```
+
+Остановить: `./scripts/dev-smtp.sh down`. Пароль SMTP можно переопределить переменной `SMTP_PASSWORD`.
+
+В отдельном терминале из корня проекта запустите сервис:
 
 ```sh
 ./build/bin/notification_service
 ```
 
-Сервис слушает только локальный интерфейс `127.0.0.1:8082`; поэтому этот вариант рассчитан на запуск Core и Notification Service на одном компьютере. Токен бота нужен только Notification Service.
-
-Сообщения отправляются через библиотеку tgbot-cpp с `parse_mode: HTML`: заголовок и имя устройства выделены жирным. Блокирующий вызов Telegram Bot API выполняется в отдельном пуле потоков, поэтому event loop Drogon не блокируется.
+Сервис слушает только локальный интерфейс `127.0.0.1:8082`. Telegram отправляется через tgbot-cpp (`parse_mode: HTML`), email — через libcurl (SMTP, MIME `multipart/alternative` с текстом и HTML-шаблоном). Блокирующие вызовы выполняются в общем пуле потоков, event loop Drogon не блокируется.
 
 ### 4. Запустить HTTP Adapter
 
@@ -287,7 +294,13 @@ export TELEGRAM_BOT_TOKEN='<token-from-BotFather>'
 - `iot_core/config/HTTPConfig.json` — адрес и порт Core;
 - `iot_core/config/PostgreSQLConfig.json` — host, порт, база и учётные данные PostgreSQL;
 - `http_adapter/src/config/AdapterConfig.json` — адрес/порт Adapter и URL Core;
-- `notification_service/config/HTTPConfig.json` — адрес и порт Notification Service.
+- `notification_service/config/HTTPConfig.json` — адрес/порт Notification Service и секция `custom_config.smtp`:
+  - `enabled` — включить email-канал;
+  - `host`, `port` — адрес SMTP-сервера (Mailpit: `127.0.0.1:1025`);
+  - `security` — `none` | `starttls` (порт 587) | `tls` (порт 465, smtps);
+  - `username`, `password` — учётные данные (пароль можно задать через `SMTP_PASSWORD`);
+  - `from` — отправитель, например `IoT Platform <iot@localhost>`;
+  - `timeout_seconds` — таймаут отправки.
 - В `iot_core/config/HTTPConfig.json` в `custom_config` задаются `temperature_threshold` и `notification_service_url`.
 
 CMake копирует их в `build/config/`. После изменения конфигов повторите конфигурацию/сборку или скопируйте файлы в `build/config/`, чтобы приложение получило обновлённые настройки.
@@ -457,7 +470,15 @@ curl -i -X POST http://localhost:8080/telemetry \
 
 Каждый запрос вставляет **новую** запись. Время ставится базой автоматически. `device_id` должен ссылаться на существующее устройство.
 
-Если температура выше `temperature_threshold` из `iot_core/config/HTTPConfig.json`, Core находит владельца устройства и его `telegram_chat_id`, затем вызывает Notification Service. Ошибка доставки логируется отдельно и не отменяет уже сохранённую телеметрию.
+Если температура выше `temperature_threshold` из `iot_core/config/HTTPConfig.json`, Core находит владельца устройства и его контакты (`telegram_chat_id`, `email`), затем вызывает Notification Service. Уведомление отправляется параллельно по всем настроенным каналам. Ошибка доставки логируется отдельно и не отменяет уже сохранённую телеметрию.
+
+В ответе на сохранение телеметрии поле `notification_status` показывает итог:
+- `not_required` — температура не выше порога;
+- `sent` — все отправляемые каналы доставили;
+- `sent_partial: ...` — часть каналов доставила, часть упала;
+- `delivery_failed: ...` — все каналы упали;
+- `no_contact_info` — у пользователя нет ни `telegram_chat_id`, ни `email`;
+- `device_lookup_failed: ...` / `user_lookup_failed: ...` — ошибка поиска.
 
 ### Записать показание через Adapter — `POST /ingest`
 

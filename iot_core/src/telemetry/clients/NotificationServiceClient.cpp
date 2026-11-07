@@ -9,10 +9,11 @@ NotificationServiceClient::NotificationServiceClient(
 
 void NotificationServiceClient::sendTemperatureAlert(
     const std::string &chatId,
+    const std::string &email,
     const std::string &deviceName,
     double temperature,
     double threshold,
-    std::function<void()> success,
+    std::function<void(const ChannelStatuses &)> success,
     std::function<void(const std::string &)> error) const {
   if (baseUrl_.empty()) {
     error("Notification service URL is not configured");
@@ -26,6 +27,7 @@ void NotificationServiceClient::sendTemperatureAlert(
 
   Json::Value body;
   body["chat_id"] = chatId;
+  body["email"] = email;
   body["device_name"] = deviceName;
   body["temperature"] = temperature;
   body["threshold"] = threshold;
@@ -36,28 +38,40 @@ void NotificationServiceClient::sendTemperatureAlert(
       [success = std::move(success), error = std::move(error)](
           drogon::ReqResult result,
           const drogon::HttpResponsePtr &response) {
-        if (result == drogon::ReqResult::Ok && response &&
-            response->getStatusCode() == drogon::k200OK) {
-          success();
-          return;
-        }
-
         const auto status =
             response ? static_cast<int>(response->getStatusCode()) : 0;
         if (response) {
           Json::CharReaderBuilder builder;
-          Json::Value body;
+          Json::Value parsed;
           std::string parseErrors;
           const std::string responseBody(response->getBody());
           std::istringstream input(responseBody);
-          if (Json::parseFromStream(builder, input, &body, &parseErrors) &&
-              body["message"].isString() &&
-              !body["message"].asString().empty()) {
-            error("Notification service request failed (HTTP " +
-                  std::to_string(status) + "): " +
-                  body["message"].asString());
-            return;
+          if (Json::parseFromStream(builder, input, &parsed, &parseErrors)) {
+            ChannelStatuses channels;
+            if (parsed["telegram"].isString()) {
+              channels.telegram = parsed["telegram"].asString();
+            }
+            if (parsed["email"].isString()) {
+              channels.email = parsed["email"].asString();
+            }
+            if (result == drogon::ReqResult::Ok &&
+                response->getStatusCode() == drogon::k200OK) {
+              success(channels);
+              return;
+            }
+            if (parsed["message"].isString() &&
+                !parsed["message"].asString().empty()) {
+              error("Notification service request failed (HTTP " +
+                    std::to_string(status) + "): " +
+                    parsed["message"].asString());
+              return;
+            }
           }
+        }
+        if (result == drogon::ReqResult::Ok && response &&
+            response->getStatusCode() == drogon::k200OK) {
+          success(ChannelStatuses{});
+          return;
         }
         error("Notification service request failed (HTTP " +
               std::to_string(status) + ")");
