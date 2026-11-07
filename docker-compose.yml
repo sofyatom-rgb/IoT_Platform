@@ -38,5 +38,13 @@ services:
       - "-f"
       - "/init.sql"
 
+  mailpit:
+    image: axllent/mailpit:v1.27
+    container_name: iot-mailpit
+    ports:
+      - "127.0.0.1:1026:1025"
+      - "127.0.0.1:8026:8025"
+    restart: unless-stopped
+
 volumes:
   postgres_data:

@@ -89,7 +89,16 @@ void testEnvironmentConfigurationAndValidation() {
   setenv("SMTP_SECURITY", "none", 1);
   const EmailConfig insecureConfig = EmailConfig::fromEnvironment();
   require(!insecureConfig.validationError().empty(),
-          "Unencrypted SMTP configuration was accepted");
+          "Unencrypted SMTP to a non-loopback host was accepted");
+  setenv("SMTP_HOST", "127.0.0.1", 1);
+  setenv("SMTP_USERNAME", "", 1);
+  setenv("SMTP_PASSWORD", "", 1);
+  const EmailConfig localSmtpConfig = EmailConfig::fromEnvironment();
+  require(localSmtpConfig.validationError().empty(),
+          "Local unauthenticated SMTP configuration was rejected");
+  setenv("SMTP_HOST", "smtp.example.test", 1);
+  setenv("SMTP_USERNAME", "sender@example.test", 1);
+  setenv("SMTP_PASSWORD", "unit-test-secret", 1);
   setenv("SMTP_SECURITY", "starttls", 1);
   setenv("PLATFORM_URL", "https://monitor.example.test/\" onclick=\"alert(1)",
          1);
@@ -150,17 +159,26 @@ void testSeverityStylesAndOptionalPlatformLink() {
   alert.readingValue = "1";
   alert.severity = "INFO";
   const std::string info = emailTemplate.renderHtml(alert, {});
-  require(info.find("#dbeafe") != std::string::npos,
-          "INFO severity style is missing");
+  require(info.find("#102a3a") != std::string::npos &&
+              info.find("LIVE SENSOR EVENT") != std::string::npos,
+          "Neon sensor alert design or INFO severity style is missing");
+  require(info.find("CURRENT READING") != std::string::npos &&
+              info.find("SAFE THRESHOLD") != std::string::npos &&
+              info.find("DEVICE DETAILS") != std::string::npos,
+          "Email is missing sensor dashboard sections");
+  require(info.find("background-image:radial-gradient") !=
+                  std::string::npos &&
+              info.find("IOT&nbsp; / &nbsp;LIVE") != std::string::npos,
+          "Email is missing its abstract gradient hero background");
 
   alert.severity = "WARNING";
   const std::string warning = emailTemplate.renderHtml(alert, {});
-  require(warning.find("#fef3c7") != std::string::npos,
+  require(warning.find("#3b2b12") != std::string::npos,
           "WARNING severity style is missing");
 
   alert.severity = "CRITICAL";
   const std::string critical = emailTemplate.renderHtml(alert, {});
-  require(critical.find("#fee2e2") != std::string::npos,
+  require(critical.find("#3b1827") != std::string::npos,
           "CRITICAL severity style is missing");
 
   require(critical.find("Открыть IoT Monitor") == std::string::npos,

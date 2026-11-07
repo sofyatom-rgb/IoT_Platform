@@ -262,35 +262,39 @@ export TELEGRAM_BOT_TOKEN='<token-from-BotFather>'
 
 Пользователь должен заранее открыть бота и нажать **Start**. Укажите его Telegram `chat_id` при создании пользователя в Core. Если `TELEGRAM_BOT_TOKEN` не задан, Telegram-канал отключается с предупреждением в логе.
 
-**Email (опционально).** Почта отправляется через Gmail SMTP и Mailio. При первой сборке CMake скачает зафиксированную версию Mailio; для неё нужны CMake 3.30+, Boost 1.81+ с компонентами `date_time` и `regex`, а также OpenSSL. Для установки системных зависимостей на Ubuntu:
+**Локальная демонстрация email (опционально).** Чтобы показать письмо без доступа к внешнему SMTP, запустите локальный Mailpit:
 
 ```sh
-sudo apt update
-sudo apt install libboost-date-time-dev libboost-regex-dev libssl-dev ca-certificates
+docker compose up -d mailpit
 ```
 
-Включите двухэтапную аутентификацию Google и создайте **пароль приложения** для почты. Обычный пароль Google использовать нельзя. Скопируйте пример и заполните `.env` новыми секретами (файл игнорируется Git):
+Укажите локальный SMTP-приёмник в терминале Notification Service. В этом режиме пароль не нужен, а незашифрованный SMTP разрешён только для loopback-хоста:
 
 ```sh
-cp .env.example .env
+export SMTP_ENABLED=true
+export SMTP_HOST=127.0.0.1
+export SMTP_PORT=1026
+export SMTP_SECURITY=none
+export SMTP_USERNAME=
+export SMTP_PASSWORD=
+export SMTP_FROM_EMAIL=notifications@example.test
 ```
 
-Отредактируйте `.env`: задайте `SMTP_ENABLED=true`, `SMTP_USERNAME`, `SMTP_PASSWORD` (пароль приложения без пробелов), `SMTP_FROM_EMAIL` (для Gmail укажите тот же адрес, что в `SMTP_USERNAME`); Gmail по умолчанию использует `smtp.gmail.com:587` и STARTTLS. Не вставляйте секреты в Git или HTTP-запросы. Запустите сервис, загрузив переменные окружения:
+Запустите Notification Service в этом же терминале:
 
 ```sh
-set -a
-source .env
-set +a
 ./build/bin/notification_service
 ```
 
-Для отправки одного тестового письма из второго терминала используйте:
+Отправьте тестовое письмо командой из второго терминала:
 
 ```sh
 ./scripts/test-email.sh получатель@example.com
 ```
 
-Либо вызовите `POST http://127.0.0.1:8082/notifications/email/test` с JSON `{"email":"получатель@example.com"}`. Успех возвращает `"email":"sent"`, а ошибка SMTP — HTTP 502 с диагностическим сообщением. Проверка не гарантирует доставку во входящие: Gmail может поместить письмо в спам. Сервис слушает только локальный интерфейс `127.0.0.1:8082`.
+Откройте `http://127.0.0.1:8026`, чтобы показать полученное письмо. Mailpit перехватывает почту локально и не отправляет её настоящему адресату. Также доступны Gmail SMTP и Mailio: для production задайте `SMTP_SECURITY=starttls` (`smtp.gmail.com:587`) или `SMTP_SECURITY=tls` (порт `465`) и используйте пароль приложения. Не включайте `SMTP_SECURITY=none` для внешних хостов.
+
+Для демонстрации полного уведомления создайте пользователя с `telegram_chat_id`, устройство для него и отправьте через `POST /telemetry` показание выше порога (`30°C` по умолчанию). В Telegram и Mailpit придёт алерт; повторное превышение подавляется до показания в норме (`<=30°C`), после чего следующий алерт снова отправится. Показание можно отправить через Postman или curl — физический датчик для этой демонстрации не нужен.
 
 Температурное уведомление сейчас формируется для существующего порога Core и имеет уровень `WARNING`. Повторные превышения подавляются по `device_id`, пока Core не получит нормальное показание. Состояние хранится в памяти Notification Service и сбрасывается при его перезапуске; между перезапусками или несколькими экземплярами сервиса дедупликация не сохраняется. Обработчик `POST /notifications/email` принимает общие поля события и уровни `INFO`, `WARNING`, `CRITICAL` для дальнейшего расширения.
 
@@ -313,17 +317,17 @@ set +a
 - `iot_core/config/HTTPConfig.json` — адрес и порт Core;
 - `iot_core/config/PostgreSQLConfig.json` — host, порт, база и учётные данные PostgreSQL;
 - `http_adapter/src/config/AdapterConfig.json` — адрес/порт Adapter и URL Core;
-- `.env.example` — пример переменных SMTP; реальные секреты хранятся только в локальном `.env` или окружении;
+- локальный `.env` (игнорируется Git) или окружение — настройки SMTP; реальные секреты нельзя добавлять в Git;
 - `SMTP_ENABLED` — включает SMTP (по умолчанию `false`);
 - `SMTP_HOST`, `SMTP_PORT` — SMTP-сервер и порт (по умолчанию `smtp.gmail.com:587`);
-- `SMTP_SECURITY` — `starttls` (по умолчанию) или implicit TLS `tls`; открытый SMTP запрещён;
+- `SMTP_SECURITY` — `starttls` (по умолчанию), implicit TLS `tls` или `none` только для `localhost`, `127.0.0.1`, `::1` и локального тестового SMTP;
 - `SMTP_USERNAME`, `SMTP_PASSWORD` — логин и пароль приложения;
 - `SMTP_FROM_EMAIL`, `SMTP_SENDER_NAME` — адрес и имя отправителя;
 - `SMTP_TIMEOUT_SECONDS` — сетевой таймаут (по умолчанию 20 секунд);
 - `PLATFORM_URL` — необязательная ссылка на платформу в письме; кнопка скрыта, если URL не задан.
 - В `iot_core/config/HTTPConfig.json` в `custom_config` задаются `temperature_threshold` и `notification_service_url`.
 
-CMake копирует HTTP-конфиги и email-шаблоны в build-каталог. После изменения исходных шаблонов повторите конфигурацию/сборку.
+CMake копирует HTTP-конфиги и email-шаблоны в build-каталог. После изменения email-шаблонов повторите конфигурацию/сборку.
 
 ## Общий сценарий использования
 

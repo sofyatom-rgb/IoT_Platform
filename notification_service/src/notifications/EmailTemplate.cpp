@@ -42,19 +42,20 @@ std::string valueOrDash(const std::string &value) {
 
 struct SeverityStyle {
   const char *label;
+  const char *icon;
   const char *foreground;
   const char *background;
 };
 
 SeverityStyle severityStyle(const std::string &severity) {
   if (severity == "INFO") {
-    return {"INFO", "#1d4ed8", "#dbeafe"};
+    return {"INFO", "●", "#67e8f9", "#102a3a"};
   }
   if (severity == "WARNING") {
-    return {"WARNING", "#b45309", "#fef3c7"};
+    return {"WARNING", "▲", "#fbbf24", "#3b2b12"};
   }
   if (severity == "CRITICAL") {
-    return {"CRITICAL", "#b91c1c", "#fee2e2"};
+    return {"CRITICAL", "◆", "#fb7185", "#3b1827"};
   }
   throw std::invalid_argument("severity must be INFO, WARNING, or CRITICAL");
 }
@@ -102,6 +103,7 @@ std::map<std::string, std::string> templateValues(
       {"location", escape(valueOrDash(data.location))},
       {"occurred_at", escape(valueOrDash(data.occurredAt))},
       {"severity", style.label},
+      {"severity_icon", style.icon},
       {"severity_foreground", style.foreground},
       {"severity_background", style.background},
       {"description", escape(valueOrDash(data.description))},
@@ -151,8 +153,8 @@ RenderedEmail EmailTemplate::render(const EmailAlertData &data,
   return {"[" + safeSubjectText(data.severity) + "] " +
               safeSubjectText(data.eventType.empty() ? "Уведомление"
                                                      : data.eventType) +
-              ": " + safeSubjectText(sensor),
-          renderPlainText(data, platformUrl), renderHtml(data, platformUrl)};
+                  ": " + safeSubjectText(sensor),
+              renderPlainText(data, platformUrl), renderHtml(data, platformUrl)};
 }
 
 std::string EmailTemplate::renderHtml(const EmailAlertData &data,

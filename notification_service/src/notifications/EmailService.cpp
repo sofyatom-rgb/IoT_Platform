@@ -7,6 +7,9 @@
 
 #include <chrono>
 #include <exception>
+#include <random>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <utility>
 
@@ -16,6 +19,14 @@ bool isValidEmail(const std::string &email) {
   return at != std::string::npos && at != 0 && at + 1 < email.size() &&
          email.find('@', at + 1) == std::string::npos &&
          email.find_first_of(" \r\n\t") == std::string::npos;
+}
+
+std::string makeMultipartBoundary() {
+  std::random_device source;
+  std::ostringstream boundary;
+  boundary << "iot-platform-" << std::hex << source() << source() << source()
+           << source();
+  return boundary.str();
 }
 
 std::string hidePassword(std::string error, const std::string &password) {
@@ -40,6 +51,7 @@ mailio::message makeMessage(const EmailConfig &config,
   message.subject(email.subject,
                   mailio::codec::codec_t::QUOTED_PRINTABLE);
   message.content_type(mailio::mime::media_type_t::MULTIPART, "alternative");
+  message.content_type().boundary(makeMultipartBoundary());
 
   mailio::mime textPart;
   textPart.content_type(mailio::mime::media_type_t::TEXT, "plain", "UTF-8");
@@ -106,12 +118,19 @@ EmailSendResult EmailService::sendRendered(
   mailio::smtp connection(config_.host, config_.port,
                           std::chrono::duration_cast<std::chrono::milliseconds>(
                               timeout));
+  const bool encrypted = config_.security != "none";
   connection.start_tls(config_.security == "starttls");
-  const mailio::dialog_ssl::ssl_options_t sslOptions{
-      boost::asio::ssl::context::tls_client, boost::asio::ssl::verify_peer};
-  connection.ssl_options(sslOptions);
-  connection.authenticate(config_.username, config_.password,
-                          mailio::smtp::auth_method_t::LOGIN);
+  if (encrypted) {
+    const mailio::dialog_ssl::ssl_options_t sslOptions{
+        boost::asio::ssl::context::tls_client, boost::asio::ssl::verify_peer};
+    connection.ssl_options(sslOptions);
+  } else {
+    connection.ssl_options(std::nullopt);
+  }
+  connection.authenticate(
+      config_.username, config_.password,
+      encrypted ? mailio::smtp::auth_method_t::LOGIN
+                : mailio::smtp::auth_method_t::NONE);
   connection.submit(message);
   return {true, {}};
 }

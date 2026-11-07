@@ -44,7 +44,6 @@ configure_file(
     ${CMAKE_BINARY_DIR}/resources/email/alert.txt
     COPYONLY
 )
-
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/config/HTTPConfig.json
     ${CMAKE_BINARY_DIR}/config/NotificationHTTPConfig.json

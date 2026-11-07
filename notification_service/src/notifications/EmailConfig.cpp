@@ -63,6 +63,10 @@ bool isHttpUrl(const std::string &url) {
           url.find_first_of(" \r\n\t\"'<>") == std::string::npos);
 }
 
+bool isLoopbackHost(const std::string &host) {
+  return host == "localhost" || host == "127.0.0.1" || host == "::1";
+}
+
 void setConfigurationError(EmailConfig &config, const std::string &error) {
   if (config.configurationError.empty()) {
     config.configurationError = error;
@@ -122,15 +126,19 @@ std::string EmailConfig::validationError() const {
   if (port == 0 || port > 65535) {
     return "SMTP_PORT must be between 1 and 65535";
   }
-  if (security != "starttls" && security != "tls") {
-    return "SMTP_SECURITY must be starttls or tls; unencrypted SMTP is "
-           "not allowed";
+  if (security != "starttls" && security != "tls" && security != "none") {
+    return "SMTP_SECURITY must be starttls, tls, or none";
   }
-  if (username.empty()) {
-    return "SMTP_USERNAME is required";
+  if (security == "none" && !isLoopbackHost(host)) {
+    return "Unencrypted SMTP is allowed only for a loopback host";
   }
-  if (password.empty()) {
-    return "SMTP_PASSWORD is required";
+  if (security != "none") {
+    if (username.empty()) {
+      return "SMTP_USERNAME is required";
+    }
+    if (password.empty()) {
+      return "SMTP_PASSWORD is required";
+    }
   }
   if (!isValidEmail(fromEmail)) {
     return "SMTP_FROM_EMAIL must be a valid email address";
