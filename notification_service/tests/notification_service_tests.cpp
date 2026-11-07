@@ -133,18 +133,24 @@ void testTemplatesEscapeDataAndRenderFields() {
           "HTML recipient name was not escaped");
   require(rendered.html.find("Room &amp; lab") != std::string::npos,
           "HTML location was not escaped");
+  require(rendered.html.find("Дата и время") != std::string::npos &&
+              rendered.html.find("2026-11-07 12:00 UTC") != std::string::npos,
+          "HTML email did not include the event date and time");
   require(rendered.html.find("https://monitor.example.test/path?a=1&amp;b=2") !=
               std::string::npos,
           "Platform URL was not safely escaped");
   require(rendered.plainText.find(
-              "Открыть IoT Monitor: "
+              "Открыть панель управления: "
               "https://monitor.example.test/path?a=1&b=2") !=
               std::string::npos,
           "Plain-text email did not include the configured platform link");
   require(rendered.plainText.find("Sensor <script>") != std::string::npos,
           "Plain-text template did not include data");
-  require(rendered.subject.find("[CRITICAL]") == 0,
-          "Email subject did not include severity");
+  require(rendered.plainText.find("Дата и время: 2026-11-07 12:00 UTC") !=
+              std::string::npos,
+          "Plain-text email did not include the event date and time");
+  require(rendered.subject.find("[КРИТИЧНО]") == 0,
+          "Email subject did not include Russian severity");
   alert.eventType = "Temperature alert\r\nBcc: attacker@example.test";
   require(emailTemplate.render(alert, {}).subject.find('\n') ==
               std::string::npos,
@@ -156,32 +162,36 @@ void testSeverityStylesAndOptionalPlatformLink() {
   EmailAlertData alert;
   alert.eventType = "Alert";
   alert.sensorName = "Sensor";
-  alert.readingValue = "1";
+  alert.readingValue = "38.7";
+  alert.threshold = "30";
   alert.severity = "INFO";
   const std::string info = emailTemplate.renderHtml(alert, {});
-  require(info.find("#102a3a") != std::string::npos &&
-              info.find("LIVE SENSOR EVENT") != std::string::npos,
-          "Neon sensor alert design or INFO severity style is missing");
-  require(info.find("CURRENT READING") != std::string::npos &&
-              info.find("SAFE THRESHOLD") != std::string::npos &&
-              info.find("DEVICE DETAILS") != std::string::npos,
-          "Email is missing sensor dashboard sections");
-  require(info.find("background-image:radial-gradient") !=
-                  std::string::npos &&
-              info.find("IOT&nbsp; / &nbsp;LIVE") != std::string::npos,
-          "Email is missing its abstract gradient hero background");
+  require(info.find("#e6f4ef") != std::string::npos &&
+              info.find("'Trebuchet MS'") != std::string::npos,
+          "Pastel palette or rounded sans-serif font is missing");
+  require(info.find("ТЕКУЩЕЕ ПОКАЗАНИЕ") != std::string::npos &&
+              info.find("СРАВНЕНИЕ С НОРМОЙ") != std::string::npos &&
+              info.find("ДАТА И ВРЕМЯ") != std::string::npos,
+          "Email is missing Russian measurement details");
+  require(info.find("width=\"67%\"") != std::string::npos &&
+              info.find("width=\"87%\"") != std::string::npos,
+          "Comparison chart does not scale bars to the threshold and reading");
+  require(info.find("MSK (UTC+3)") != std::string::npos,
+          "Missing occurred_at did not fall back to a Moscow timestamp");
 
   alert.severity = "WARNING";
   const std::string warning = emailTemplate.renderHtml(alert, {});
-  require(warning.find("#3b2b12") != std::string::npos,
+  require(warning.find("#fff0e8") != std::string::npos &&
+              warning.find("ВНИМАНИЕ") != std::string::npos,
           "WARNING severity style is missing");
 
   alert.severity = "CRITICAL";
   const std::string critical = emailTemplate.renderHtml(alert, {});
-  require(critical.find("#3b1827") != std::string::npos,
+  require(critical.find("#fbeaf0") != std::string::npos &&
+              critical.find("КРИТИЧНО") != std::string::npos,
           "CRITICAL severity style is missing");
 
-  require(critical.find("Открыть IoT Monitor") == std::string::npos,
+  require(critical.find("Открыть панель управления") == std::string::npos,
           "Platform link should be omitted when URL is not configured");
   bool invalidSeverityRejected = false;
   alert.severity = "EMERGENCY";

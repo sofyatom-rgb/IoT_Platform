@@ -3,138 +3,129 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="light dark">
-  <meta name="supported-color-schemes" content="light dark">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
   <title>{{event_type}}</title>
   <style>
     @media only screen and (max-width: 620px) {
       .email-shell { width: 100% !important; }
-      .email-gutter { padding-left: 20px !important; padding-right: 20px !important; }
+      .email-gutter { padding-left: 18px !important; padding-right: 18px !important; }
       .metric-cell { display: block !important; width: auto !important; }
-      .metric-gap { display: block !important; width: auto !important; height: 12px !important; }
-      .sensor-title { font-size: 25px !important; }
+      .metric-gap { display: block !important; width: auto !important; height: 10px !important; }
+      .main-reading { font-size: 38px !important; }
     }
   </style>
 </head>
-<body style="margin:0;padding:0;background-color:#080d18;color:#e8f1ff;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%;">
-  <div style="display:none;font-size:1px;color:#080d18;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">{{severity}}: {{event_type}} — {{sensor_name}}, показание {{reading_value}} {{unit}}.</div>
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#080d18;">
+<body style="margin:0;padding:0;background-color:#f5f1ec;color:#33413e;font-family:'Trebuchet MS',Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%;">
+  <div style="display:none;font-size:1px;color:#f5f1ec;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">{{event_type}} — {{sensor_name}}, {{reading_value}} {{unit}}. Дата и время: {{occurred_at}}.</div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#f5f1ec;font-family:'Trebuchet MS',Arial,Helvetica,sans-serif;">
     <tr>
-      <td align="center" style="padding:34px 12px;">
-        <table class="email-shell" role="presentation" width="620" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:620px;background-color:#0d1525;border:1px solid #1b2b43;border-radius:20px;overflow:hidden;">
+      <td align="center" style="padding:30px 12px;">
+        <table class="email-shell" role="presentation" width="620" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:620px;background-color:#fffdf9;border:1px solid #e8e2d9;border-radius:22px;overflow:hidden;">
           <tr>
-            <td style="height:4px;background-color:#5eead4;background-image:linear-gradient(90deg,#22d3ee 0%,#818cf8 52%,#e879f9 100%);font-size:0;line-height:0;">&nbsp;</td>
-          </tr>
-          <tr>
-            <td class="email-gutter" style="padding:25px 34px 20px;border-bottom:1px solid #1b2b43;">
+            <td class="email-gutter" style="padding:24px 32px 20px;background-color:#eaf3ef;">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
                   <td valign="middle">
-                    <table role="presentation" cellspacing="0" cellpadding="0" border="0">
-                      <tr>
-                        <td valign="middle" style="width:38px;height:38px;border:1px solid #24556a;border-radius:12px;background-color:#102a3a;text-align:center;color:#67e8f9;font-size:19px;font-weight:bold;">◉</td>
-                        <td style="padding-left:12px;">
-                          <div style="color:#f3f7ff;font-size:15px;font-weight:bold;letter-spacing:1.6px;">{{platform_name}}</div>
-                          <div style="padding-top:4px;color:#7f93ae;font-size:10px;font-weight:bold;letter-spacing:2px;">SMART SENSOR NETWORK</div>
-                        </td>
-                      </tr>
-                    </table>
+                    <div style="color:#42645b;font-size:15px;font-weight:bold;letter-spacing:0.4px;">{{platform_name}}</div>
+                    <div style="padding-top:4px;color:#718780;font-size:11px;">Заботливый мониторинг устройств</div>
                   </td>
-                  <td align="right" valign="middle" style="color:#7085a2;font-size:10px;font-weight:bold;letter-spacing:1.5px;">SYSTEM NOTICE&nbsp;&nbsp; / &nbsp;&nbsp;01</td>
+                  <td align="right" valign="middle" style="color:#718780;font-size:11px;">Уведомление&nbsp; ✿</td>
                 </tr>
               </table>
             </td>
           </tr>
           <tr>
-            <td class="email-gutter" style="padding:30px 34px 26px;background-color:#11223b;background-image:radial-gradient(ellipse at 92% 8%,rgba(34,211,238,0.28) 0,rgba(34,211,238,0) 38%),radial-gradient(ellipse at 76% 100%,rgba(168,85,247,0.24) 0,rgba(168,85,247,0) 42%),linear-gradient(125deg,#102a42 0%,#111a31 56%,#241832 100%);">
+            <td class="email-gutter" style="padding:27px 32px 20px;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td style="padding:7px 12px;border-radius:14px;background-color:{{severity_background}};color:{{severity_foreground}};font-size:12px;font-weight:bold;">{{severity_icon}}&nbsp;&nbsp;{{severity}}</td>
+                </tr>
+              </table>
+              <h1 style="margin:14px 0 7px;color:#344640;font-size:25px;font-weight:bold;line-height:1.3;">{{event_type}}</h1>
+              <div style="color:#7b8984;font-size:13px;line-height:1.6;">{{recipient_greeting}} Зафиксировано новое показание — собрали всё важное в карточках ниже.</div>
+            </td>
+          </tr>
+          <tr>
+            <td class="email-gutter" style="padding:0 32px 12px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f8e9df;border:1px solid #f1dbce;border-radius:18px;">
+                <tr>
+                  <td style="padding:18px 22px 4px;color:#9b7564;font-size:12px;font-weight:bold;letter-spacing:0.5px;">🌡️&nbsp; ТЕКУЩЕЕ ПОКАЗАНИЕ</td>
+                  <td align="right" style="padding:18px 22px 4px;color:#9b7564;font-size:11px;">{{occurred_at}}</td>
+                </tr>
+                <tr>
+                  <td colspan="2" class="main-reading" style="padding:0 22px 19px;color:#8e5c4d;font-size:46px;font-weight:bold;line-height:1.2;word-break:break-word;">{{reading_value}} <span style="font-size:22px;font-weight:normal;">{{unit}}</span></td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td class="email-gutter" style="padding:0 32px 12px;">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
-                  <td valign="middle">
-                    <div style="color:#67e8f9;font-size:10px;font-weight:bold;letter-spacing:2.6px;">&#9679;&nbsp; LIVE SENSOR EVENT</div>
-                    <h1 class="sensor-title" style="margin:13px 0 8px;color:#f5f8ff;font-family:Arial,Helvetica,sans-serif;font-size:30px;font-weight:700;line-height:1.2;letter-spacing:-0.6px;">{{event_type}}</h1>
-                    <div style="color:#b4c3d8;font-size:14px;line-height:1.6;">{{recipient_greeting}} Получено новое событие от датчика.</div>
-                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin-top:19px;">
-                      <tr>
-                        <td style="padding:7px 12px;border:1px solid {{severity_foreground}};border-radius:20px;background-color:{{severity_background}};color:{{severity_foreground}};font-size:10px;font-weight:bold;letter-spacing:1.5px;">{{severity_icon}}&nbsp;&nbsp;{{severity}} SEVERITY</td>
-                        <td style="padding-left:11px;color:#9aabc4;font-size:11px;letter-spacing:0.4px;">{{occurred_at}}</td>
-                      </tr>
-                    </table>
+                  <td class="metric-cell" width="49%" valign="top" style="width:49%;padding:16px 18px;background-color:#e7f1eb;border:1px solid #d5e7db;border-radius:16px;">
+                    <div style="color:#71877a;font-size:11px;font-weight:bold;">НОРМА</div>
+                    <div style="padding-top:7px;color:#426b58;font-size:23px;font-weight:bold;">{{threshold}} <span style="font-size:14px;font-weight:normal;">{{unit}}</span></div>
+                    <div style="padding-top:3px;color:#82948a;font-size:11px;">предельное значение</div>
                   </td>
-                  <td width="92" align="right" valign="middle" style="width:92px;padding-left:12px;">
-                    <table role="presentation" width="76" height="76" cellspacing="0" cellpadding="0" border="0" style="width:76px;height:76px;border:1px solid #36718a;border-radius:50%;background-color:#102a3a;">
-                      <tr><td align="center" valign="middle" style="border:1px solid #24556a;border-radius:50%;color:#67e8f9;font-size:27px;">&#9678;</td></tr>
-                    </table>
-                    <div style="padding-top:9px;color:#7f9bb7;font-size:8px;font-weight:bold;letter-spacing:1.5px;text-align:center;">IOT&nbsp; / &nbsp;LIVE</div>
+                  <td class="metric-gap" width="12" style="width:12px;font-size:0;line-height:0;">&nbsp;</td>
+                  <td class="metric-cell" width="49%" valign="top" style="width:49%;padding:16px 18px;background-color:#eeeafa;border:1px solid #e1daf2;border-radius:16px;">
+                    <div style="color:#81749c;font-size:11px;font-weight:bold;">УСТРОЙСТВО</div>
+                    <div style="padding-top:7px;color:#61547b;font-size:16px;font-weight:bold;line-height:1.35;">{{sensor_name}}</div>
+                    <div style="padding-top:3px;color:#8b81a0;font-size:11px;">ID: {{sensor_id}}</div>
                   </td>
                 </tr>
               </table>
             </td>
           </tr>
           <tr>
-            <td class="email-gutter" style="padding:22px 34px 12px;">
+            <td class="email-gutter" style="padding:0 32px 12px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#fff8df;border:1px solid #f0e7c7;border-radius:16px;">
+                <tr>
+                  <td style="padding:17px 19px 14px;">
+                    <div style="color:#887b50;font-size:12px;font-weight:bold;">СРАВНЕНИЕ С НОРМОЙ</div>
+                    <div style="padding-top:13px;">{{comparison_chart}}</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td class="email-gutter" style="padding:0 32px 12px;">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
-                  <td class="metric-cell" width="55%" valign="top" style="width:55%;padding:22px 24px;border:1px solid #174b5b;border-radius:16px;background-color:#0c202e;background-image:linear-gradient(135deg,#102c3b 0%,#0c1829 78%);">
-                    <div style="color:#80a7b9;font-size:10px;font-weight:bold;letter-spacing:2px;">CURRENT READING</div>
-                    <div style="padding-top:9px;color:#67e8f9;font-size:42px;font-weight:bold;line-height:1.05;letter-spacing:-1.5px;word-break:break-word;">{{reading_value}}<span style="padding-left:5px;color:#a5f3fc;font-size:21px;font-weight:normal;letter-spacing:0;">{{unit}}</span></div>
-                    <div style="padding-top:13px;color:#7f9db3;font-size:12px;line-height:1.5;">{{sensor_name}}</div>
-                    <div style="padding-top:3px;color:#55758c;font-size:10px;letter-spacing:0.5px;">SENSOR ID&nbsp; / &nbsp;{{sensor_id}}</div>
+                  <td class="metric-cell" width="49%" valign="top" style="width:49%;padding:15px 18px;background-color:#e5f1f3;border:1px solid #d2e6e8;border-radius:16px;">
+                    <div style="color:#6e8990;font-size:11px;font-weight:bold;">ГДЕ</div>
+                    <div style="padding-top:7px;color:#476a70;font-size:14px;font-weight:bold;">{{location}}</div>
                   </td>
-                  <td class="metric-gap" width="14" style="width:14px;font-size:0;line-height:0;">&nbsp;</td>
-                  <td class="metric-cell" width="42%" valign="top" style="width:42%;padding:22px 20px;border:1px solid #29334b;border-radius:16px;background-color:#141b2d;">
-                    <div style="color:#8e9db5;font-size:10px;font-weight:bold;letter-spacing:1.7px;">SAFE THRESHOLD</div>
-                    <div style="padding-top:12px;color:#f4f6ff;font-size:27px;font-weight:bold;line-height:1.1;word-break:break-word;">{{threshold}}<span style="padding-left:4px;color:#aebbd0;font-size:15px;font-weight:normal;">{{unit}}</span></div>
-                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:17px;">
-                      <tr>
-                        <td style="height:5px;border-radius:5px;background-color:#26364b;font-size:0;line-height:0;">&nbsp;</td>
-                        <td style="width:31%;height:5px;border-radius:5px;background-color:{{severity_foreground}};font-size:0;line-height:0;">&nbsp;</td>
-                      </tr>
-                    </table>
-                    <div style="padding-top:9px;color:#71829b;font-size:10px;line-height:1.5;">Проверьте состояние устройства</div>
+                  <td class="metric-gap" width="12" style="width:12px;font-size:0;line-height:0;">&nbsp;</td>
+                  <td class="metric-cell" width="49%" valign="top" style="width:49%;padding:15px 18px;background-color:#f0edf0;border:1px solid #e4dfe5;border-radius:16px;">
+                    <div style="color:#857b87;font-size:11px;font-weight:bold;">ДАТА И ВРЕМЯ</div>
+                    <div style="padding-top:7px;color:#625b66;font-size:12px;font-weight:bold;line-height:1.5;">{{occurred_at}}</div>
                   </td>
                 </tr>
               </table>
             </td>
           </tr>
           <tr>
-            <td class="email-gutter" style="padding:18px 34px 25px;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-top:1px solid #1b2b43;">
+            <td class="email-gutter" style="padding:0 32px 24px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#edf3f7;border-radius:16px;">
                 <tr>
-                  <td style="padding:17px 0 8px;color:#647994;font-size:10px;font-weight:bold;letter-spacing:2px;">DEVICE DETAILS</td>
-                  <td align="right" style="padding-top:17px;color:#536783;font-size:10px;letter-spacing:1px;">TELEMETRY / EVENT</td>
-                </tr>
-                <tr><td style="padding:10px 0;border-bottom:1px solid #19263a;color:#71839e;font-size:12px;">Устройство</td><td align="right" style="padding:10px 0;border-bottom:1px solid #19263a;color:#dce7f7;font-size:12px;font-weight:bold;">{{sensor_name}}</td></tr>
-                <tr><td style="padding:10px 0;border-bottom:1px solid #19263a;color:#71839e;font-size:12px;">Идентификатор</td><td align="right" style="padding:10px 0;border-bottom:1px solid #19263a;color:#bdcbe0;font-size:12px;">{{sensor_id}}</td></tr>
-                <tr><td style="padding:10px 0;color:#71839e;font-size:12px;">Местоположение</td><td align="right" style="padding:10px 0;color:#bdcbe0;font-size:12px;">{{location}}</td></tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td class="email-gutter" style="padding:0 34px 28px;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #28364d;border-left:3px solid {{severity_foreground}};border-radius:10px;background-color:#121b2b;">
-                <tr>
-                  <td valign="top" style="width:34px;padding:15px 0 15px 15px;color:{{severity_foreground}};font-size:17px;">&#9432;</td>
-                  <td style="padding:15px 16px 15px 9px;color:#a8b7cc;font-size:12px;line-height:1.65;">{{description}}</td>
+                  <td style="padding:16px 19px;">
+                    <div style="color:#738596;font-size:11px;font-weight:bold;">КОРОТКОЕ ОПИСАНИЕ</div>
+                    <div style="padding-top:7px;color:#536879;font-size:13px;line-height:1.6;">{{description}}</div>
+                  </td>
                 </tr>
               </table>
             </td>
           </tr>
           {{platform_button}}
           <tr>
-            <td class="email-gutter" style="padding:20px 34px;border-top:1px solid #1b2b43;background-color:#0a111f;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-                <tr>
-                  <td style="color:#8798b0;font-size:11px;font-weight:bold;letter-spacing:0.8px;">{{platform_name}} <span style="color:#435670;">/</span> IoT MONITORING</td>
-                  <td align="right" style="color:#556781;font-size:10px;letter-spacing:0.5px;">AUTOMATED ALERT</td>
-                </tr>
-                <tr>
-                  <td colspan="2" style="padding-top:8px;color:#53647c;font-size:10px;line-height:1.5;">Это автоматическое уведомление. Пожалуйста, не отвечайте на это письмо.</td>
-                </tr>
-              </table>
+            <td class="email-gutter" style="padding:17px 32px;background-color:#eaf3ef;color:#718780;font-size:11px;line-height:1.6;">
+              Автоматическое уведомление {{platform_name}}. Пожалуйста, не отвечайте на это письмо.
             </td>
           </tr>
         </table>
-        <div style="padding:15px 10px 0;color:#46566d;font-family:Arial,Helvetica,sans-serif;font-size:10px;letter-spacing:1.2px;text-align:center;">CONNECTED&nbsp; • &nbsp;OBSERVED&nbsp; • &nbsp;INFORMED</div>
       </td>
     </tr>
   </table>

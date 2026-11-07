@@ -1,8 +1,14 @@
 #include "notifications/EmailTemplate.h"
 
+#include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <cmath>
+#include <ctime>
 #include <fstream>
+#include <iomanip>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -40,6 +46,20 @@ std::string valueOrDash(const std::string &value) {
   return value.empty() ? "—" : value;
 }
 
+std::string currentMoscowTimestamp() {
+  const std::time_t now =
+      std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+  constexpr std::time_t moscowOffsetSeconds = 3 * 60 * 60;
+  const std::time_t moscowTime = now + moscowOffsetSeconds;
+  std::tm localTime{};
+  if (gmtime_r(&moscowTime, &localTime) == nullptr) {
+    throw std::runtime_error("Could not format Moscow email timestamp");
+  }
+  std::ostringstream stream;
+  stream << std::put_time(&localTime, "%Y-%m-%d %H:%M:%S MSK (UTC+3)");
+  return stream.str();
+}
+
 struct SeverityStyle {
   const char *label;
   const char *icon;
@@ -49,15 +69,90 @@ struct SeverityStyle {
 
 SeverityStyle severityStyle(const std::string &severity) {
   if (severity == "INFO") {
-    return {"INFO", "●", "#67e8f9", "#102a3a"};
+    return {"ИНФОРМАЦИЯ", "●", "#367d78", "#e6f4ef"};
   }
   if (severity == "WARNING") {
-    return {"WARNING", "▲", "#fbbf24", "#3b2b12"};
+    return {"ВНИМАНИЕ", "▲", "#a85c42", "#fff0e8"};
   }
   if (severity == "CRITICAL") {
-    return {"CRITICAL", "◆", "#fb7185", "#3b1827"};
+    return {"КРИТИЧНО", "◆", "#a84d63", "#fbeaf0"};
   }
   throw std::invalid_argument("severity must be INFO, WARNING, or CRITICAL");
+}
+
+std::optional<double> numericValue(const std::string &value) {
+  try {
+    std::size_t parsedLength = 0;
+    const double parsed = std::stod(value, &parsedLength);
+    if (parsedLength != value.size() || !std::isfinite(parsed)) {
+      return std::nullopt;
+    }
+    return parsed;
+  } catch (const std::invalid_argument &) {
+    return std::nullopt;
+  } catch (const std::out_of_range &) {
+    return std::nullopt;
+  }
+}
+
+std::string percentageWidth(double value, double maximum) {
+  const double percentage =
+      std::clamp(value / maximum * 100.0, 0.0, 100.0);
+  return std::to_string(static_cast<int>(std::lround(percentage)));
+}
+
+std::string comparisonChart(const EmailAlertData &data) {
+  const auto reading = numericValue(data.readingValue);
+  const auto threshold = numericValue(data.threshold);
+  if (!reading || !threshold) {
+    return "<div style=\"padding:12px;color:#667085;font-size:13px;\">"
+           "Сравнение недоступно: значение или норма не указаны.</div>";
+  }
+
+  const double maximum =
+      std::max({1.0, *reading, *threshold}) * 1.15;
+  const std::string normalWidth = percentageWidth(*threshold, maximum);
+  const std::string readingWidth = percentageWidth(*reading, maximum);
+  const std::string normalRemainder =
+      std::to_string(100 - std::stoi(normalWidth));
+  const std::string readingRemainder =
+      std::to_string(100 - std::stoi(readingWidth));
+
+  return "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" "
+         "cellpadding=\"0\" border=\"0\" "
+         "style=\"font-family:'Trebuchet MS',Arial,sans-serif;\">"
+         "<tr><td style=\"padding:0 0 8px;color:#65706d;font-size:12px;\">"
+         "Норма&nbsp; · &nbsp;" +
+         EmailTemplate::escapeHtml(valueOrDash(data.threshold)) + " " +
+         EmailTemplate::escapeHtml(valueOrDash(data.unit)) +
+         "</td></tr><tr><td style=\"padding:0 0 15px;\">"
+         "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" "
+         "cellpadding=\"0\" border=\"0\" style=\"height:10px;"
+         "background-color:#edf0eb;border-radius:8px;\">"
+         "<tr><td width=\"" +
+         normalWidth +
+         "%\" style=\"height:10px;background-color:#a9d8c8;"
+         "border-radius:8px 0 0 8px;font-size:0;line-height:0;\">&nbsp;"
+         "</td><td width=\"" +
+         normalRemainder +
+         "%\" style=\"height:10px;font-size:0;line-height:0;\">&nbsp;"
+         "</td></tr></table></td></tr>"
+         "<tr><td style=\"padding:0 0 8px;color:#65706d;font-size:12px;\">"
+         "Показатель&nbsp; · &nbsp;" +
+         EmailTemplate::escapeHtml(valueOrDash(data.readingValue)) + " " +
+         EmailTemplate::escapeHtml(valueOrDash(data.unit)) +
+         "</td></tr><tr><td>"
+         "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" "
+         "cellpadding=\"0\" border=\"0\" style=\"height:10px;"
+         "background-color:#edf0eb;border-radius:8px;\">"
+         "<tr><td width=\"" +
+         readingWidth +
+         "%\" style=\"height:10px;background-color:#e9a98e;"
+         "border-radius:8px 0 0 8px;font-size:0;line-height:0;\">&nbsp;"
+         "</td><td width=\"" +
+         readingRemainder +
+         "%\" style=\"height:10px;font-size:0;line-height:0;\">&nbsp;"
+         "</td></tr></table></td></tr></table>";
 }
 
 bool isSafeHttpUrl(const std::string &url) {
@@ -101,25 +196,29 @@ std::map<std::string, std::string> templateValues(
       {"unit", escape(valueOrDash(data.unit))},
       {"threshold", escape(valueOrDash(data.threshold))},
       {"location", escape(valueOrDash(data.location))},
-      {"occurred_at", escape(valueOrDash(data.occurredAt))},
+      {"occurred_at",
+       escape(data.occurredAt.empty() ? currentMoscowTimestamp()
+                                      : data.occurredAt)},
       {"severity", style.label},
       {"severity_icon", style.icon},
       {"severity_foreground", style.foreground},
       {"severity_background", style.background},
+      {"comparison_chart",
+       escapeValues ? comparisonChart(data) : std::string{}},
       {"description", escape(valueOrDash(data.description))},
       {"platform_link",
        isSafeHttpUrl(platformUrl)
-           ? "Открыть IoT Monitor: " + escape(platformUrl)
+           ? "Открыть панель управления: " + escape(platformUrl)
            : ""},
       {"platform_button",
        isSafeHttpUrl(platformUrl)
            ? "<tr><td align=\"center\" style=\"padding:0 24px 28px;\">"
              "<a href=\"" +
                  EmailTemplate::escapeHtml(platformUrl) +
-                 "\" style=\"display:inline-block;background:#2563eb;"
+                 "\" style=\"display:inline-block;background:#5151c6;"
                  "color:#ffffff;text-decoration:none;padding:12px 24px;"
                  "border-radius:6px;font-family:Arial,sans-serif;"
-                 "font-size:15px;font-weight:bold;\">Открыть IoT Monitor</a>"
+                 "font-size:15px;font-weight:bold;\">Открыть панель управления</a>"
                  "</td></tr>"
            : ""}};
   return values;
@@ -150,7 +249,7 @@ RenderedEmail EmailTemplate::render(const EmailAlertData &data,
                                     const std::string &platformUrl) const {
   const std::string sensor =
       data.sensorName.empty() ? "датчик" : data.sensorName;
-  return {"[" + safeSubjectText(data.severity) + "] " +
+  return {"[" + safeSubjectText(severityStyle(data.severity).label) + "] " +
               safeSubjectText(data.eventType.empty() ? "Уведомление"
                                                      : data.eventType) +
                   ": " + safeSubjectText(sensor),

@@ -1,11 +1,17 @@
 {{recipient_greeting}}
 
 {{platform_name}} — {{event_type}}
-Уровень: {{severity}}
+Важность: {{severity}}
+Дата и время: {{occurred_at}}
 
-Показание: {{reading_value}} {{unit}}
-Допустимый порог: {{threshold}} {{unit}}
-Датчик: {{sensor_name}}
+🌡️ Текущее показание: {{reading_value}} {{unit}}
+🌿 Норма: {{threshold}} {{unit}}
+Сравнение с нормой:
+  Норма:       {{threshold}} {{unit}}
+  Показатель:  {{reading_value}} {{unit}}
+
+Информация об устройстве
+Название: {{sensor_name}}
 Идентификатор: {{sensor_id}}
 Местоположение: {{location}}
 Время события: {{occurred_at}}
