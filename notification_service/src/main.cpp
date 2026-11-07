@@ -9,6 +9,7 @@
 
 #include "clients/TelegramBotClient.h"
 #include "clients/WorkerThreadPool.h"
+#include "common/http/DrogonHttpTransport.h"
 #include "controllers/NotificationController.h"
 #include "notifications/EmailConfig.h"
 #include "notifications/EmailService.h"
@@ -19,11 +20,9 @@ int main(int, char *argv[]) {
       "config" / "NotificationHTTPConfig.json";
   drogon::app().loadConfigFile(configPath.string());
 
-  // Токен необязателен: Telegram-канал отключается, остаётся email.
-  // Чтобы сервис работал только на email, TELEGRAM_BOT_TOKEN можно не задавать.
   const char *telegramBotToken = std::getenv("TELEGRAM_BOT_TOKEN");
   const std::string token =
-      telegramBotToken ? std::string(telegramBotToken) : std::string();
+      telegramBotToken == nullptr ? std::string{} : telegramBotToken;
   if (token.empty()) {
     LOG_WARN << "TELEGRAM_BOT_TOKEN is not set, Telegram channel is disabled";
   }
@@ -45,7 +44,11 @@ int main(int, char *argv[]) {
   }
 
   auto threadPool = std::make_shared<WorkerThreadPool>(4);
-  TelegramBotClient telegramClient{token, threadPool};
+  auto telegramTransport =
+      std::make_shared<iot::http::DrogonHttpTransport>(
+          "https://api.telegram.org");
+  auto telegramClient =
+      std::make_shared<TelegramBotClient>(token, std::move(telegramTransport));
   NotificationService notificationService{
       std::move(telegramClient), std::move(emailService), threadPool};
   NotificationController controller(std::move(notificationService));

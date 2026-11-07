@@ -776,3 +776,145 @@ docker compose exec -T postgres psql -U postgres -d iot_platform \
 - Телеметрия сейчас хранит только `temperature`; другие показатели не предусмотрены.
 - API не предоставляет `PUT`/`PATCH` для изменения пользователя или устройства.
 - Adapter предназначен только для телеметрии; создание и удаление пользователей/устройств выполняется через Core.
+
+## Тестирование
+
+В проекте есть несколько уровней проверок. Не все они являются unit-тестами: SQL-репозитории проверяются с настоящей PostgreSQL, а `DrogonHttpTransport` — через локальный TCP/HTTP-сервер. Такое разделение важно: тесты не должны выдавать имитацию БД или сети за проверку их реальной работы.
+
+### Что покрыто
+
+| Набор | Содержание | Тип |
+| --- | --- | --- |
+| `service_unit_tests` | UsersService, DevicesService, TelemetryService, AdapterService, NotificationService; ошибки зависимостей, отложенные callback-и, отсутствие повторного вызова | Unit |
+| `client_unit_tests` | IoTClient, NotificationServiceClient, TelegramBotClient; HTTP-метод, путь, JSON, статусы, сетевые ошибки | Unit с fake HTTP-транспортом |
+| `controller_validation_tests` | Разбор положительных ID, числовые значения, chat ID, обязательные поля и нечисловые значения | Unit чистых функций валидации |
+| `controller_unit_tests` | Реальные обработчики Users, Devices, Telemetry, Ingest и Notification с fake-сервисами; JSON-валидация, forwarding, статусы ошибок | Unit обработчиков с подменёнными зависимостями |
+| `codec_primitive_tests` | Base64, CRC32: контрольные векторы, бинарные данные, padding и некорректный ввод | Unit |
+| `codec_unit_tests` | Encoder/Decoder: AES-256-CBC round-trip, случайный IV, неправильный ключ, повреждённый envelope и checksum | Unit; требуется OpenSSL и JsonCpp development headers |
+| `adapter_pipeline_tests` | Реальный AdapterService вместе с реальным IoTClient и подменённой только сетевой границей | Component test |
+| `telemetry_notification_pipeline_tests` | Реальный TelemetryService вместе с NotificationServiceClient; проверяется, что уведомление отправляется только при превышении порога | Component test |
+| `drogon_transport_integration_tests` | Фактический HTTP-запрос через Drogon к локальному TCP-серверу: POST/GET/PUT/DELETE, JSON, HTTP 503, не-JSON ответ, пустой URL и сквозной путь AdapterService → IoTClient → Drogon transport | Integration / component E2E slice |
+| `repository_integration_tests` | UsersRepository, DevicesRepository и TelemetryRepository с реальной PostgreSQL: CRUD, уникальность email, FK и каскадное удаление | Integration |
+
+В исходниках сейчас определено 113 отдельных `TEST_CASE` при включении всех необязательных целей и полного codec-набора. В среде, где нет Drogon, JsonCpp и PostgreSQL, можно выполнить только независимые наборы: в текущем проверочном окружении собрались и прошли **53 тест-кейса в 6 CTest-группах**. Необязательные наборы, требующие Drogon/JsonCpp или PostgreSQL, в этой среде не запускались.
+
+### Обычные unit- и component-тесты без Drogon и PostgreSQL
+
+```bash
+cmake -S . -B build-tests \
+  -DBUILD_APPLICATION=OFF \
+  -DBUILD_TESTING=ON \
+  -DBUILD_CONTROLLER_TESTING=OFF \
+  -DBUILD_POSTGRES_INTEGRATION_TESTING=OFF \
+  -DBUILD_CODEC_TESTING=OFF
+
+cmake --build build-tests -j
+ctest --test-dir build-tests --output-on-failure -V
+```
+
+Эта конфигурация подходит для быстрого цикла разработки: она не запускает БД, HTTP-серверы и Telegram. После изменения кода достаточно повторять две последние команды.
+
+### Тесты контроллеров и настоящего Drogon-транспорта
+
+Эти наборы требуют установленных Drogon, OpenSSL и JsonCpp development-пакетов, но не требуют рабочей PostgreSQL или Telegram-токена:
+
+```bash
+cmake -S . -B build-tests \
+  -DBUILD_APPLICATION=OFF \
+  -DBUILD_TESTING=ON \
+  -DBUILD_CONTROLLER_TESTING=ON \
+  -DBUILD_POSTGRES_INTEGRATION_TESTING=OFF \
+  -DBUILD_CODEC_TESTING=ON
+
+cmake --build build-tests -j
+ctest --test-dir build-tests --output-on-failure -V
+```
+
+`controller_unit_tests` вызывают методы настоящих контроллеров напрямую с объектами `HttpRequest` и fake-сервисами. `drogon_transport_integration_tests` запускает локальный тестовый HTTP-сервер на loopback-интерфейсе; запросы наружу не отправляются.
+
+### Интеграционные тесты PostgreSQL
+
+Репозитории проверяются на отдельной базе `iot_platform_test`, а не на основной базе приложения `iot_platform`. Самый простой способ — выполнить готовый скрипт из корня проекта:
+
+```bash
+./scripts/run-postgres-tests.sh
+```
+
+Скрипт поднимает сервис `postgres` из Compose, ждёт готовности сервера, создаёт `iot_platform_test` (если её ещё нет), применяет `init.sql`, конфигурирует CMake с `BUILD_POSTGRES_INTEGRATION_TESTING=ON`, собирает цель `repository_integration_tests` и запускает только её. Он не удаляет и не очищает базу приложения `iot_platform`.
+
+По умолчанию используется подключение `127.0.0.1:5433`, пользователь/пароль `postgres`/`postgres`, база `iot_platform_test`. Подробная инструкция есть в [`docs/POSTGRES_TESTS.md`](docs/POSTGRES_TESTS.md).
+
+Чтобы пересоздать только тестовую базу (это удалит данные внутри `iot_platform_test`):
+
+```bash
+./scripts/run-postgres-tests.sh --reset
+```
+
+Для ручного запуска после подготовки базы: требуется собрать проект с `-DBUILD_POSTGRES_INTEGRATION_TESTING=ON`, затем выполнить:
+
+```bash
+IOT_TEST_DATABASE_URL="host=127.0.0.1 port=5433 dbname=iot_platform_test user=postgres password=postgres" \
+  ctest --test-dir build-tests -R '^repository_integration_tests$' --output-on-failure -V
+```
+
+Эти тесты используют реальные SQL-репозитории и настоящую PostgreSQL, поэтому относятся к интеграционным, а не к unit-тестам. Не направляй `IOT_TEST_DATABASE_URL` на базу с важными данными.
+
+### Отчёт о покрытии кода (GCC / gcov / lcov)
+
+Покрытие можно собирать отдельно от обычной сборки. Для HTML-отчёта установи `lcov` и `genhtml` (обычно они входят в пакет `lcov`), затем создай отдельный build-каталог:
+
+```bash
+cmake -S . -B build-coverage \
+  -DBUILD_APPLICATION=OFF \
+  -DBUILD_TESTING=ON \
+  -DBUILD_CONTROLLER_TESTING=OFF \
+  -DBUILD_POSTGRES_INTEGRATION_TESTING=OFF \
+  -DBUILD_CODEC_TESTING=OFF \
+  -DENABLE_COVERAGE=ON
+
+cmake --build build-coverage -j
+cmake --build build-coverage --target coverage_report
+```
+
+Открой `build-coverage/coverage-html/index.html`. Отчёт исключает системные заголовки и файлы самих тестов, чтобы показывать покрытие исходного кода проекта. Для покрытия контроллеров включи `-DBUILD_CONTROLLER_TESTING=ON` (потребуются Drogon и JsonCpp). Для реальных SQL-репозиториев включай `-DBUILD_POSTGRES_INTEGRATION_TESTING=ON` только при подготовленной отдельной тестовой PostgreSQL: цель `coverage_report` выполняет все зарегистрированные CTest-группы.
+
+`ENABLE_COVERAGE` поддерживает GCC. Если `lcov`/`genhtml` не установлены, инструментация `--coverage` всё равно включится, но CMake не создаст цель `coverage_report`.
+
+### Где смотреть отдельные проверки
+
+CTest считает исполняемые тестовые программы (группы), а встроенный test runner выводит каждый `TEST_CASE`. Чтобы увидеть отдельные имена и зелёные `[PASS]` строки, добавляй `-V`:
+
+```bash
+ctest --test-dir build-tests --output-on-failure -V
+```
+
+Список зарегистрированных CTest-групп:
+
+```bash
+ctest --test-dir build-tests -N
+```
+
+### Архитектурные изменения для тестируемости
+
+- `IUsersRepository`, `IDevicesRepository`, `ITelemetryRepository` отделяют сервисы от PostgreSQL.
+- `IUsersService`, `IDevicesService`, `INotificationServiceClient`, `IIoTClient` и `ITelegramBotClient` позволяют передавать fake-зависимости в сервисы и обработчики.
+- `IHttpTransport` отделяет формирование HTTP-запроса от отправки. В приложении используется `DrogonHttpTransport`, в тестах клиентов — fake-транспорт.
+- Контроллеры Users/Devices/Telemetry теперь получают сервисы через конструктор; IngestController также допускает передачу `IIoTClient`. Реальные реализации собираются в `main.cpp`/точках композиции.
+- Общие проверки входных данных вынесены в `common/validation/RequestValidation.h`. Это чистые функции без зависимости от Drogon, их можно тестировать отдельно.
+- Ошибки репозиториев в контроллерах возвращают HTTP 500, неверные входные данные — HTTP 400, ошибки следующего сервиса в Ingest/Notification — HTTP 502.
+
+### Ограничения
+
+- Unit-тесты `IoTClient`, `NotificationServiceClient` и `TelegramBotClient` проверяют запросы и обработку ответов на границе fake-транспорта; реальная сеть проверяется отдельным тестом `DrogonHttpTransport`.
+- Контроллерные unit-тесты вызывают методы обработчиков напрямую, а не поднимают HTTP-сервер для каждого контроллера. Маршрутизация/полный wire-format контроллеров дополнительно может быть покрыт E2E тестами.
+- PostgreSQL integration tests требуют отдельной тестовой БД и запускаются только по явной опции `BUILD_POSTGRES_INTEGRATION_TESTING=ON`.
+- Валидация email сейчас проверяет наличие непустого значения, а не полное соответствие RFC. Пароли в текущей учебной схеме всё ещё сохраняются как обычный текст; тесты не делают такую реализацию безопасной для production.
+
+### Drogon log output in tests
+
+The controller and transport test executables set Drogon's log threshold to
+`trantor::Logger::kWarn`. Some controller tests deliberately submit malformed
+JSON to verify that handlers return HTTP 400; Drogon reports those expected
+parse failures at DEBUG level. Suppressing DEBUG keeps the test report readable
+without hiding warnings or errors. The application's runtime logging settings
+are not changed.

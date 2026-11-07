@@ -1,34 +1,32 @@
 #pragma once
 
-#include <drogon/drogon.h>
-
 #include <functional>
+#include <memory>
 #include <string>
 
-struct ChannelStatuses {
-  std::string telegram;
-  std::string email;
-};
+#include "common/http/HttpTransport.h"
+#include "telemetry/clients/INotificationServiceClient.h"
 
-class NotificationServiceClient {
+class NotificationServiceClient : public INotificationServiceClient {
  public:
-  explicit NotificationServiceClient(std::string baseUrl);
+  NotificationServiceClient(
+      std::string baseUrl,
+      std::shared_ptr<iot::http::IHttpTransport> transport);
 
-  // success получает итоговые статусы каналов ("sent"/"skipped"/"failed: ...").
   void sendTemperatureAlert(
-      int deviceId,
-      const std::string &chatId,
-      const std::string &email,
-      const std::string &deviceName,
-      double temperature,
-      double threshold,
-      std::function<void(const ChannelStatuses &)> success,
-      std::function<void(const std::string &)> error) const;
-
+      const std::string &chatId, const std::string &deviceName,
+      double temperature, double threshold, std::function<void()> success,
+      std::function<void(const std::string &)> error) const override;
+  void sendTemperatureAlert(
+      int deviceId, const std::string &chatId, const std::string &email,
+      const std::string &deviceName, double temperature, double threshold,
+      std::function<void(const NotificationChannelStatuses &)> success,
+      std::function<void(const std::string &)> error) const override;
   void clearTemperatureAlert(
       int deviceId, std::function<void()> success,
-      std::function<void(const std::string &)> error) const;
+      std::function<void(const std::string &)> error) const override;
 
  private:
   std::string baseUrl_;
+  std::shared_ptr<iot::http::IHttpTransport> transport_;
 };

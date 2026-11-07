@@ -9,14 +9,23 @@ add_executable(notification_service
     src/notifications/EmailService.cpp
 )
 
-target_include_directories(notification_service PRIVATE src)
+target_include_directories(notification_service PRIVATE
+    src
+    ${PROJECT_SOURCE_DIR}
+    ${JSONCPP_INCLUDE_DIR}
+)
 target_compile_definitions(notification_service PRIVATE
     EMAIL_TEMPLATE_DIR="${CMAKE_BINARY_DIR}/resources/email"
 )
 set_target_properties(notification_service PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
-target_link_libraries(notification_service PRIVATE Drogon::Drogon TgBot::TgBot mailio)
+target_link_libraries(notification_service PRIVATE
+    Drogon::Drogon
+    ${JSONCPP_LIBRARY}
+    iot_drogon_http_transport
+    mailio
+)
 
 if(BUILD_TESTING)
     add_executable(notification_service_tests

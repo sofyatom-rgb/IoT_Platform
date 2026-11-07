@@ -1,4 +1,5 @@
 #include "controllers/NotificationController.h"
+#include "common/validation/RequestValidation.h"
 
 #include <cmath>
 #include <string>
@@ -70,8 +71,8 @@ void NotificationController::sendTemperatureAlert(
   if (!json || !(*json)["device_name"].isString() ||
       !(*json)["temperature"].isNumeric() ||
       !(*json)["threshold"].isNumeric() ||
-      !std::isfinite((*json)["temperature"].asDouble()) ||
-      !std::isfinite((*json)["threshold"].asDouble()) ||
+      !iot::validation::isFiniteNumber((*json)["temperature"].asDouble()) ||
+      !iot::validation::isFiniteNumber((*json)["threshold"].asDouble()) ||
       (!(*json)["device_id"].isNull() &&
        (!(*json)["device_id"].isInt() || (*json)["device_id"].asInt() <= 0))) {
     callback(jsonError("Invalid temperature notification payload",
@@ -83,8 +84,13 @@ void NotificationController::sendTemperatureAlert(
       (*json)["device_id"].isInt() ? (*json)["device_id"].asInt() : 0;
   const std::string chatId = optionalString(*json, "chat_id");
   const std::string email = optionalString(*json, "email");
-  if (chatId.empty() && email.empty()) {
-    callback(jsonError("At least one recipient channel is required",
+  const bool validChatId =
+      !json->isMember("chat_id") ||
+      (*json)["chat_id"].isString();
+  if (!validChatId || !iot::validation::hasNonWhitespace(
+                          (*json)["device_name"].asString()) ||
+      (chatId.empty() && email.empty())) {
+    callback(jsonError("Invalid temperature notification recipients or data",
                        drogon::k400BadRequest));
     return;
   }

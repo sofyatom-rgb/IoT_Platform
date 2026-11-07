@@ -1,76 +1,73 @@
 #include "clients/TelegramBotClient.h"
 
-#include <drogon/drogon.h>
-#include <tgbot/TgException.h>
-
-#include <cctype>
-#include <cstdint>
-#include <exception>
-#include <string>
+#include <stdexcept>
 #include <utility>
-#include <variant>
-
-namespace {
-std::variant<std::int64_t, std::string> parseChatId(
-    const std::string &chatId) {
-  const std::size_t start = (!chatId.empty() && chatId.front() == '-') ? 1 : 0;
-  if (start == chatId.size()) {
-    return chatId;
-  }
-  for (std::size_t i = start; i < chatId.size(); ++i) {
-    if (std::isdigit(static_cast<unsigned char>(chatId[i])) == 0) {
-      return chatId;
-    }
-  }
-  try {
-    return static_cast<std::int64_t>(std::stoll(chatId));
-  } catch (const std::exception &) {
-    return chatId;
-  }
-}
-}  // namespace
 
 TelegramBotClient::TelegramBotClient(
-    std::string botToken, std::shared_ptr<WorkerThreadPool> threadPool)
-    : bot_(botToken.empty() ? nullptr
-                            : std::make_shared<TgBot::Bot>(std::move(botToken))),
-      threadPool_(std::move(threadPool)) {}
+    std::string botToken,
+    std::shared_ptr<iot::http::IHttpTransport> transport)
+    : botToken_(std::move(botToken)), transport_(std::move(transport)) {
+  if (!transport_) {
+    throw std::invalid_argument("TelegramBotClient requires an HTTP transport");
+  }
+}
 
 void TelegramBotClient::sendMessage(
     const std::string &chatId, const std::string &text,
     std::function<void()> success,
     std::function<void(const std::string &)> error) const {
-  const auto bot = bot_;
-  if (!bot || !threadPool_) {
-    error("Telegram bot is not configured");
+  if (botToken_.empty()) {
+    if (error) error("Telegram bot is not configured");
     return;
   }
 
-  trantor::EventLoop *loop = trantor::EventLoop::getEventLoopOfCurrentThread();
-  if (loop == nullptr) {
-    loop = drogon::app().getLoop();
-  }
+  iot::http::Request request;
+  request.method = iot::http::Method::Post;
+  request.path = "/bot" + botToken_ + "/sendMessage";
+  request.jsonBody = {{"chat_id", chatId}, {"text", text}};
 
-  threadPool_->post([bot, loop, chatId, text,
-                     success = std::move(success),
-                     error = std::move(error)]() mutable {
-    try {
-      TgBot::SendMessageArgs args;
-      args.chatId = parseChatId(chatId);
-      args.text = text;
-      args.parseMode = "HTML";
-      bot->getApi().sendMessage(args);
-      loop->queueInLoop([success = std::move(success)]() { success(); });
-    } catch (const TgBot::TgException &exception) {
-      const std::string message =
-          "Telegram API error: " + std::string(exception.what());
-      loop->queueInLoop(
-          [error = std::move(error), message]() { error(message); });
-    } catch (const std::exception &exception) {
-      const std::string message =
-          "Telegram API request failed: " + std::string(exception.what());
-      loop->queueInLoop(
-          [error = std::move(error), message]() { error(message); });
-    }
-  });
+  transport_->send(
+      request,
+      [success = std::move(success), error = std::move(error)](
+          iot::http::Result result,
+          std::optional<iot::http::Response> response) {
+        if (result != iot::http::Result::Ok || !response) {
+          const int status = response ? response->statusCode : 0;
+          if (error) {
+            error("Telegram API request failed (HTTP " +
+                  std::to_string(status) + ")");
+          }
+          return;
+        }
+
+        if (!response->jsonParsed) {
+          if (response->statusCode != 200) {
+            if (error) {
+              error("Telegram API request failed (HTTP " +
+                    std::to_string(response->statusCode) + ")");
+            }
+            return;
+          }
+          const std::string suffix = response->jsonParseError.empty()
+                                         ? std::string{}
+                                         : ": " + response->jsonParseError;
+          if (error) error("Could not parse Telegram API response" + suffix);
+          return;
+        }
+
+        const bool *ok = iot::http::boolField(response->jsonBody, "ok");
+        if (response->statusCode != 200 || ok == nullptr || !*ok) {
+          const auto *description =
+              iot::http::stringField(response->jsonBody, "description");
+          if (description != nullptr && !description->empty()) {
+            if (error) error("Telegram API error: " + *description);
+          } else if (error) {
+            error("Telegram API request failed (HTTP " +
+                  std::to_string(response->statusCode) + ")");
+          }
+          return;
+        }
+
+        if (success) success();
+      });
 }

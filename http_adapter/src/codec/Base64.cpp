@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <utility>
 
 namespace codec {
 namespace {
@@ -58,30 +59,49 @@ std::string base64Encode(const std::string &data) {
 bool base64Decode(const std::string &text, std::string &out) {
   out.clear();
   if (text.size() % 4 != 0) return false;
-  out.reserve((text.size() / 4) * 3);
+
+  std::string decoded;
+  decoded.reserve((text.size() / 4) * 3);
 
   for (std::size_t i = 0; i < text.size(); i += 4) {
-    int vals[4];
-    int pad = 0;
-    for (int j = 0; j < 4; ++j) {
-      const char c = text[i + j];
-      if (c == '=') {
-        vals[j] = 0;
-        ++pad;
-        if (j < 2) return false;  // '=' не может стоять в первых двух позициях
-      } else {
-        if (pad > 0) return false;  // символ после '='
-        const int8_t v = kDecodeTable[static_cast<unsigned char>(c)];
-        if (v < 0) return false;
-        vals[j] = v;
-      }
-    }
-    const std::uint32_t v = (vals[0] << 18) | (vals[1] << 12) |
-                            (vals[2] << 6) | vals[3];
-    out.push_back(static_cast<char>((v >> 16) & 0xFF));
-    if (pad < 2) out.push_back(static_cast<char>((v >> 8) & 0xFF));
-    if (pad < 1) out.push_back(static_cast<char>(v & 0xFF));
+    const bool isLastBlock = (i + 4 == text.size());
+    const char c0 = text[i];
+    const char c1 = text[i + 1];
+    const char c2 = text[i + 2];
+    const char c3 = text[i + 3];
+
+    // Первые два символа всегда являются данными.
+    if (c0 == '=' || c1 == '=') return false;
+
+    const int8_t v0 = kDecodeTable[static_cast<unsigned char>(c0)];
+    const int8_t v1 = kDecodeTable[static_cast<unsigned char>(c1)];
+    if (v0 < 0 || v1 < 0) return false;
+
+    const bool pad2 = c2 == '=';
+    const bool pad1 = c3 == '=';
+    if (pad2 && !pad1) return false;       // допустимы только "xx==" или "xxx=".
+    if ((pad1 || pad2) && !isLastBlock) return false;  // padding только в конце.
+
+    const int8_t v2 = pad2 ? 0 : kDecodeTable[static_cast<unsigned char>(c2)];
+    const int8_t v3 = pad1 ? 0 : kDecodeTable[static_cast<unsigned char>(c3)];
+    if ((!pad2 && v2 < 0) || (!pad1 && v3 < 0)) return false;
+
+    // RFC 4648: неиспользуемые младшие биты последнего символа должны быть нулевыми.
+    if (pad2 && (v1 & 0x0F) != 0) return false;
+    if (!pad2 && pad1 && (v2 & 0x03) != 0) return false;
+
+    const std::uint32_t value =
+        (static_cast<std::uint32_t>(v0) << 18) |
+        (static_cast<std::uint32_t>(v1) << 12) |
+        (static_cast<std::uint32_t>(v2) << 6) |
+        static_cast<std::uint32_t>(v3);
+
+    decoded.push_back(static_cast<char>((value >> 16) & 0xFF));
+    if (!pad2) decoded.push_back(static_cast<char>((value >> 8) & 0xFF));
+    if (!pad1) decoded.push_back(static_cast<char>(value & 0xFF));
   }
+
+  out = std::move(decoded);
   return true;
 }
 

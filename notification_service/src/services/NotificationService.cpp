@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -29,28 +30,36 @@ std::string formatTemperature(double value) {
   return formatted;
 }
 
+trantor::EventLoop *currentEventLoop() {
+  auto *loop = trantor::EventLoop::getEventLoopOfCurrentThread();
+  return loop != nullptr ? loop : drogon::app().getLoop();
+}
 }  // namespace
 
 NotificationService::NotificationService(
-    TelegramBotClient telegramBotClient,
+    std::shared_ptr<ITelegramBotClient> telegramBotClient)
+    : NotificationService(std::move(telegramBotClient), std::nullopt, {}) {}
+
+NotificationService::NotificationService(
+    std::shared_ptr<ITelegramBotClient> telegramBotClient,
     std::optional<EmailService> emailService,
     std::shared_ptr<WorkerThreadPool> threadPool)
     : telegramBotClient_(std::move(telegramBotClient)),
       emailService_(std::move(emailService)),
-      threadPool_(std::move(threadPool)) {}
+      threadPool_(std::move(threadPool)) {
+  if (!telegramBotClient_) {
+    throw std::invalid_argument("NotificationService requires a Telegram client");
+  }
+}
 
 bool NotificationService::reserveTemperatureAlert(int deviceId) const {
-  if (deviceId <= 0) {
-    return true;
-  }
+  if (deviceId <= 0) return true;
   std::lock_guard lock(alertState_->mutex);
   return alertState_->activeDevices.insert(deviceId).second;
 }
 
 void NotificationService::releaseTemperatureAlert(int deviceId) const {
-  if (deviceId <= 0) {
-    return;
-  }
+  if (deviceId <= 0) return;
   std::lock_guard lock(alertState_->mutex);
   alertState_->activeDevices.erase(deviceId);
 }
@@ -59,75 +68,24 @@ void NotificationService::clearTemperatureAlert(int deviceId) const {
   releaseTemperatureAlert(deviceId);
 }
 
-void NotificationService::sendEmailAlert(
-    const std::string &email, const EmailAlertData &alert,
-    std::function<void()> success,
+void NotificationService::sendTemperatureAlert(
+    const std::string &chatId, const std::string &deviceName,
+    double temperature, double threshold, std::function<void()> success,
     std::function<void(const std::string &)> error) const {
-  if (email.empty()) {
-    error("Recipient email is required");
+  if (chatId.empty()) {
+    if (error) error("Telegram chat ID is required");
     return;
   }
-  if (!emailService_.has_value() || !emailService_->isEnabled()) {
-    error("SMTP email notifications are disabled");
+  if (!telegramBotClient_->isEnabled()) {
+    if (error) error("Telegram bot is not configured");
     return;
   }
-  if (!threadPool_) {
-    error("Email worker pool is not available");
-    return;
-  }
-
-  const EmailService service = *emailService_;
-  trantor::EventLoop *loop = trantor::EventLoop::getEventLoopOfCurrentThread();
-  if (loop == nullptr) {
-    loop = drogon::app().getLoop();
-  }
-  threadPool_->post([service, email, alert, loop,
-                     success = std::move(success),
-                     error = std::move(error)]() mutable {
-    const EmailSendResult result = service.send(email, alert);
-    if (!result.sent) {
-      const std::string message = result.error;
-      loop->queueInLoop(
-          [error = std::move(error), message]() { error(message); });
-      return;
-    }
-    loop->queueInLoop([success = std::move(success)]() { success(); });
-  });
-}
-
-void NotificationService::sendTestEmail(
-    const std::string &email, std::function<void()> success,
-    std::function<void(const std::string &)> error) const {
-  if (email.empty()) {
-    error("Recipient email is required");
-    return;
-  }
-  if (!emailService_.has_value() || !emailService_->isEnabled()) {
-    error("SMTP email notifications are disabled");
-    return;
-  }
-  if (!threadPool_) {
-    error("Email worker pool is not available");
-    return;
-  }
-
-  const EmailService service = *emailService_;
-  trantor::EventLoop *loop = trantor::EventLoop::getEventLoopOfCurrentThread();
-  if (loop == nullptr) {
-    loop = drogon::app().getLoop();
-  }
-  threadPool_->post([service, email, loop,
-                     success = std::move(success),
-                     error = std::move(error)]() mutable {
-    const EmailSendResult result = service.sendTestEmail(email);
-    if (!result.sent) {
-      const std::string message = result.error;
-      loop->queueInLoop(
-          [error = std::move(error), message]() { error(message); });
-      return;
-    }
-    loop->queueInLoop([success = std::move(success)]() { success(); });
-  });
+  const std::string message =
+      "Внимание! На устройстве \"" + deviceName + "\" температура " +
+      std::to_string(temperature) + " °C превысила порог " +
+      std::to_string(threshold) + " °C.";
+  telegramBotClient_->sendMessage(chatId, message, std::move(success),
+                                  std::move(error));
 }
 
 void NotificationService::sendTemperatureAlert(
@@ -135,67 +93,51 @@ void NotificationService::sendTemperatureAlert(
     const std::string &deviceName, double temperature, double threshold,
     std::function<void(const ChannelStatuses &)> success,
     std::function<void(const std::string &)> error) const {
-  ChannelStatuses statuses;
-  const bool wantTelegram = !chatId.empty();
-  const bool wantEmail = !email.empty();
-  const bool telegramEnabled = telegramBotClient_.isEnabled();
-  const bool emailEnabled =
-      emailService_.has_value() && emailService_->isEnabled();
-  const bool tryTelegram = wantTelegram && telegramEnabled;
-  const bool tryEmail = wantEmail && emailEnabled;
-
-  if (!wantTelegram || !telegramEnabled) {
-    statuses.telegram = "skipped";
-  }
-  if (!wantEmail || !emailEnabled) {
-    statuses.email = "skipped";
-  }
-
-  const int totalToTry = (tryTelegram ? 1 : 0) + (tryEmail ? 1 : 0);
-  if (totalToTry == 0) {
-    if (!wantTelegram && !wantEmail) {
-      error("No notification channel provided");
-    } else {
+  ChannelStatuses initial;
+  const bool tryTelegram = !chatId.empty() && telegramBotClient_->isEnabled();
+  const bool tryEmail = !email.empty() && emailService_.has_value() &&
+                        emailService_->isEnabled();
+  if (!tryTelegram && !tryEmail) {
+    if (chatId.empty() && email.empty()) {
+      if (error) error("No notification channel provided");
+    } else if (chatId.empty() || !telegramBotClient_->isEnabled()) {
+      if (!tryEmail) {
+        if (error) error("No notification channel is configured");
+      }
+    } else if (!tryTelegram && !tryEmail && error) {
       error("No notification channel is configured");
     }
     return;
   }
 
   if (!reserveTemperatureAlert(deviceId)) {
-    statuses.telegram = tryTelegram ? "skipped_duplicate" : statuses.telegram;
-    statuses.email = tryEmail ? "skipped_duplicate" : statuses.email;
-    success(statuses);
+    initial.telegram = tryTelegram ? "skipped_duplicate" : "skipped";
+    initial.email = tryEmail ? "skipped_duplicate" : "skipped";
+    if (success) success(initial);
     return;
   }
 
-  auto done = std::make_shared<int>(0);
-  auto state = std::make_shared<ChannelStatuses>(statuses);
-  auto finishOne = [this, deviceId, done, state, totalToTry, tryTelegram,
-                    tryEmail, success = std::move(success),
-                    error = std::move(error)]() {
-    ++(*done);
-    if (*done < totalToTry) {
-      return;
-    }
-    const bool telegramSent = state->telegram == "sent";
-    const bool emailSent = state->email == "sent";
-    if (telegramSent || emailSent) {
-      success(*state);
+  const int total = static_cast<int>(tryTelegram) + static_cast<int>(tryEmail);
+  auto completed = std::make_shared<int>(0);
+  auto statuses = std::make_shared<ChannelStatuses>(initial);
+  auto finish = [this, deviceId, total, completed, statuses, tryTelegram,
+                 tryEmail, success = std::move(success),
+                 error = std::move(error)]() mutable {
+    ++*completed;
+    if (*completed != total) return;
+    if (statuses->telegram == "sent" || statuses->email == "sent") {
+      if (success) success(*statuses);
       return;
     }
 
     releaseTemperatureAlert(deviceId);
-    std::string parts;
-    if (tryTelegram) {
-      parts += "telegram: " + state->telegram;
-    }
+    std::string details;
+    if (tryTelegram) details = "telegram: " + statuses->telegram;
     if (tryEmail) {
-      if (!parts.empty()) {
-        parts += "; ";
-      }
-      parts += "email: " + state->email;
+      if (!details.empty()) details += "; ";
+      details += "email: " + statuses->email;
     }
-    error(parts);
+    if (error) error(details);
   };
 
   if (tryTelegram) {
@@ -205,15 +147,15 @@ void NotificationService::sendTemperatureAlert(
         escapeHtml(deviceName) + "</b>\n" +
         "Температура: <b>" + formatTemperature(temperature) + " °C</b>\n" +
         "Порог: " + formatTemperature(threshold) + " °C";
-    telegramBotClient_.sendMessage(
+    telegramBotClient_->sendMessage(
         chatId, message,
-        [state, finishOne]() {
-          state->telegram = "sent";
-          finishOne();
+        [statuses, finish]() mutable {
+          statuses->telegram = "sent";
+          finish();
         },
-        [state, finishOne](const std::string &messageError) {
-          state->telegram = "failed: " + messageError;
-          finishOne();
+        [statuses, finish](const std::string &messageError) mutable {
+          statuses->telegram = "failed: " + messageError;
+          finish();
         });
   }
 
@@ -230,13 +172,94 @@ void NotificationService::sendTemperatureAlert(
         "Показание датчика превысило установленный температурный порог.";
     sendEmailAlert(
         email, alert,
-        [state, finishOne]() {
-          state->email = "sent";
-          finishOne();
+        [statuses, finish]() mutable {
+          statuses->email = "sent";
+          finish();
         },
-        [state, finishOne](const std::string &messageError) {
-          state->email = "failed: " + messageError;
-          finishOne();
+        [statuses, finish](const std::string &messageError) mutable {
+          statuses->email = "failed: " + messageError;
+          finish();
         });
   }
+}
+
+void NotificationService::sendEmailAlert(
+    const std::string &email, const EmailAlertData &alert,
+    std::function<void()> success,
+    std::function<void(const std::string &)> error) const {
+  if (email.empty()) {
+    if (error) error("Recipient email is required");
+    return;
+  }
+  if (!emailService_.has_value() || !emailService_->isEnabled()) {
+    if (error) error("SMTP email notifications are disabled");
+    return;
+  }
+  if (!threadPool_) {
+    if (error) error("Email worker pool is not available");
+    return;
+  }
+  auto *loop = currentEventLoop();
+  if (loop == nullptr) {
+    if (error) error("Drogon event loop is not available");
+    return;
+  }
+
+  const EmailService service = *emailService_;
+  threadPool_->post([service, email, alert, loop,
+                     success = std::move(success),
+                     error = std::move(error)]() mutable {
+    const EmailSendResult result = service.send(email, alert);
+    if (!result.sent) {
+      const std::string message = result.error;
+      loop->queueInLoop(
+          [error = std::move(error), message]() mutable {
+            if (error) error(message);
+          });
+      return;
+    }
+    loop->queueInLoop([success = std::move(success)]() mutable {
+      if (success) success();
+    });
+  });
+}
+
+void NotificationService::sendTestEmail(
+    const std::string &email, std::function<void()> success,
+    std::function<void(const std::string &)> error) const {
+  if (email.empty()) {
+    if (error) error("Recipient email is required");
+    return;
+  }
+  if (!emailService_.has_value() || !emailService_->isEnabled()) {
+    if (error) error("SMTP email notifications are disabled");
+    return;
+  }
+  if (!threadPool_) {
+    if (error) error("Email worker pool is not available");
+    return;
+  }
+  auto *loop = currentEventLoop();
+  if (loop == nullptr) {
+    if (error) error("Drogon event loop is not available");
+    return;
+  }
+
+  const EmailService service = *emailService_;
+  threadPool_->post([service, email, loop,
+                     success = std::move(success),
+                     error = std::move(error)]() mutable {
+    const EmailSendResult result = service.sendTestEmail(email);
+    if (!result.sent) {
+      const std::string message = result.error;
+      loop->queueInLoop(
+          [error = std::move(error), message]() mutable {
+            if (error) error(message);
+          });
+      return;
+    }
+    loop->queueInLoop([success = std::move(success)]() mutable {
+      if (success) success();
+    });
+  });
 }

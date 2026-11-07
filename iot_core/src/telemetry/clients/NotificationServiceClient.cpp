@@ -1,115 +1,131 @@
 #include "telemetry/clients/NotificationServiceClient.h"
 
-#include <sstream>
+#include <cstdint>
+#include <stdexcept>
 #include <utility>
 
+namespace {
+iot::http::Request makeRequest(int deviceId, const std::string &chatId,
+                               const std::string &email,
+                               const std::string &deviceName,
+                               double temperature, double threshold) {
+  iot::http::Request request;
+  request.method = iot::http::Method::Post;
+  request.path = "/notifications/temperature";
+  request.jsonBody = {{"device_id", static_cast<std::int64_t>(deviceId)},
+                      {"chat_id", chatId},
+                      {"email", email},
+                      {"device_name", deviceName},
+                      {"temperature", temperature},
+                      {"threshold", threshold}};
+  return request;
+}
+
+}  // namespace
+
 NotificationServiceClient::NotificationServiceClient(
-    std::string baseUrl)
-    : baseUrl_(std::move(baseUrl)) {}
+    std::string baseUrl,
+    std::shared_ptr<iot::http::IHttpTransport> transport)
+    : baseUrl_(std::move(baseUrl)), transport_(std::move(transport)) {
+  if (!transport_) {
+    throw std::invalid_argument(
+        "NotificationServiceClient requires an HTTP transport");
+  }
+}
 
 void NotificationServiceClient::sendTemperatureAlert(
-    int deviceId,
-    const std::string &chatId,
-    const std::string &email,
-    const std::string &deviceName,
-    double temperature,
-    double threshold,
-    std::function<void(const ChannelStatuses &)> success,
+    const std::string &chatId, const std::string &deviceName,
+    double temperature, double threshold, std::function<void()> success,
+    std::function<void(const std::string &)> error) const {
+  sendTemperatureAlert(
+      0, chatId, {}, deviceName, temperature, threshold,
+      [success = std::move(success)](const NotificationChannelStatuses &) {
+        if (success) success();
+      },
+      std::move(error));
+}
+
+void NotificationServiceClient::sendTemperatureAlert(
+    int deviceId, const std::string &chatId, const std::string &email,
+    const std::string &deviceName, double temperature, double threshold,
+    std::function<void(const NotificationChannelStatuses &)> success,
     std::function<void(const std::string &)> error) const {
   if (baseUrl_.empty()) {
-    error("Notification service URL is not configured");
+    if (error) error("Notification service URL is not configured");
     return;
   }
-  auto client = drogon::HttpClient::newHttpClient(baseUrl_);
-  auto request = drogon::HttpRequest::newHttpRequest();
-  request->setMethod(drogon::Post);
-  request->setPath("/notifications/temperature");
-  request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-
-  Json::Value body;
-  body["device_id"] = deviceId;
-  body["chat_id"] = chatId;
-  body["email"] = email;
-  body["device_name"] = deviceName;
-  body["temperature"] = temperature;
-  body["threshold"] = threshold;
-  request->setBody(body.toStyledString());
-
-  client->sendRequest(
+  const auto request =
+      makeRequest(deviceId, chatId, email, deviceName, temperature, threshold);
+  transport_->send(
       request,
-      [success = std::move(success), error = std::move(error)](
-          drogon::ReqResult result,
-          const drogon::HttpResponsePtr &response) {
-        const auto status =
-            response ? static_cast<int>(response->getStatusCode()) : 0;
-        if (response) {
-          Json::CharReaderBuilder builder;
-          Json::Value parsed;
-          std::string parseErrors;
-          const std::string responseBody(response->getBody());
-          std::istringstream input(responseBody);
-          if (Json::parseFromStream(builder, input, &parsed, &parseErrors)) {
-            ChannelStatuses channels;
-            if (parsed["telegram"].isString()) {
-              channels.telegram = parsed["telegram"].asString();
-            }
-            if (parsed["email"].isString()) {
-              channels.email = parsed["email"].asString();
-            }
-            if (result == drogon::ReqResult::Ok &&
-                response->getStatusCode() == drogon::k200OK) {
-              success(channels);
-              return;
-            }
-            if (parsed["message"].isString() &&
-                !parsed["message"].asString().empty()) {
-              error("Notification service request failed (HTTP " +
-                    std::to_string(status) + "): " +
-                    parsed["message"].asString());
-              return;
-            }
+      [chatId, email, success = std::move(success),
+       error = std::move(error)](
+          iot::http::Result result,
+          std::optional<iot::http::Response> response) {
+        if (result == iot::http::Result::Ok && response &&
+            response->statusCode == 200) {
+          NotificationChannelStatuses channels;
+          if (const auto *telegram =
+                  iot::http::stringField(response->jsonBody, "telegram")) {
+            channels.telegram = *telegram;
+          } else if (!chatId.empty()) {
+            channels.telegram = "sent";
           }
-        }
-        if (result == drogon::ReqResult::Ok && response &&
-            response->getStatusCode() == drogon::k200OK) {
-          success(ChannelStatuses{});
+          if (const auto *emailStatus =
+                  iot::http::stringField(response->jsonBody, "email")) {
+            channels.email = *emailStatus;
+          } else if (!email.empty()) {
+            channels.email = "sent";
+          }
+          if (success) success(channels);
           return;
         }
-        error("Notification service request failed (HTTP " +
-              std::to_string(status) + ")");
+
+        const int status = response ? response->statusCode : 0;
+        if (response) {
+          if (const auto *message =
+                  iot::http::stringField(response->jsonBody, "message");
+              response->jsonParsed && message != nullptr &&
+              !message->empty()) {
+            if (error) {
+              error("Notification service request failed (HTTP " +
+                    std::to_string(status) + "): " + *message);
+            }
+            return;
+          }
+        }
+        if (error) {
+          error("Notification service request failed (HTTP " +
+                std::to_string(status) + ")");
+        }
       });
 }
 
 void NotificationServiceClient::clearTemperatureAlert(
     int deviceId, std::function<void()> success,
     std::function<void(const std::string &)> error) const {
+  iot::http::Request request;
+  request.method = iot::http::Method::Post;
+  request.path = "/notifications/temperature/normal";
+  request.jsonBody = {{"device_id", static_cast<std::int64_t>(deviceId)}};
   if (baseUrl_.empty()) {
-    error("Notification service URL is not configured");
+    if (error) error("Notification service URL is not configured");
     return;
   }
-  auto client = drogon::HttpClient::newHttpClient(baseUrl_);
-  auto request = drogon::HttpRequest::newHttpRequest();
-  request->setMethod(drogon::Post);
-  request->setPath("/notifications/temperature/normal");
-  request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-
-  Json::Value body;
-  body["device_id"] = deviceId;
-  request->setBody(body.toStyledString());
-
-  client->sendRequest(
+  transport_->send(
       request,
       [success = std::move(success), error = std::move(error)](
-          drogon::ReqResult result,
-          const drogon::HttpResponsePtr &response) {
-        if (result == drogon::ReqResult::Ok && response &&
-            response->getStatusCode() == drogon::k200OK) {
-          success();
+          iot::http::Result result,
+          std::optional<iot::http::Response> response) {
+        if (result == iot::http::Result::Ok && response &&
+            response->statusCode == 200) {
+          if (success) success();
           return;
         }
-        const auto status =
-            response ? static_cast<int>(response->getStatusCode()) : 0;
-        error("Notification service alert reset failed (HTTP " +
-              std::to_string(status) + ")");
+        const int status = response ? response->statusCode : 0;
+        if (error) {
+          error("Notification service alert reset failed (HTTP " +
+                std::to_string(status) + ")");
+        }
       });
 }
