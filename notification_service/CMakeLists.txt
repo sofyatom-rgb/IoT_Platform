@@ -1,8 +1,11 @@
+find_package(TgBot CONFIG REQUIRED)
+
 add_executable(notification_service
     src/main.cpp
     src/controllers/NotificationController.cpp
     src/services/NotificationService.cpp
     src/clients/TelegramBotClient.cpp
+    src/clients/TgBotApi.cpp
     src/clients/WorkerThreadPool.cpp
     src/notifications/EmailConfig.cpp
     src/notifications/EmailTemplate.cpp
@@ -25,6 +28,7 @@ target_link_libraries(notification_service PRIVATE
     ${JSONCPP_LIBRARY}
     iot_drogon_http_transport
     mailio
+    TgBot::TgBot
 )
 
 if(BUILD_TESTING)

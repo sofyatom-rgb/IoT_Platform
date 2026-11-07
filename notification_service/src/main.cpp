@@ -8,8 +8,8 @@
 #include <utility>
 
 #include "clients/TelegramBotClient.h"
+#include "clients/TgBotApi.h"
 #include "clients/WorkerThreadPool.h"
-#include "common/http/DrogonHttpTransport.h"
 #include "controllers/NotificationController.h"
 #include "notifications/EmailConfig.h"
 #include "notifications/EmailService.h"
@@ -44,11 +44,9 @@ int main(int, char *argv[]) {
   }
 
   auto threadPool = std::make_shared<WorkerThreadPool>(4);
-  auto telegramTransport =
-      std::make_shared<iot::http::DrogonHttpTransport>(
-          "https://api.telegram.org");
+  auto telegramApi = std::make_shared<TgBotApi>(token);
   auto telegramClient =
-      std::make_shared<TelegramBotClient>(token, std::move(telegramTransport));
+      std::make_shared<TelegramBotClient>(std::move(telegramApi), threadPool);
   NotificationService notificationService{
       std::move(telegramClient), std::move(emailService), threadPool};
   NotificationController controller(std::move(notificationService));

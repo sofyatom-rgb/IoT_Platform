@@ -89,6 +89,7 @@ add_executable(client_unit_tests
     ${PROJECT_SOURCE_DIR}/http_adapter/src/ingest/clients/IoTClient.cpp
     ${PROJECT_SOURCE_DIR}/iot_core/src/telemetry/clients/NotificationServiceClient.cpp
     ${PROJECT_SOURCE_DIR}/notification_service/src/clients/TelegramBotClient.cpp
+    ${PROJECT_SOURCE_DIR}/notification_service/src/clients/WorkerThreadPool.cpp
 )
 target_include_directories(client_unit_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

@@ -1,15 +1,21 @@
 #include "TestFramework.h"
 
+#include <chrono>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "clients/ITelegramApi.h"
 #include "common/http/HttpTransport.h"
 #include "ingest/clients/IoTClient.h"
 #include "telemetry/clients/NotificationServiceClient.h"
 #include "clients/TelegramBotClient.h"
+#include "clients/WorkerThreadPool.h"
 
 namespace {
 
@@ -36,6 +42,25 @@ iot::http::Response response(
 const iot::http::Request &lastRequest(const FakeHttpTransport &transport) {
   return transport.requests.back();
 }
+
+class FakeTelegramApi final : public ITelegramApi {
+ public:
+  bool enabled{true};
+  std::string rejection;
+  mutable std::string sentChatId;
+  mutable std::string sentText;
+
+  bool isEnabled() const override { return enabled; }
+
+  void sendMessage(const std::string &chatId,
+                   const std::string &text) const override {
+    if (!rejection.empty()) {
+      throw std::runtime_error(rejection);
+    }
+    sentChatId = chatId;
+    sentText = text;
+  }
+};
 
 }  // namespace
 
@@ -204,84 +229,85 @@ TEST_CASE(notification_client_reports_generic_http_error) {
 }
 
 // TelegramBotClient.
-TEST_CASE(telegram_client_uses_token_path_and_expected_json_payload) {
-  auto transport = std::make_shared<FakeHttpTransport>();
-  transport->nextResponse = response(200, "{\"ok\":true}", {{"ok", true}});
-  TelegramBotClient client("123:secret", transport);
+TEST_CASE(telegram_client_sends_through_api_on_worker_pool) {
+  auto api = std::make_shared<FakeTelegramApi>();
+  auto threadPool = std::make_shared<WorkerThreadPool>(1);
+  TelegramBotClient client(api, threadPool);
 
   bool succeeded = false;
   std::string errorMessage;
-  client.sendMessage("chat-7", "Temperature is high", [&] { succeeded = true; },
-                     [&](const std::string &error) { errorMessage = error; });
+  std::mutex mutex;
+  std::condition_variable condition;
+  bool completed = false;
+  const auto finish = [&] {
+    {
+      std::lock_guard lock(mutex);
+      completed = true;
+    }
+    condition.notify_one();
+  };
+  client.sendMessage(
+      "chat-7", "Temperature is high",
+      [&] {
+        succeeded = true;
+        finish();
+      },
+      [&](const std::string &error) {
+        errorMessage = error;
+        finish();
+      });
 
+  std::unique_lock lock(mutex);
+  const bool finished =
+      condition.wait_for(lock, std::chrono::seconds(5), [&] { return completed; });
+  lock.unlock();
+  EXPECT_TRUE(finished);
+  if (!finished) return;
   EXPECT_TRUE(succeeded);
   EXPECT_TRUE(errorMessage.empty());
-  EXPECT_EQ(iot::http::Method::Post, lastRequest(*transport).method);
-  EXPECT_EQ(std::string("/bot123:secret/sendMessage"),
-            lastRequest(*transport).path);
-  EXPECT_EQ(std::string("chat-7"),
-            std::get<std::string>(lastRequest(*transport).jsonBody.at("chat_id")));
-  EXPECT_EQ(std::string("Temperature is high"),
-            std::get<std::string>(lastRequest(*transport).jsonBody.at("text")));
+  EXPECT_EQ(std::string("chat-7"), api->sentChatId);
+  EXPECT_EQ(std::string("Temperature is high"), api->sentText);
 }
 
-TEST_CASE(telegram_client_propagates_api_rejection_description) {
-  auto transport = std::make_shared<FakeHttpTransport>();
-  transport->nextResponse = response(
-      400, "{\"ok\":false,\"description\":\"chat not found\"}",
-      {{"ok", false}, {"description", std::string("chat not found")}});
-  TelegramBotClient client("123:secret", transport);
-
+TEST_CASE(telegram_client_reports_api_exception) {
+  auto api = std::make_shared<FakeTelegramApi>();
+  api->rejection = "chat not found";
+  auto threadPool = std::make_shared<WorkerThreadPool>(1);
+  TelegramBotClient client(api, threadPool);
   bool succeeded = false;
   std::string errorMessage;
+  std::mutex mutex;
+  std::condition_variable condition;
+  bool completed = false;
   client.sendMessage("bad-chat", "hello", [&] { succeeded = true; },
-                     [&](const std::string &error) { errorMessage = error; });
+                     [&](const std::string &error) {
+                       errorMessage = error;
+                       {
+                         std::lock_guard lock(mutex);
+                         completed = true;
+                       }
+                       condition.notify_one();
+                     });
 
+  std::unique_lock lock(mutex);
+  const bool finished =
+      condition.wait_for(lock, std::chrono::seconds(5), [&] { return completed; });
+  lock.unlock();
+  EXPECT_TRUE(finished);
+  if (!finished) return;
   EXPECT_FALSE(succeeded);
   EXPECT_TRUE(errorMessage.find("chat not found") != std::string::npos);
 }
 
-TEST_CASE(telegram_client_rejects_unparseable_success_response) {
-  auto transport = std::make_shared<FakeHttpTransport>();
-  transport->nextResponse = response(200, "not-json");
-  transport->nextResponse->jsonParsed = false;
-  transport->nextResponse->jsonParseError = "invalid JSON";
-  TelegramBotClient client("123:secret", transport);
-
+TEST_CASE(telegram_client_rejects_messages_when_not_configured) {
+  auto api = std::make_shared<FakeTelegramApi>();
+  api->enabled = false;
+  auto threadPool = std::make_shared<WorkerThreadPool>(1);
+  TelegramBotClient client(api, threadPool);
   bool succeeded = false;
   std::string errorMessage;
   client.sendMessage("chat-7", "hello", [&] { succeeded = true; },
                      [&](const std::string &error) { errorMessage = error; });
 
-  EXPECT_FALSE(succeeded);
-  EXPECT_TRUE(errorMessage.find("Could not parse") != std::string::npos);
-}
-
-TEST_CASE(telegram_client_reports_network_error) {
-  auto transport = std::make_shared<FakeHttpTransport>();
-  transport->nextResult = iot::http::Result::NetworkError;
-  transport->nextResponse = std::nullopt;
-  TelegramBotClient client("123:secret", transport);
-
-  bool succeeded = false;
-  std::string errorMessage;
-  client.sendMessage("chat-7", "hello", [&] { succeeded = true; },
-                     [&](const std::string &error) { errorMessage = error; });
-
-  EXPECT_FALSE(succeeded);
-  EXPECT_TRUE(errorMessage.find("HTTP 0") != std::string::npos);
-}
-
-TEST_CASE(telegram_client_does_not_accept_ok_true_on_non_200_status) {
-  auto transport = std::make_shared<FakeHttpTransport>();
-  transport->nextResponse = response(500, "{\"ok\":true}", {{"ok", true}});
-  TelegramBotClient client("123:secret", transport);
-
-  bool succeeded = false;
-  std::string errorMessage;
-  client.sendMessage("chat-7", "hello", [&] { succeeded = true; },
-                     [&](const std::string &error) { errorMessage = error; });
-
-  EXPECT_FALSE(succeeded);
-  EXPECT_TRUE(errorMessage.find("HTTP 500") != std::string::npos);
+  EXPECT_TRUE(errorMessage.find("not configured") != std::string::npos);
 }

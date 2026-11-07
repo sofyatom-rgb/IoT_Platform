@@ -786,7 +786,7 @@ docker compose exec -T postgres psql -U postgres -d iot_platform \
 | Набор | Содержание | Тип |
 | --- | --- | --- |
 | `service_unit_tests` | UsersService, DevicesService, TelemetryService, AdapterService, NotificationService; ошибки зависимостей, отложенные callback-и, отсутствие повторного вызова | Unit |
-| `client_unit_tests` | IoTClient, NotificationServiceClient, TelegramBotClient; HTTP-метод, путь, JSON, статусы, сетевые ошибки | Unit с fake HTTP-транспортом |
+| `client_unit_tests` | IoTClient и NotificationServiceClient с fake HTTP-транспортом; TelegramBotClient с fake Telegram API, проверка async-вызова и обработки ошибок | Unit без внешней сети |
 | `controller_validation_tests` | Разбор положительных ID, числовые значения, chat ID, обязательные поля и нечисловые значения | Unit чистых функций валидации |
 | `controller_unit_tests` | Реальные обработчики Users, Devices, Telemetry, Ingest и Notification с fake-сервисами; JSON-валидация, forwarding, статусы ошибок | Unit обработчиков с подменёнными зависимостями |
 | `codec_primitive_tests` | Base64, CRC32: контрольные векторы, бинарные данные, padding и некорректный ввод | Unit |
@@ -905,7 +905,7 @@ ctest --test-dir build-tests -N
 
 ### Ограничения
 
-- Unit-тесты `IoTClient`, `NotificationServiceClient` и `TelegramBotClient` проверяют запросы и обработку ответов на границе fake-транспорта; реальная сеть проверяется отдельным тестом `DrogonHttpTransport`.
+- Unit-тесты `IoTClient` и `NotificationServiceClient` проверяют запросы на границе fake HTTP-транспорта. `TelegramBotClient` проверяется через fake Telegram API; внешняя сеть не используется.
 - Контроллерные unit-тесты вызывают методы обработчиков напрямую, а не поднимают HTTP-сервер для каждого контроллера. Маршрутизация/полный wire-format контроллеров дополнительно может быть покрыт E2E тестами.
 - PostgreSQL integration tests требуют отдельной тестовой БД и запускаются только по явной опции `BUILD_POSTGRES_INTEGRATION_TESTING=ON`.
 - Валидация email сейчас проверяет наличие непустого значения, а не полное соответствие RFC. Пароли в текущей учебной схеме всё ещё сохраняются как обычный текст; тесты не делают такую реализацию безопасной для production.
