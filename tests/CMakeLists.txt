@@ -28,7 +28,7 @@ if(BUILD_APPLICATION)
         ${PROJECT_SOURCE_DIR}/notification_service/src
         ${JSONCPP_INCLUDE_DIR}
     )
-    target_link_libraries(service_unit_tests PRIVATE Drogon::Drogon mailio)
+    target_link_libraries(service_unit_tests PRIVATE Drogon::Drogon CURL::libcurl)
 endif()
 add_test(NAME service_unit_tests COMMAND service_unit_tests)
 
@@ -180,7 +180,7 @@ if(BUILD_CONTROLLER_TESTING)
         OpenSSL::Crypto
         ${JSONCPP_LIBRARY}
         iot_drogon_http_transport
-        mailio
+        CURL::libcurl
     )
     add_test(NAME controller_unit_tests COMMAND controller_unit_tests)
     set_tests_properties(controller_unit_tests PROPERTIES TIMEOUT 45)

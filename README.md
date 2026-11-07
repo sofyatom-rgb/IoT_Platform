@@ -101,7 +101,7 @@ IoT_Platform/
 - **Service** передаёт операцию репозиторию. Здесь располагается бизнес-логика.
 - **Repository** выполняет SQL-запросы через Drogon ORM.
 - В Adapter контроллер вызывает сервис, сервис использует HTTP-клиент, а HTTP-клиент обращается к Core.
-- Core вызывает Notification Service через `NotificationServiceClient`; сервис уведомлений параллельно отправляет в настроенные каналы: Telegram (`TelegramBotClient`, tgbot-cpp) и Email (`EmailService`, Gmail SMTP через Mailio с TLS и MIME `multipart/alternative`). Блокирующие вызовы выполняются в общем пуле потоков, event loop Drogon не блокируется.
+- Core вызывает Notification Service через `NotificationServiceClient`; сервис уведомлений параллельно отправляет в настроенные каналы: Telegram (`TelegramBotClient`, tgbot-cpp) и Email (`EmailService`, SMTP через libcurl с TLS и MIME `multipart/alternative`). Блокирующие вызовы выполняются в общем пуле потоков, event loop Drogon не блокируется.
 
 В Core данные из SQL привязываются параметрами (`$1`, `$2`, …), а не подставляются конкатенацией в SQL-строку.
 
@@ -137,7 +137,7 @@ IoT-устройство / curl / клиентское приложение
                                            Notification Controller
                                                       │
                                    Notification Service ─┬─→ TelegramBotClient → Telegram Bot API
-                                                         └─→ EmailService (Mailio) → Gmail SMTP
+                                                         └─→ EmailService (libcurl) → SMTP
 ```
 
 ### Когда обращаться напрямую, а когда через Adapter
@@ -157,12 +157,12 @@ IoT-устройство / curl / клиентское приложение
 - C++-компилятор с поддержкой C++26;
 - установленный Drogon и его зависимости;
 - установленная библиотека [tgbot-cpp](https://github.com/reo7sp/tgbot-cpp) и её зависимости: Boost (headers), libcurl, nlohmann_json;
-- Boost 1.81+ (`date_time`, `regex`) и OpenSSL;
-- Mailio 0.26.1 загружается CMake из официального репозитория при конфигурации;
+- Boost 1.81+ headers и OpenSSL;
+- libcurl с поддержкой SMTP и TLS;
 - Docker и Docker Compose plugin;
 - `curl` для примеров ниже (необязательно, можно использовать любой HTTP-клиент).
 
-Проект находит Drogon, TgBot, Boost и OpenSSL через CMake; Mailio загружается по зафиксированной версии при конфигурации.
+Проект находит Drogon, TgBot, Boost, OpenSSL и libcurl через CMake.
 
 На Debian/Ubuntu зависимости tgbot-cpp ставятся так:
 
@@ -292,7 +292,7 @@ export SMTP_FROM_EMAIL=notifications@example.test
 ./scripts/test-email.sh получатель@example.com
 ```
 
-Откройте `http://127.0.0.1:8026`, чтобы показать полученное письмо. Mailpit перехватывает почту локально и не отправляет её настоящему адресату. Также доступны Gmail SMTP и Mailio: для production задайте `SMTP_SECURITY=starttls` (`smtp.gmail.com:587`) или `SMTP_SECURITY=tls` (порт `465`) и используйте пароль приложения. Не включайте `SMTP_SECURITY=none` для внешних хостов.
+Откройте `http://127.0.0.1:8026`, чтобы показать полученное письмо. Mailpit перехватывает почту локально и не отправляет её настоящему адресату. Также доступны внешние SMTP-серверы: для production задайте `SMTP_SECURITY=starttls` (`smtp.gmail.com:587`) или `SMTP_SECURITY=tls` (порт `465`) и используйте пароль приложения. Не включайте `SMTP_SECURITY=none` для внешних хостов.
 
 Для демонстрации полного уведомления создайте пользователя с `telegram_chat_id`, устройство для него и отправьте через `POST /telemetry` показание выше порога (`30°C` по умолчанию). В Telegram и Mailpit придёт алерт; повторное превышение подавляется до показания в норме (`<=30°C`), после чего следующий алерт снова отправится. Показание можно отправить через Postman или curl — физический датчик для этой демонстрации не нужен.
 

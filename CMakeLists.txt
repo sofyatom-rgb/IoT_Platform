@@ -14,23 +14,9 @@ option(BUILD_POSTGRES_INTEGRATION_TESTING
 option(ENABLE_COVERAGE "Compile project and tests with GCC coverage instrumentation" OFF)
 
 if(BUILD_APPLICATION OR (BUILD_TESTING AND BUILD_CONTROLLER_TESTING))
-    find_package(Git REQUIRED)
-    find_package(Boost 1.81 REQUIRED COMPONENTS date_time regex)
+    find_package(Boost 1.81 REQUIRED)
     find_package(OpenSSL REQUIRED COMPONENTS SSL)
-
-    include(FetchContent)
-    set(MAILIO_BUILD_DOCUMENTATION OFF CACHE BOOL "" FORCE)
-    set(MAILIO_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(MAILIO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    FetchContent_Declare(
-        mailio
-        GIT_REPOSITORY https://github.com/karastojko/mailio.git
-        GIT_TAG 0.26.1
-        PATCH_COMMAND
-            ${GIT_EXECUTABLE} apply --whitespace=nowarn
-            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/mailio-system-ca.patch
-    )
-    FetchContent_MakeAvailable(mailio)
+    find_package(CURL REQUIRED)
     if(BUILD_APPLICATION)
         file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/config")
     endif()

@@ -27,8 +27,8 @@ target_link_libraries(notification_service PRIVATE
     Drogon::Drogon
     ${JSONCPP_LIBRARY}
     iot_drogon_http_transport
-    mailio
     TgBot::TgBot
+    CURL::libcurl
 )
 
 if(BUILD_TESTING)
@@ -42,7 +42,7 @@ if(BUILD_TESTING)
     target_compile_definitions(notification_service_tests PRIVATE
         EMAIL_TEMPLATE_DIR="${CMAKE_BINARY_DIR}/resources/email"
     )
-    target_link_libraries(notification_service_tests PRIVATE mailio)
+    target_link_libraries(notification_service_tests PRIVATE CURL::libcurl)
     add_test(NAME notification_service_tests COMMAND notification_service_tests)
 endif()
 
