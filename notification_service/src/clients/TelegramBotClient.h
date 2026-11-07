@@ -6,12 +6,12 @@
 #include <memory>
 #include <string>
 
-#include "clients/TelegramThreadPool.h"
+#include "clients/WorkerThreadPool.h"
 
 class TelegramBotClient {
  public:
   TelegramBotClient(std::string botToken,
-                    std::shared_ptr<TelegramThreadPool> threadPool);
+                    std::shared_ptr<WorkerThreadPool> threadPool);
 
   void sendMessage(const std::string &chatId,
                    const std::string &text,
@@ -23,5 +23,5 @@ class TelegramBotClient {
 
  private:
   std::shared_ptr<TgBot::Bot> bot_;
-  std::shared_ptr<TelegramThreadPool> threadPool_;
+  std::shared_ptr<WorkerThreadPool> threadPool_;
 };

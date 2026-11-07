@@ -8,6 +8,7 @@ NotificationServiceClient::NotificationServiceClient(
     : baseUrl_(std::move(baseUrl)) {}
 
 void NotificationServiceClient::sendTemperatureAlert(
+    int deviceId,
     const std::string &chatId,
     const std::string &email,
     const std::string &deviceName,
@@ -26,6 +27,7 @@ void NotificationServiceClient::sendTemperatureAlert(
   request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
 
   Json::Value body;
+  body["device_id"] = deviceId;
   body["chat_id"] = chatId;
   body["email"] = email;
   body["device_name"] = deviceName;
@@ -74,6 +76,40 @@ void NotificationServiceClient::sendTemperatureAlert(
           return;
         }
         error("Notification service request failed (HTTP " +
+              std::to_string(status) + ")");
+      });
+}
+
+void NotificationServiceClient::clearTemperatureAlert(
+    int deviceId, std::function<void()> success,
+    std::function<void(const std::string &)> error) const {
+  if (baseUrl_.empty()) {
+    error("Notification service URL is not configured");
+    return;
+  }
+  auto client = drogon::HttpClient::newHttpClient(baseUrl_);
+  auto request = drogon::HttpRequest::newHttpRequest();
+  request->setMethod(drogon::Post);
+  request->setPath("/notifications/temperature/normal");
+  request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+
+  Json::Value body;
+  body["device_id"] = deviceId;
+  request->setBody(body.toStyledString());
+
+  client->sendRequest(
+      request,
+      [success = std::move(success), error = std::move(error)](
+          drogon::ReqResult result,
+          const drogon::HttpResponsePtr &response) {
+        if (result == drogon::ReqResult::Ok && response &&
+            response->getStatusCode() == drogon::k200OK) {
+          success();
+          return;
+        }
+        const auto status =
+            response ? static_cast<int>(response->getStatusCode()) : 0;
+        error("Notification service alert reset failed (HTTP " +
               std::to_string(status) + ")");
       });
 }

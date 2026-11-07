@@ -1,36 +1,16 @@
 #include "services/NotificationService.h"
 
+#include <drogon/drogon.h>
+
 #include <iomanip>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <utility>
-#include <vector>
 
 namespace {
 std::string escapeHtml(const std::string &value) {
-  std::string escaped;
-  escaped.reserve(value.size());
-  for (const char character : value) {
-    switch (character) {
-      case '&':
-        escaped += "&amp;";
-        break;
-      case '<':
-        escaped += "&lt;";
-        break;
-      case '>':
-        escaped += "&gt;";
-        break;
-      case '"':
-        escaped += "&quot;";
-        break;
-      default:
-        escaped += character;
-        break;
-    }
-  }
-  return escaped;
+  return EmailTemplate::escapeHtml(value);
 }
 
 std::string formatTemperature(double value) {
@@ -49,84 +29,118 @@ std::string formatTemperature(double value) {
   return formatted;
 }
 
-std::string buildPlainText(const std::string &deviceName, double temperature,
-                           double threshold) {
-  return std::string("Превышен порог температуры\r\n\r\n") +
-         "Устройство: " + deviceName + "\r\n" +
-         "Температура: " + formatTemperature(temperature) + " °C\r\n" +
-         "Порог: " + formatTemperature(threshold) + " °C\r\n";
-}
-
-// HTML для писем: таблицы, инлайн-стили, контейнер 600px (Outlook/Gmail).
-std::string buildHtmlEmail(const std::string &deviceName, double temperature,
-                           double threshold) {
-  const std::string device = escapeHtml(deviceName);
-  const std::string temp = formatTemperature(temperature);
-  const std::string thr = formatTemperature(threshold);
-  return "<!DOCTYPE html><html lang=\"ru\"><head><meta charset=\"UTF-8\">"
-         "<title>Превышен порог температуры</title></head>"
-         "<body style=\"margin:0;padding:0;background-color:#f4f6f8;\">"
-         "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" "
-         "cellpadding=\"0\" style=\"background-color:#f4f6f8;\"><tr><td "
-         "align=\"center\"><table role=\"presentation\" width=\"600\" "
-         "cellspacing=\"0\" cellpadding=\"0\" "
-         "style=\"background-color:#ffffff;border-radius:8px;"
-         "overflow:hidden;margin:24px 0;\">"
-         "<tr><td style=\"background-color:#ff8c1a;padding:20px 32px;"
-         "font-family:Arial,sans-serif;\">"
-         "<div style=\"color:#ffffff;font-size:20px;font-weight:bold;\">"
-         "IoT Platform — оповещение</div>"
-         "<div style=\"color:#fff2e0;font-size:13px;margin-top:4px;\">"
-         "Превышен порог температуры</div></td></tr>"
-         "<tr><td style=\"padding:28px 32px;font-family:Arial,sans-serif;"
-         "color:#222222;font-size:15px;line-height:1.6;\">"
-         "<p style=\"margin:0 0 16px;\">Устройство <strong>" +
-         device + "</strong> передает температуру выше заданного порога:</p>"
-         "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" "
-         "cellpadding=\"0\" style=\"font-size:15px;\">"
-         "<tr><td style=\"padding:8px 12px;background-color:#fff7ed;"
-         "border-radius:6px;font-weight:bold;color:#c2410c;\">"
-         "Температура: " +
-         temp + " °C</td>"
-         "<td style=\"padding:8px 12px;color:#666666;\">Порог: " + thr +
-         " °C</td></tr></table>"
-         "<p style=\"margin:20px 0 0;color:#666666;font-size:13px;\">"
-         "Проверьте состояние датчика и микроклимат.</p>"
-         "</td></tr>"
-         "<tr><td style=\"padding:0 32px 24px;font-family:Arial,sans-serif;"
-         "font-size:12px;color:#999999;\">"
-         "Письмо сформировано автоматически системой IoT Platform.</td></tr>"
-         "</table></td></tr></table></body></html>";
-}
-
-std::string buildSubject(const std::string &deviceName, double temperature) {
-  return "Превышен порог температуры: " + deviceName + " (" +
-         formatTemperature(temperature) + " °C)";
-}
 }  // namespace
 
 NotificationService::NotificationService(
     TelegramBotClient telegramBotClient,
-    std::optional<EmailClient> emailClient,
-    std::shared_ptr<TelegramThreadPool> threadPool)
+    std::optional<EmailService> emailService,
+    std::shared_ptr<WorkerThreadPool> threadPool)
     : telegramBotClient_(std::move(telegramBotClient)),
-      emailClient_(std::move(emailClient)),
+      emailService_(std::move(emailService)),
       threadPool_(std::move(threadPool)) {}
 
+bool NotificationService::reserveTemperatureAlert(int deviceId) const {
+  if (deviceId <= 0) {
+    return true;
+  }
+  std::lock_guard lock(alertState_->mutex);
+  return alertState_->activeDevices.insert(deviceId).second;
+}
+
+void NotificationService::releaseTemperatureAlert(int deviceId) const {
+  if (deviceId <= 0) {
+    return;
+  }
+  std::lock_guard lock(alertState_->mutex);
+  alertState_->activeDevices.erase(deviceId);
+}
+
+void NotificationService::clearTemperatureAlert(int deviceId) const {
+  releaseTemperatureAlert(deviceId);
+}
+
+void NotificationService::sendEmailAlert(
+    const std::string &email, const EmailAlertData &alert,
+    std::function<void()> success,
+    std::function<void(const std::string &)> error) const {
+  if (email.empty()) {
+    error("Recipient email is required");
+    return;
+  }
+  if (!emailService_.has_value() || !emailService_->isEnabled()) {
+    error("SMTP email notifications are disabled");
+    return;
+  }
+  if (!threadPool_) {
+    error("Email worker pool is not available");
+    return;
+  }
+
+  const EmailService service = *emailService_;
+  trantor::EventLoop *loop = trantor::EventLoop::getEventLoopOfCurrentThread();
+  if (loop == nullptr) {
+    loop = drogon::app().getLoop();
+  }
+  threadPool_->post([service, email, alert, loop,
+                     success = std::move(success),
+                     error = std::move(error)]() mutable {
+    const EmailSendResult result = service.send(email, alert);
+    if (!result.sent) {
+      const std::string message = result.error;
+      loop->queueInLoop(
+          [error = std::move(error), message]() { error(message); });
+      return;
+    }
+    loop->queueInLoop([success = std::move(success)]() { success(); });
+  });
+}
+
+void NotificationService::sendTestEmail(
+    const std::string &email, std::function<void()> success,
+    std::function<void(const std::string &)> error) const {
+  if (email.empty()) {
+    error("Recipient email is required");
+    return;
+  }
+  if (!emailService_.has_value() || !emailService_->isEnabled()) {
+    error("SMTP email notifications are disabled");
+    return;
+  }
+  if (!threadPool_) {
+    error("Email worker pool is not available");
+    return;
+  }
+
+  const EmailService service = *emailService_;
+  trantor::EventLoop *loop = trantor::EventLoop::getEventLoopOfCurrentThread();
+  if (loop == nullptr) {
+    loop = drogon::app().getLoop();
+  }
+  threadPool_->post([service, email, loop,
+                     success = std::move(success),
+                     error = std::move(error)]() mutable {
+    const EmailSendResult result = service.sendTestEmail(email);
+    if (!result.sent) {
+      const std::string message = result.error;
+      loop->queueInLoop(
+          [error = std::move(error), message]() { error(message); });
+      return;
+    }
+    loop->queueInLoop([success = std::move(success)]() { success(); });
+  });
+}
+
 void NotificationService::sendTemperatureAlert(
-    const std::string &chatId, const std::string &email,
+    int deviceId, const std::string &chatId, const std::string &email,
     const std::string &deviceName, double temperature, double threshold,
     std::function<void(const ChannelStatuses &)> success,
     std::function<void(const std::string &)> error) const {
   ChannelStatuses statuses;
-
   const bool wantTelegram = !chatId.empty();
   const bool wantEmail = !email.empty();
-  // Не настроенный канал = skipped, даже если адрес/чат_id передан.
   const bool telegramEnabled = telegramBotClient_.isEnabled();
-  // EmailClient всегда есть как объект, но isEnabled() читает SmtpConfig.
-  const bool emailEnabled = emailClient_.has_value() && emailClient_->isEnabled();
-
+  const bool emailEnabled =
+      emailService_.has_value() && emailService_->isEnabled();
   const bool tryTelegram = wantTelegram && telegramEnabled;
   const bool tryEmail = wantEmail && emailEnabled;
 
@@ -147,33 +161,39 @@ void NotificationService::sendTemperatureAlert(
     return;
   }
 
+  if (!reserveTemperatureAlert(deviceId)) {
+    statuses.telegram = tryTelegram ? "skipped_duplicate" : statuses.telegram;
+    statuses.email = tryEmail ? "skipped_duplicate" : statuses.email;
+    success(statuses);
+    return;
+  }
+
   auto done = std::make_shared<int>(0);
   auto state = std::make_shared<ChannelStatuses>(statuses);
-
-  auto finishOne = [done, state, totalToTry, tryTelegram, tryEmail,
-                    success = std::move(success),
+  auto finishOne = [this, deviceId, done, state, totalToTry, tryTelegram,
+                    tryEmail, success = std::move(success),
                     error = std::move(error)]() {
     ++(*done);
     if (*done < totalToTry) {
       return;
     }
-    const std::string telegram = state->telegram;
-    const std::string email = state->email;
-    const bool telegramSent = (telegram == "sent");
-    const bool emailSent = (email == "sent");
+    const bool telegramSent = state->telegram == "sent";
+    const bool emailSent = state->email == "sent";
     if (telegramSent || emailSent) {
       success(*state);
       return;
     }
+
+    releaseTemperatureAlert(deviceId);
     std::string parts;
     if (tryTelegram) {
-      parts += "telegram: " + telegram;
+      parts += "telegram: " + state->telegram;
     }
     if (tryEmail) {
       if (!parts.empty()) {
         parts += "; ";
       }
-      parts += "email: " + email;
+      parts += "email: " + state->email;
     }
     error(parts);
   };
@@ -191,24 +211,31 @@ void NotificationService::sendTemperatureAlert(
           state->telegram = "sent";
           finishOne();
         },
-        [state, finishOne](const std::string &message) {
-          state->telegram = "failed: " + message;
+        [state, finishOne](const std::string &messageError) {
+          state->telegram = "failed: " + messageError;
           finishOne();
         });
   }
 
   if (tryEmail) {
-    const std::string subject = buildSubject(deviceName, temperature);
-    const std::string plain = buildPlainText(deviceName, temperature, threshold);
-    const std::string html = buildHtmlEmail(deviceName, temperature, threshold);
-    emailClient_->sendMessage(
-        email, subject, plain, html,
+    EmailAlertData alert;
+    alert.eventType = "Превышен порог температуры";
+    alert.sensorName = deviceName;
+    alert.sensorId = deviceId > 0 ? std::to_string(deviceId) : "";
+    alert.readingValue = formatTemperature(temperature);
+    alert.unit = "°C";
+    alert.threshold = formatTemperature(threshold);
+    alert.severity = "WARNING";
+    alert.description =
+        "Показание датчика превысило установленный температурный порог.";
+    sendEmailAlert(
+        email, alert,
         [state, finishOne]() {
           state->email = "sent";
           finishOne();
         },
-        [state, finishOne](const std::string &message) {
-          state->email = "failed: " + message;
+        [state, finishOne](const std::string &messageError) {
+          state->email = "failed: " + messageError;
           finishOne();
         });
   }

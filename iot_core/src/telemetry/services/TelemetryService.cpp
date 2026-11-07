@@ -25,6 +25,16 @@ std::string summarizeChannels(const ChannelStatuses &channels) {
   if (anySent && !anyFailed) {
     return "sent";
   }
+  const bool duplicateOnly =
+      (channels.telegram == "skipped_duplicate" ||
+       channels.email == "skipped_duplicate") &&
+      (channels.telegram.empty() || channels.telegram == "skipped" ||
+       channels.telegram == "skipped_duplicate") &&
+      (channels.email.empty() || channels.email == "skipped" ||
+       channels.email == "skipped_duplicate");
+  if (duplicateOnly) {
+    return "duplicate_suppressed";
+  }
   // notification_service возвращает 200 только при доставке хотя бы в один канал.
   std::string details;
   if (!channels.telegram.empty() && channels.telegram != "skipped") {
@@ -73,21 +83,27 @@ void TelemetryService::save(
                  << " with temperature " << temperature
                  << " (notification threshold " << threshold << ")";
         if (temperature <= threshold) {
-          (*finishSuccess)("not_required");
+          notificationClient.clearTemperatureAlert(
+              deviceId, [finishSuccess]() { (*finishSuccess)("not_required"); },
+              [finishSuccess](const std::string &error) {
+                LOG_WARN << "Could not clear temperature alert state: "
+                         << error;
+                (*finishSuccess)("not_required");
+              });
           return;
         }
 
         DevicesService devices(db);
         devices.getNotificationInfo(
-            deviceId, [db, temperature, threshold, notificationClient,
-                       finishSuccess](
+            deviceId, [db, deviceId, temperature, threshold,
+                       notificationClient, finishSuccess](
                 int ownerId, const std::string &deviceName) {
               LOG_INFO << "Temperature threshold exceeded for device; "
                           "resolved owner";
               UsersService users(db);
               users.getNotificationTargets(
-                  ownerId, [temperature, threshold, notificationClient,
-                            deviceName, finishSuccess](
+                  ownerId, [deviceId, temperature, threshold,
+                            notificationClient, deviceName, finishSuccess](
                       const NotificationTargets &targets) {
                     if (targets.chatId.empty() && targets.email.empty()) {
                       LOG_WARN << "Temperature threshold exceeded, but user "
@@ -97,7 +113,8 @@ void TelemetryService::save(
                     }
 
                     notificationClient.sendTemperatureAlert(
-                        targets.chatId, targets.email, deviceName, temperature,
+                        deviceId, targets.chatId, targets.email, deviceName,
+                        temperature,
                         threshold,
                         [finishSuccess](const ChannelStatuses &channels) {
                           LOG_INFO << "Temperature notification accepted by "

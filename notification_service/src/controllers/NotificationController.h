@@ -14,6 +14,15 @@ class NotificationController {
   void sendTemperatureAlert(
       const drogon::HttpRequestPtr &request,
       std::function<void(const drogon::HttpResponsePtr &)> callback);
+  void clearTemperatureAlert(
+      const drogon::HttpRequestPtr &request,
+      std::function<void(const drogon::HttpResponsePtr &)> callback);
+  void sendEmailAlert(
+      const drogon::HttpRequestPtr &request,
+      std::function<void(const drogon::HttpResponsePtr &)> callback);
+  void sendTestEmail(
+      const drogon::HttpRequestPtr &request,
+      std::function<void(const drogon::HttpResponsePtr &)> callback);
 
   NotificationService service_;
 };

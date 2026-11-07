@@ -1,8 +1,8 @@
-#include "clients/TelegramThreadPool.h"
+#include "clients/WorkerThreadPool.h"
 
 #include <utility>
 
-TelegramThreadPool::TelegramThreadPool(std::size_t threadCount) {
+WorkerThreadPool::WorkerThreadPool(std::size_t threadCount) {
   if (threadCount == 0) {
     threadCount = 1;
   }
@@ -12,7 +12,7 @@ TelegramThreadPool::TelegramThreadPool(std::size_t threadCount) {
   }
 }
 
-TelegramThreadPool::~TelegramThreadPool() {
+WorkerThreadPool::~WorkerThreadPool() {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     stopping_ = true;
@@ -25,7 +25,7 @@ TelegramThreadPool::~TelegramThreadPool() {
   }
 }
 
-void TelegramThreadPool::post(std::function<void()> task) {
+void WorkerThreadPool::post(std::function<void()> task) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (stopping_) {
@@ -36,7 +36,7 @@ void TelegramThreadPool::post(std::function<void()> task) {
   condition_.notify_one();
 }
 
-void TelegramThreadPool::workerLoop() {
+void WorkerThreadPool::workerLoop() {
   for (;;) {
     std::function<void()> task;
     {

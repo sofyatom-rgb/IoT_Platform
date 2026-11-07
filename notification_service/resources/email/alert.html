@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{event_type}}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f1f5f9;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border-radius:10px;overflow:hidden;">
+          <tr>
+            <td style="padding:22px 28px;background-color:#102a43;color:#ffffff;">
+              <div style="font-size:21px;font-weight:bold;line-height:1.3;">&#9673; {{platform_name}}</div>
+              <div style="padding-top:5px;font-size:13px;color:#cbd5e1;">Мониторинг состояния IoT-устройств</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:26px 28px 8px;">
+              <div style="font-size:13px;color:#475569;">{{recipient_greeting}}</div>
+              <h1 style="margin:10px 0 16px;font-size:22px;line-height:1.35;color:#0f172a;">{{event_type}}</h1>
+              <span style="display:inline-block;padding:6px 11px;border-radius:999px;background-color:{{severity_background}};color:{{severity_foreground}};font-size:12px;font-weight:bold;letter-spacing:0.4px;">{{severity}}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 28px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+                <tr>
+                  <td style="padding:18px 20px;">
+                    <div style="font-size:12px;color:#64748b;">Текущее показание</div>
+                    <div style="padding-top:4px;font-size:32px;font-weight:bold;color:#1d4ed8;word-break:break-word;">{{reading_value}} <span style="font-size:18px;font-weight:normal;">{{unit}}</span></div>
+                  </td>
+                  <td style="padding:18px 20px;text-align:right;">
+                    <div style="font-size:12px;color:#64748b;">Допустимый порог</div>
+                    <div style="padding-top:7px;font-size:18px;font-weight:bold;color:#334155;">{{threshold}} {{unit}}</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:6px 28px 18px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="font-size:14px;line-height:1.5;">
+                <tr><td style="padding:7px 0;color:#64748b;width:38%;">Датчик</td><td style="padding:7px 0;color:#0f172a;font-weight:bold;">{{sensor_name}}</td></tr>
+                <tr><td style="padding:7px 0;color:#64748b;">Идентификатор</td><td style="padding:7px 0;color:#0f172a;">{{sensor_id}}</td></tr>
+                <tr><td style="padding:7px 0;color:#64748b;">Местоположение</td><td style="padding:7px 0;color:#0f172a;">{{location}}</td></tr>
+                <tr><td style="padding:7px 0;color:#64748b;">Время события</td><td style="padding:7px 0;color:#0f172a;">{{occurred_at}}</td></tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 28px 24px;">
+              <div style="padding:14px 16px;border-left:3px solid {{severity_foreground}};background-color:#f8fafc;font-size:14px;line-height:1.55;color:#334155;">{{description}}</div>
+            </td>
+          </tr>
+          {{platform_button}}
+          <tr>
+            <td style="padding:16px 28px;background-color:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;line-height:1.5;color:#64748b;">
+              Это автоматическое уведомление системы {{platform_name}}. Пожалуйста, не отвечайте на это письмо.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

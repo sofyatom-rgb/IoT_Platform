@@ -1,0 +1,17 @@
+{{recipient_greeting}}
+
+{{platform_name}} — {{event_type}}
+Уровень: {{severity}}
+
+Показание: {{reading_value}} {{unit}}
+Допустимый порог: {{threshold}} {{unit}}
+Датчик: {{sensor_name}}
+Идентификатор: {{sensor_id}}
+Местоположение: {{location}}
+Время события: {{occurred_at}}
+
+{{description}}
+
+{{platform_link}}
+
+Это автоматическое уведомление системы {{platform_name}}. Пожалуйста, не отвечайте на это письмо.

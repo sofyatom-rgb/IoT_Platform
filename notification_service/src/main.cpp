@@ -2,52 +2,18 @@
 
 #include <cstdlib>
 #include <filesystem>
-#include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 
-#include "clients/EmailClient.h"
 #include "clients/TelegramBotClient.h"
-#include "clients/TelegramThreadPool.h"
+#include "clients/WorkerThreadPool.h"
 #include "controllers/NotificationController.h"
-
-namespace {
-SmtpConfig readSmtpConfig() {
-  SmtpConfig smtp;
-  const auto config = drogon::app().getCustomConfig()["smtp"];
-  if (!config.isObject()) {
-    return smtp;
-  }
-  smtp.enabled = config["enabled"].asBool();
-  smtp.host = config["host"].asString();
-  if (config["port"].isInt()) {
-    smtp.port = config["port"].asInt();
-  } else if (config["port"].isNumeric()) {
-    smtp.port = static_cast<int>(config["port"].asDouble());
-  }
-  if (config["security"].isString() && !config["security"].asString().empty()) {
-    smtp.security = config["security"].asString();
-  }
-  smtp.username = config["username"].asString();
-  // Секрет можно переопределить через env (как TELEGRAM_BOT_TOKEN).
-  if (const char *envPassword = std::getenv("SMTP_PASSWORD")) {
-    smtp.password = envPassword;
-  } else {
-    smtp.password = config["password"].asString();
-  }
-  smtp.from = config["from"].asString();
-  if (config["timeout_seconds"].isNumeric()) {
-    smtp.timeoutSeconds = config["timeout_seconds"].asInt64();
-  }
-  return smtp;
-}
-}  // namespace
+#include "notifications/EmailConfig.h"
+#include "notifications/EmailService.h"
 
 int main(int, char *argv[]) {
-  initCurlGlobal();
-
   const auto configPath =
       std::filesystem::absolute(argv[0]).parent_path().parent_path() /
       "config" / "NotificationHTTPConfig.json";
@@ -62,19 +28,26 @@ int main(int, char *argv[]) {
     LOG_WARN << "TELEGRAM_BOT_TOKEN is not set, Telegram channel is disabled";
   }
 
-  const SmtpConfig smtp = readSmtpConfig();
-  if (!smtp.enabled || smtp.host.empty()) {
-    LOG_WARN << "SMTP is not configured, email channel is disabled";
+  EmailConfig emailConfig = EmailConfig::fromEnvironment();
+  std::optional<EmailService> emailService;
+  if (!emailConfig.configurationError.empty()) {
+    LOG_ERROR << "SMTP configuration error: "
+              << emailConfig.configurationError;
+  }
+  if (!emailConfig.enabled) {
+    LOG_WARN << "SMTP email notifications are disabled";
+  } else {
+    const std::string configError = emailConfig.validationError();
+    if (!configError.empty() && emailConfig.configurationError.empty()) {
+      LOG_ERROR << "SMTP configuration error: " << configError;
+    }
+    emailService.emplace(std::move(emailConfig));
   }
 
-  auto threadPool = std::make_shared<TelegramThreadPool>(4);
+  auto threadPool = std::make_shared<WorkerThreadPool>(4);
   TelegramBotClient telegramClient{token, threadPool};
-  std::optional<EmailClient> emailClient;
-  if (smtp.enabled && !smtp.host.empty()) {
-    emailClient.emplace(smtp, threadPool);
-  }
   NotificationService notificationService{
-      std::move(telegramClient), std::move(emailClient), threadPool};
+      std::move(telegramClient), std::move(emailService), threadPool};
   NotificationController controller(std::move(notificationService));
   controller.registerRoutes();
 

@@ -16,12 +16,17 @@ class NotificationServiceClient {
 
   // success получает итоговые статусы каналов ("sent"/"skipped"/"failed: ...").
   void sendTemperatureAlert(
+      int deviceId,
       const std::string &chatId,
       const std::string &email,
       const std::string &deviceName,
       double temperature,
       double threshold,
       std::function<void(const ChannelStatuses &)> success,
+      std::function<void(const std::string &)> error) const;
+
+  void clearTemperatureAlert(
+      int deviceId, std::function<void()> success,
       std::function<void(const std::string &)> error) const;
 
  private:

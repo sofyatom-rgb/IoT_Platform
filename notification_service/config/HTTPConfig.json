@@ -5,16 +5,5 @@
       "port": 8082
     }
   ],
-  "custom_config": {
-    "smtp": {
-      "enabled": true,
-      "host": "127.0.0.1",
-      "port": 1025,
-      "security": "none",
-      "username": "",
-      "password": "",
-      "from": "IoT Platform <iot@localhost>",
-      "timeout_seconds": 20
-    }
-  }
+  "custom_config": {}
 }

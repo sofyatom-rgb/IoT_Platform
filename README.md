@@ -6,7 +6,7 @@ IoT Platform — учебный backend для регистрации польз
 
 1. **IoT Core** — основной сервис и единственный компонент, который работает с PostgreSQL. Адрес по умолчанию: `http://localhost:8080`.
 2. **HTTP Adapter** — дополнительный HTTP-вход для интеграций и IoT-клиентов. Адрес по умолчанию: `http://localhost:8081`. Он принимает телеметрию и проксирует запросы к IoT Core.
-3. **Notification Service** — внутренний HTTP-сервис, принимающий события от Core и отправляющий уведомления через Telegram Bot API и/или SMTP (email). Адрес по умолчанию: `http://localhost:8082`.
+3. **Notification Service** — внутренний HTTP-сервис, принимающий события от Core и отправляющий уведомления через Telegram Bot API и/или Gmail SMTP (email). Адрес по умолчанию: `http://localhost:8082`.
 
 ## Содержание
 
@@ -83,7 +83,9 @@ IoT_Platform/
 │       ├── main.cpp
 │       ├── controllers/              # Принимает внутренние запросы от Core
 │       ├── services/                 # Формирует содержание уведомления
-│       └── clients/                  # Telegram (tgbot-cpp) и Email (SMTP/libcurl)
+│       ├── clients/                  # Telegram (tgbot-cpp)
+│       ├── notifications/            # Email config, SMTP service, templates
+│       └── resources/email/          # HTML и текстовые шаблоны писем
 │
 └── build/                            # Генерируется CMake; здесь находятся бинарники
     └── bin/
@@ -99,7 +101,7 @@ IoT_Platform/
 - **Service** передаёт операцию репозиторию. Здесь располагается бизнес-логика.
 - **Repository** выполняет SQL-запросы через Drogon ORM.
 - В Adapter контроллер вызывает сервис, сервис использует HTTP-клиент, а HTTP-клиент обращается к Core.
-- Core вызывает Notification Service через `NotificationServiceClient`; сервис уведомлений параллельно отправляет в настроенные каналы: Telegram (`TelegramBotClient`, tgbot-cpp) и Email (`EmailClient`, SMTP через libcurl, MIME `multipart/alternative` с HTML). Блокирующие вызовы выполняются в общем пуле потоков, event loop Drogon не блокируется.
+- Core вызывает Notification Service через `NotificationServiceClient`; сервис уведомлений параллельно отправляет в настроенные каналы: Telegram (`TelegramBotClient`, tgbot-cpp) и Email (`EmailService`, Gmail SMTP через Mailio с TLS и MIME `multipart/alternative`). Блокирующие вызовы выполняются в общем пуле потоков, event loop Drogon не блокируется.
 
 В Core данные из SQL привязываются параметрами (`$1`, `$2`, …), а не подставляются конкатенацией в SQL-строку.
 
@@ -135,7 +137,7 @@ IoT-устройство / curl / клиентское приложение
                                            Notification Controller
                                                       │
                                    Notification Service ─┬─→ TelegramBotClient → Telegram Bot API
-                                                         └─→ EmailClient (libcurl) → SMTP сервер
+                                                         └─→ EmailService (Mailio) → Gmail SMTP
 ```
 
 ### Когда обращаться напрямую, а когда через Adapter
@@ -151,15 +153,16 @@ IoT-устройство / curl / клиентское приложение
 ## Требования
 
 - Linux/macOS или другая среда, где доступны инструменты проекта;
-- CMake версии 3.16 или новее;
+- CMake версии 3.30 или новее;
 - C++-компилятор с поддержкой C++26;
 - установленный Drogon и его зависимости;
 - установленная библиотека [tgbot-cpp](https://github.com/reo7sp/tgbot-cpp) и её зависимости: Boost (headers), libcurl, nlohmann_json;
-- libcurl (обычно уже установлен; используется и для SMTP-отправки email в Notification Service);
+- Boost 1.81+ (`date_time`, `regex`) и OpenSSL;
+- Mailio 0.26.1 загружается CMake из официального репозитория при конфигурации;
 - Docker и Docker Compose plugin;
 - `curl` для примеров ниже (необязательно, можно использовать любой HTTP-клиент).
 
-Проект вызывает `find_package(Drogon CONFIG REQUIRED)`, `find_package(TgBot CONFIG REQUIRED)` и `find_package(CURL REQUIRED)`, поэтому установленные пакеты Drogon, TgBot и libcurl должны быть видны CMake.
+Проект находит Drogon, TgBot, Boost и OpenSSL через CMake; Mailio загружается по зафиксированной версии при конфигурации.
 
 На Debian/Ubuntu зависимости tgbot-cpp ставятся так:
 
@@ -249,7 +252,7 @@ Core ищет конфиги рядом с исполняемым файлом, 
 
 ### 3. Запустить Notification Service
 
-Сервис поддерживает два канала уведомлений: **Telegram** и **Email (SMTP)**. Можно включить любой из них или оба.
+Сервис поддерживает два канала уведомлений: **Telegram** и **Email через SMTP**. Можно включить любой из них или оба.
 
 **Telegram (опционально).** Создайте бота через BotFather и задайте токен в окружении (не добавляйте его в файлы проекта):
 
@@ -259,21 +262,37 @@ export TELEGRAM_BOT_TOKEN='<token-from-BotFather>'
 
 Пользователь должен заранее открыть бота и нажать **Start**. Укажите его Telegram `chat_id` при создании пользователя в Core. Если `TELEGRAM_BOT_TOKEN` не задан, Telegram-канал отключается с предупреждением в логе.
 
-**Email (опционально).** Параметры SMTP задаются в `notification_service/config/HTTPConfig.json` → `custom_config.smtp` (см. раздел «Конфигурация»). По умолчанию сервис настроен на локальный SMTP `127.0.0.1:1025` без TLS — для локальной проверки удобно поднять [Mailpit](https://mailpit.axllent.org/):
+**Email (опционально).** Почта отправляется через Gmail SMTP и Mailio. При первой сборке CMake скачает зафиксированную версию Mailio; для неё нужны CMake 3.30+, Boost 1.81+ с компонентами `date_time` и `regex`, а также OpenSSL. Для установки системных зависимостей на Ubuntu:
 
 ```sh
-./scripts/dev-smtp.sh up          # SMTP 127.0.0.1:1025, веб-интерфейс http://127.0.0.1:8025
+sudo apt update
+sudo apt install libboost-date-time-dev libboost-regex-dev libssl-dev ca-certificates
 ```
 
-Остановить: `./scripts/dev-smtp.sh down`. Пароль SMTP можно переопределить переменной `SMTP_PASSWORD`.
-
-В отдельном терминале из корня проекта запустите сервис:
+Включите двухэтапную аутентификацию Google и создайте **пароль приложения** для почты. Обычный пароль Google использовать нельзя. Скопируйте пример и заполните `.env` новыми секретами (файл игнорируется Git):
 
 ```sh
+cp .env.example .env
+```
+
+Отредактируйте `.env`: задайте `SMTP_ENABLED=true`, `SMTP_USERNAME`, `SMTP_PASSWORD` (пароль приложения без пробелов), `SMTP_FROM_EMAIL` (для Gmail укажите тот же адрес, что в `SMTP_USERNAME`); Gmail по умолчанию использует `smtp.gmail.com:587` и STARTTLS. Не вставляйте секреты в Git или HTTP-запросы. Запустите сервис, загрузив переменные окружения:
+
+```sh
+set -a
+source .env
+set +a
 ./build/bin/notification_service
 ```
 
-Сервис слушает только локальный интерфейс `127.0.0.1:8082`. Telegram отправляется через tgbot-cpp (`parse_mode: HTML`), email — через libcurl (SMTP, MIME `multipart/alternative` с текстом и HTML-шаблоном). Блокирующие вызовы выполняются в общем пуле потоков, event loop Drogon не блокируется.
+Для отправки одного тестового письма из второго терминала используйте:
+
+```sh
+./scripts/test-email.sh получатель@example.com
+```
+
+Либо вызовите `POST http://127.0.0.1:8082/notifications/email/test` с JSON `{"email":"получатель@example.com"}`. Успех возвращает `"email":"sent"`, а ошибка SMTP — HTTP 502 с диагностическим сообщением. Проверка не гарантирует доставку во входящие: Gmail может поместить письмо в спам. Сервис слушает только локальный интерфейс `127.0.0.1:8082`.
+
+Температурное уведомление сейчас формируется для существующего порога Core и имеет уровень `WARNING`. Повторные превышения подавляются по `device_id`, пока Core не получит нормальное показание. Состояние хранится в памяти Notification Service и сбрасывается при его перезапуске; между перезапусками или несколькими экземплярами сервиса дедупликация не сохраняется. Обработчик `POST /notifications/email` принимает общие поля события и уровни `INFO`, `WARNING`, `CRITICAL` для дальнейшего расширения.
 
 ### 4. Запустить HTTP Adapter
 
@@ -294,16 +313,17 @@ export TELEGRAM_BOT_TOKEN='<token-from-BotFather>'
 - `iot_core/config/HTTPConfig.json` — адрес и порт Core;
 - `iot_core/config/PostgreSQLConfig.json` — host, порт, база и учётные данные PostgreSQL;
 - `http_adapter/src/config/AdapterConfig.json` — адрес/порт Adapter и URL Core;
-- `notification_service/config/HTTPConfig.json` — адрес/порт Notification Service и секция `custom_config.smtp`:
-  - `enabled` — включить email-канал;
-  - `host`, `port` — адрес SMTP-сервера (Mailpit: `127.0.0.1:1025`);
-  - `security` — `none` | `starttls` (порт 587) | `tls` (порт 465, smtps);
-  - `username`, `password` — учётные данные (пароль можно задать через `SMTP_PASSWORD`);
-  - `from` — отправитель, например `IoT Platform <iot@localhost>`;
-  - `timeout_seconds` — таймаут отправки.
+- `.env.example` — пример переменных SMTP; реальные секреты хранятся только в локальном `.env` или окружении;
+- `SMTP_ENABLED` — включает SMTP (по умолчанию `false`);
+- `SMTP_HOST`, `SMTP_PORT` — SMTP-сервер и порт (по умолчанию `smtp.gmail.com:587`);
+- `SMTP_SECURITY` — `starttls` (по умолчанию) или implicit TLS `tls`; открытый SMTP запрещён;
+- `SMTP_USERNAME`, `SMTP_PASSWORD` — логин и пароль приложения;
+- `SMTP_FROM_EMAIL`, `SMTP_SENDER_NAME` — адрес и имя отправителя;
+- `SMTP_TIMEOUT_SECONDS` — сетевой таймаут (по умолчанию 20 секунд);
+- `PLATFORM_URL` — необязательная ссылка на платформу в письме; кнопка скрыта, если URL не задан.
 - В `iot_core/config/HTTPConfig.json` в `custom_config` задаются `temperature_threshold` и `notification_service_url`.
 
-CMake копирует их в `build/config/`. После изменения конфигов повторите конфигурацию/сборку или скопируйте файлы в `build/config/`, чтобы приложение получило обновлённые настройки.
+CMake копирует HTTP-конфиги и email-шаблоны в build-каталог. После изменения исходных шаблонов повторите конфигурацию/сборку.
 
 ## Общий сценарий использования
 

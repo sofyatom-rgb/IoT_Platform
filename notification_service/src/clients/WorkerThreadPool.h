@@ -8,14 +8,15 @@
 #include <thread>
 #include <vector>
 
-// Выполняет блокирующие вызовы Telegram Bot API вне event loop Drogon.
-class TelegramThreadPool {
+// Общий пул потоков: выполняет блокирующие вызовы (Telegram, email)
+// вне event loop Drogon.
+class WorkerThreadPool {
  public:
-  explicit TelegramThreadPool(std::size_t threadCount = 4);
-  ~TelegramThreadPool();
+  explicit WorkerThreadPool(std::size_t threadCount = 4);
+  ~WorkerThreadPool();
 
-  TelegramThreadPool(const TelegramThreadPool &) = delete;
-  TelegramThreadPool &operator=(const TelegramThreadPool &) = delete;
+  WorkerThreadPool(const WorkerThreadPool &) = delete;
+  WorkerThreadPool &operator=(const WorkerThreadPool &) = delete;
 
   void post(std::function<void()> task);
 
