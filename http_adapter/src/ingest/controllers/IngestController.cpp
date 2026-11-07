@@ -1,8 +1,10 @@
 #include "ingest/controllers/IngestController.h"
 #include "ingest/clients/IoTClient.h"
 #include "common/http/DrogonHttpTransport.h"
+#include "common/validation/RequestValidation.h"
 
 #include <memory>
+#include <stdexcept>
 
 #include <sstream>
 #include <string>
@@ -26,9 +28,24 @@ bool parseJsonString(const std::string &text, Json::Value &out, std::string &err
 }  // namespace
 
 IngestController::IngestController()
-    : codecEnabled_(drogon::app().getCustomConfig().get("codec_enabled", true).asBool()),
-      encoder_(drogon::app().getCustomConfig()["codec_key"].asString()),
-      decoder_(drogon::app().getCustomConfig()["codec_key"].asString()) {}
+    : IngestController(
+          drogon::app().getCustomConfig().get("codec_enabled", true).asBool(),
+          drogon::app().getCustomConfig()["codec_key"].asString(),
+          std::make_shared<IoTClient>(
+              std::make_shared<iot::http::DrogonHttpTransport>(
+                  drogon::app().getCustomConfig()["iot_core_url"].asString()))) {}
+
+IngestController::IngestController(
+    bool codecEnabled, std::string codecKey,
+    std::shared_ptr<IIoTClient> iotClient)
+    : codecEnabled_(codecEnabled),
+      encoder_(codecKey),
+      decoder_(std::move(codecKey)),
+      iotClient_(std::move(iotClient)) {
+  if (!iotClient_) {
+    throw std::invalid_argument("IngestController requires an IoT client");
+  }
+}
 
 void IngestController::registerRoutes() {
   drogon::app().registerHandler(
@@ -89,7 +106,9 @@ void IngestController::ingest(
     Json::Value body;
     body["status"]  = "error";
     body["message"] = "Invalid JSON in Adapter";
-    callback(encodeResponse(body));
+    auto response = encodeResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
@@ -99,22 +118,25 @@ void IngestController::ingest(
     Json::Value body;
     body["status"]  = "error";
     body["message"] = "Decode failed: " + err;
-    callback(encodeResponse(body));
+    auto response = encodeResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
-  if (!payload["device_id"].isInt() || !payload["temperature"].isNumeric()) {
+  if (!payload["device_id"].isInt() || !payload["temperature"].isNumeric() ||
+      !iot::validation::isValidTelemetryInput(
+          payload["device_id"].asInt(), payload["temperature"].asDouble())) {
     Json::Value body;
     body["status"]  = "error";
-    body["message"] = "Decoded payload must contain integer device_id and numeric temperature";
-    callback(encodeResponse(body));
+    body["message"] = "Decoded payload must contain positive integer device_id and finite numeric temperature";
+    auto response = encodeResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
-  const std::string iotCoreUrl =
-      drogon::app().getCustomConfig()["iot_core_url"].asString();
-  AdapterService service(std::make_shared<IoTClient>(
-          std::make_shared<iot::http::DrogonHttpTransport>(iotCoreUrl)));
+  AdapterService service(iotClient_);
 
   service.processTelemetry(
       payload["device_id"].asInt(),
@@ -129,7 +151,9 @@ void IngestController::ingest(
         Json::Value body;
         body["status"]  = "error";
         body["message"] = error;
-        callback(encodeResponse(body));
+        auto response = encodeResponse(body);
+        response->setStatusCode(drogon::k502BadGateway);
+        callback(response);
       });
 }
 
@@ -141,7 +165,9 @@ void IngestController::getTelemetry(
     Json::Value body;
     body["status"]  = "error";
     body["message"] = "Invalid JSON in Adapter";
-    callback(encodeResponse(body));
+    auto response = encodeResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
@@ -151,22 +177,24 @@ void IngestController::getTelemetry(
     Json::Value body;
     body["status"]  = "error";
     body["message"] = "Decode failed: " + err;
-    callback(encodeResponse(body));
+    auto response = encodeResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
-  if (!payload["device_id"].isInt() || payload["device_id"].asInt() <= 0) {
+  if (!payload["device_id"].isInt() ||
+      !iot::validation::isPositiveId(payload["device_id"].asInt())) {
     Json::Value body;
     body["status"]  = "error";
     body["message"] = "Expected a positive integer device_id";
-    callback(encodeResponse(body));
+    auto response = encodeResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
-  const std::string iotCoreUrl =
-      drogon::app().getCustomConfig()["iot_core_url"].asString();
-  AdapterService service(std::make_shared<IoTClient>(
-          std::make_shared<iot::http::DrogonHttpTransport>(iotCoreUrl)));
+  AdapterService service(iotClient_);
 
   service.getTelemetry(
       payload["device_id"].asInt(),
@@ -187,7 +215,9 @@ void IngestController::getTelemetry(
         Json::Value body;
         body["status"]  = "error";
         body["message"] = error;
-        callback(encodeResponse(body));
+        auto response = encodeResponse(body);
+        response->setStatusCode(drogon::k502BadGateway);
+        callback(response);
       });
 }
 
@@ -199,7 +229,9 @@ void IngestController::deleteTelemetry(
     Json::Value body;
     body["status"]  = "error";
     body["message"] = "Invalid JSON in Adapter";
-    callback(encodeResponse(body));
+    auto response = encodeResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
@@ -209,22 +241,24 @@ void IngestController::deleteTelemetry(
     Json::Value body;
     body["status"]  = "error";
     body["message"] = "Decode failed: " + err;
-    callback(encodeResponse(body));
+    auto response = encodeResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
-  if (!payload["device_id"].isInt() || payload["device_id"].asInt() <= 0) {
+  if (!payload["device_id"].isInt() ||
+      !iot::validation::isPositiveId(payload["device_id"].asInt())) {
     Json::Value body;
     body["status"]  = "error";
     body["message"] = "Expected a positive integer device_id";
-    callback(encodeResponse(body));
+    auto response = encodeResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
-  const std::string iotCoreUrl =
-      drogon::app().getCustomConfig()["iot_core_url"].asString();
-  AdapterService service(std::make_shared<IoTClient>(
-          std::make_shared<iot::http::DrogonHttpTransport>(iotCoreUrl)));
+  AdapterService service(iotClient_);
 
   service.deleteTelemetry(
       payload["device_id"].asInt(),
@@ -238,6 +272,8 @@ void IngestController::deleteTelemetry(
         Json::Value body;
         body["status"]  = "error";
         body["message"] = error;
-        callback(encodeResponse(body));
+        auto response = encodeResponse(body);
+        response->setStatusCode(drogon::k502BadGateway);
+        callback(response);
       });
 }

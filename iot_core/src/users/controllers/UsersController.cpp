@@ -1,11 +1,19 @@
 #include "users/controllers/UsersController.h"
-#include "users/repositories/UsersRepository.h"
+#include "common/validation/RequestValidation.h"
 
 #include <memory>
+#include <stdexcept>
 
-#include <cctype>
+#include <sstream>
 #include <string>
 #include <utility>
+
+UsersController::UsersController(std::shared_ptr<IUsersService> service)
+    : service_(std::move(service)) {
+  if (!service_) {
+    throw std::invalid_argument("UsersController requires a users service");
+  }
+}
 
 namespace {
 bool getTelegramChatId(const Json::Value &json, std::string &chatId) {
@@ -26,16 +34,7 @@ bool getTelegramChatId(const Json::Value &json, std::string &chatId) {
     return true;
   }
 
-  std::size_t firstDigit = chatId.front() == '-' ? 1 : 0;
-  if (firstDigit == chatId.size()) {
-    return false;
-  }
-  for (std::size_t i = firstDigit; i < chatId.size(); ++i) {
-    if (!std::isdigit(static_cast<unsigned char>(chatId[i]))) {
-      return false;
-    }
-  }
-  return true;
+  return iot::validation::isValidOptionalTelegramChatId(chatId);
 }
 }  // namespace
 
@@ -86,7 +85,23 @@ void UsersController::create(
     Json::Value body;
     body["status"] = "error";
     body["message"] = "Invalid JSON";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
+    return;
+  }
+
+  if (!(*json)["email"].isString() || !(*json)["password"].isString() ||
+      !(*json)["name"].isString() ||
+      !iot::validation::isValidUserFields(
+          (*json)["email"].asString(), (*json)["password"].asString(),
+          (*json)["name"].asString())) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "email, password and name are required non-empty strings";
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
@@ -101,8 +116,7 @@ void UsersController::create(
     return;
   }
 
-  UsersService service(std::make_shared<UsersRepository>(drogon::app().getDbClient()));
-  service.save(
+  service_->save(
       (*json)["email"].asString(),
       (*json)["password"].asString(),
       (*json)["name"].asString(),
@@ -117,7 +131,9 @@ void UsersController::create(
         Json::Value body;
         body["status"] = "error";
         body["message"] = error;
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+        response->setStatusCode(drogon::k500InternalServerError);
+        callback(response);
       });
 }
 
@@ -129,14 +145,15 @@ void UsersController::deleteUser(
     Json::Value body;
     body["status"] = "error";
     body["message"] = "Expected a positive integer user_id in JSON body";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
   const int userId = (*json)["user_id"].asInt();
 
-  UsersService service(std::make_shared<UsersRepository>(drogon::app().getDbClient()));
-  service.deleteById(
+  service_->deleteById(
       userId,
       [callback]() {
         Json::Value body;
@@ -148,7 +165,9 @@ void UsersController::deleteUser(
         Json::Value body;
         body["status"] = "error";
         body["message"] = error;
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+        response->setStatusCode(drogon::k500InternalServerError);
+        callback(response);
       });
 }
 
@@ -160,31 +179,54 @@ void UsersController::updateUser(
     Json::Value body;
     body["status"] = "error";
     body["message"] = "Invalid JSON";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
-  std::string userIdStr = request->getParameter("id");
-  if (userIdStr.empty()) {
+  const auto userId = iot::validation::parsePositiveId(request->getParameter("id"));
+  if (!userId) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "Missing id parameter";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    body["message"] = "Expected a positive integer id parameter";
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
-  int userId = std::stoi(userIdStr);
-  std::string email = (*json)["email"].asString();
-  std::string password = (*json)["password"].asString();
-  std::string name = (*json)["name"].asString();
   std::string telegramChatId;
-  if ((*json).isMember("telegram_chat_id") && !(*json)["telegram_chat_id"].isNull()) {
-    telegramChatId = (*json)["telegram_chat_id"].asString();
+  if (!getTelegramChatId(*json, telegramChatId)) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "telegram_chat_id must be an integer or numeric string";
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
+    return;
   }
 
-  UsersService service(std::make_shared<UsersRepository>(drogon::app().getDbClient()));
-  service.updateById(
-      userId, email, password, name, telegramChatId,
+  if (!(*json)["email"].isString() || !(*json)["password"].isString() ||
+      !(*json)["name"].isString() ||
+      !iot::validation::isValidUserFields(
+          (*json)["email"].asString(), (*json)["password"].asString(),
+          (*json)["name"].asString())) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "email, password and name are required non-empty strings";
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
+    return;
+  }
+
+  const std::string email = (*json)["email"].asString();
+  const std::string password = (*json)["password"].asString();
+  const std::string name = (*json)["name"].asString();
+
+  service_->updateById(
+      *userId, email, password, name, telegramChatId,
       [callback]() {
         Json::Value body;
         body["status"] = "ok";
@@ -195,45 +237,55 @@ void UsersController::updateUser(
         Json::Value body;
         body["status"] = "error";
         body["message"] = error;
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+        response->setStatusCode(drogon::k500InternalServerError);
+        callback(response);
       });
 }
 
 void UsersController::getUser(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
-  std::string userIdStr = request->getParameter("id");
-  if (userIdStr.empty()) {
+  const auto userId = iot::validation::parsePositiveId(request->getParameter("id"));
+  if (!userId) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "Missing id parameter";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    body["message"] = "Expected a positive integer id parameter";
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
-  int userId = std::stoi(userIdStr);
-
-  UsersService service(std::make_shared<UsersRepository>(drogon::app().getDbClient()));
-  service.getById(
-      userId,
+  service_->getById(
+      *userId,
       [callback](const std::string &responseBody) {
         Json::Value body;
         Json::CharReaderBuilder builder;
         std::string errs;
         std::istringstream iss(responseBody);
         if (Json::parseFromStream(builder, iss, &body, &errs)) {
-          callback(drogon::HttpResponse::newHttpJsonResponse(body));
+          auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+          if (body.isObject() && body["status"].isString() &&
+              body["status"].asString() == "error") {
+            response->setStatusCode(drogon::k404NotFound);
+          }
+          callback(response);
         } else {
           Json::Value errorBody;
           errorBody["status"] = "error";
           errorBody["message"] = "Failed to parse user data";
-          callback(drogon::HttpResponse::newHttpJsonResponse(errorBody));
+          auto response = drogon::HttpResponse::newHttpJsonResponse(errorBody);
+          response->setStatusCode(drogon::k500InternalServerError);
+          callback(response);
         }
       },
       [callback](const std::string &error) {
         Json::Value body;
         body["status"] = "error";
         body["message"] = error;
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+        response->setStatusCode(drogon::k500InternalServerError);
+        callback(response);
       });
 }

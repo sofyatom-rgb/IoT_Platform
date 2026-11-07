@@ -10,7 +10,7 @@ class NotificationController {
 
   void registerRoutes();
 
- private:
+  // Kept public so the handler can be tested directly without starting a server.
   void sendTemperatureAlert(
       const drogon::HttpRequestPtr &request,
       std::function<void(const drogon::HttpResponsePtr &)> callback);

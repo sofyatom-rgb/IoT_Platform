@@ -1,10 +1,19 @@
 #include "devices/controllers/DevicesController.h"
-#include "devices/repositories/DevicesRepository.h"
+#include "common/validation/RequestValidation.h"
 
 #include <memory>
+#include <stdexcept>
 
+#include <sstream>
 #include <string>
 #include <utility>
+
+DevicesController::DevicesController(std::shared_ptr<IDevicesService> service)
+    : service_(std::move(service)) {
+  if (!service_) {
+    throw std::invalid_argument("DevicesController requires a devices service");
+  }
+}
 
 void DevicesController::registerRoutes() {
   // POST /devices -> создать устройство.
@@ -53,15 +62,37 @@ void DevicesController::create(
     Json::Value body;
     body["status"] = "error";
     body["message"] = "Invalid JSON";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
-  DevicesService service(std::make_shared<DevicesRepository>(drogon::app().getDbClient()));
-  service.save(
-      (*json)["owner_id"].asInt(),
-      (*json)["name"].asString(),
-      (*json)["type"].asString(),
+  if (!(*json)["owner_id"].isInt() || !(*json)["name"].isString() ||
+      !(*json)["type"].isString()) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "owner_id must be an integer; name and type must be strings";
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
+    return;
+  }
+  const int ownerId = (*json)["owner_id"].asInt();
+  const std::string name = (*json)["name"].asString();
+  const std::string type = (*json)["type"].asString();
+  if (!iot::validation::isValidDeviceFields(ownerId, name, type)) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "Expected a positive owner_id and non-empty name and type";
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
+    return;
+  }
+
+  service_->save(
+      ownerId, name, type,
       [callback](int deviceId) {
         Json::Value body;
         body["status"] = "ok";
@@ -72,7 +103,9 @@ void DevicesController::create(
         Json::Value body;
         body["status"] = "error";
         body["message"] = error;
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+        response->setStatusCode(drogon::k500InternalServerError);
+        callback(response);
       });
 }
 
@@ -85,14 +118,15 @@ void DevicesController::deleteDevice(
     Json::Value body;
     body["status"] = "error";
     body["message"] = "Expected a positive integer device_id in JSON body";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
   const int deviceId = (*json)["device_id"].asInt();
 
-  DevicesService service(std::make_shared<DevicesRepository>(drogon::app().getDbClient()));
-  service.deleteById(
+  service_->deleteById(
       deviceId,
       [callback]() {
         Json::Value body;
@@ -104,7 +138,9 @@ void DevicesController::deleteDevice(
         Json::Value body;
         body["status"] = "error";
         body["message"] = error;
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+        response->setStatusCode(drogon::k500InternalServerError);
+        callback(response);
       });
 }
 void DevicesController::updateDevice(
@@ -115,27 +151,38 @@ void DevicesController::updateDevice(
     Json::Value body;
     body["status"] = "error";
     body["message"] = "Invalid JSON";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
-  std::string deviceIdStr = request->getParameter("id");
-  if (deviceIdStr.empty()) {
+  const auto deviceId = iot::validation::parsePositiveId(request->getParameter("id"));
+  if (!(*json)["owner_id"].isInt() || !(*json)["name"].isString() ||
+      !(*json)["type"].isString()) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "Missing id parameter";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    body["message"] = "owner_id must be an integer; name and type must be strings";
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
+    return;
+  }
+  const int ownerId = (*json)["owner_id"].asInt();
+  const std::string name = (*json)["name"].asString();
+  const std::string type = (*json)["type"].asString();
+  if (!deviceId || !iot::validation::isValidDeviceFields(ownerId, name, type)) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "Expected a positive id, positive owner_id and non-empty name and type";
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
-  int deviceId = std::stoi(deviceIdStr);
-  int ownerId = (*json)["owner_id"].asInt();
-  std::string name = (*json)["name"].asString();
-  std::string type = (*json)["type"].asString();
-
-  DevicesService service(std::make_shared<DevicesRepository>(drogon::app().getDbClient()));
-  service.updateById(
-      deviceId, ownerId, name, type,
+  service_->updateById(
+      *deviceId, ownerId, name, type,
       [callback]() {
         Json::Value body;
         body["status"] = "ok";
@@ -146,45 +193,55 @@ void DevicesController::updateDevice(
         Json::Value body;
         body["status"] = "error";
         body["message"] = error;
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+        response->setStatusCode(drogon::k500InternalServerError);
+        callback(response);
       });
 }
 
 void DevicesController::getDevice(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
-  std::string deviceIdStr = request->getParameter("id");
-  if (deviceIdStr.empty()) {
+  const auto deviceId = iot::validation::parsePositiveId(request->getParameter("id"));
+  if (!deviceId) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "Missing id parameter";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    body["message"] = "Expected a positive integer id parameter";
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
 
-  int deviceId = std::stoi(deviceIdStr);
-
-  DevicesService service(std::make_shared<DevicesRepository>(drogon::app().getDbClient()));
-  service.getById(
-      deviceId,
+  service_->getById(
+      *deviceId,
       [callback](const std::string &responseBody) {
         Json::Value body;
         Json::CharReaderBuilder builder;
         std::string errs;
         std::istringstream iss(responseBody);
         if (Json::parseFromStream(builder, iss, &body, &errs)) {
-          callback(drogon::HttpResponse::newHttpJsonResponse(body));
+          auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+          if (body.isObject() && body["status"].isString() &&
+              body["status"].asString() == "error") {
+            response->setStatusCode(drogon::k404NotFound);
+          }
+          callback(response);
         } else {
           Json::Value errorBody;
           errorBody["status"] = "error";
           errorBody["message"] = "Failed to parse device data";
-          callback(drogon::HttpResponse::newHttpJsonResponse(errorBody));
+          auto response = drogon::HttpResponse::newHttpJsonResponse(errorBody);
+          response->setStatusCode(drogon::k500InternalServerError);
+          callback(response);
         }
       },
       [callback](const std::string &error) {
         Json::Value body;
         body["status"] = "error";
         body["message"] = error;
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+        response->setStatusCode(drogon::k500InternalServerError);
+        callback(response);
       });
 }

@@ -85,3 +85,130 @@ target_include_directories(client_unit_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/notification_service/src
 )
 add_test(NAME client_unit_tests COMMAND client_unit_tests)
+
+# Pure controller-input validation tests: no Drogon/PostgreSQL required.
+add_executable(controller_validation_tests
+    test_main.cpp
+    controllers/ControllerValidationTests.cpp
+)
+target_include_directories(controller_validation_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}
+)
+add_test(NAME controller_validation_tests COMMAND controller_validation_tests)
+
+# Component integration tests exercise real service + client code together,
+# while replacing only the network/database boundary with fakes.
+add_executable(adapter_pipeline_tests
+    test_main.cpp
+    integration/AdapterPipelineTests.cpp
+    ${PROJECT_SOURCE_DIR}/http_adapter/src/ingest/services/AdapterService.cpp
+    ${PROJECT_SOURCE_DIR}/http_adapter/src/ingest/clients/IoTClient.cpp
+)
+target_include_directories(adapter_pipeline_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/http_adapter/src
+)
+add_test(NAME adapter_pipeline_tests COMMAND adapter_pipeline_tests)
+
+add_executable(telemetry_notification_pipeline_tests
+    test_main.cpp
+    integration/TelemetryNotificationPipelineTests.cpp
+    ${PROJECT_SOURCE_DIR}/iot_core/src/telemetry/services/TelemetryService.cpp
+    ${PROJECT_SOURCE_DIR}/iot_core/src/telemetry/clients/NotificationServiceClient.cpp
+)
+target_include_directories(telemetry_notification_pipeline_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/iot_core/src
+)
+add_test(NAME telemetry_notification_pipeline_tests
+         COMMAND telemetry_notification_pipeline_tests)
+
+# These tests call the actual Drogon handlers with synthetic requests and fake
+# service dependencies. They need Drogon + JsonCpp, but no running database.
+if(BUILD_CONTROLLER_TESTING)
+    add_executable(controller_unit_tests
+        controllers/ControllerTestMain.cpp
+        controllers/ControllerTests.cpp
+        ${PROJECT_SOURCE_DIR}/iot_core/src/users/controllers/UsersController.cpp
+        ${PROJECT_SOURCE_DIR}/iot_core/src/devices/controllers/DevicesController.cpp
+        ${PROJECT_SOURCE_DIR}/iot_core/src/telemetry/controllers/TelemetryController.cpp
+        ${PROJECT_SOURCE_DIR}/http_adapter/src/ingest/controllers/IngestController.cpp
+        ${PROJECT_SOURCE_DIR}/http_adapter/src/ingest/services/AdapterService.cpp
+        ${PROJECT_SOURCE_DIR}/http_adapter/src/ingest/clients/IoTClient.cpp
+        ${PROJECT_SOURCE_DIR}/notification_service/src/controllers/NotificationController.cpp
+        ${PROJECT_SOURCE_DIR}/notification_service/src/services/NotificationService.cpp
+        ${PROJECT_SOURCE_DIR}/iot_core/src/telemetry/services/TelemetryService.cpp
+        ${PROJECT_SOURCE_DIR}/http_adapter/src/codec/Base64.cpp
+        ${PROJECT_SOURCE_DIR}/http_adapter/src/codec/Checksum.cpp
+        ${PROJECT_SOURCE_DIR}/http_adapter/src/codec/Encoder.cpp
+        ${PROJECT_SOURCE_DIR}/http_adapter/src/codec/Decoder.cpp
+    )
+    target_include_directories(controller_unit_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${PROJECT_SOURCE_DIR}
+        ${PROJECT_SOURCE_DIR}/iot_core/src
+        ${PROJECT_SOURCE_DIR}/http_adapter/src
+        ${PROJECT_SOURCE_DIR}/notification_service/src
+        ${JSONCPP_INCLUDE_DIR}
+    )
+    target_link_libraries(controller_unit_tests PRIVATE
+        Drogon::Drogon
+        OpenSSL::Crypto
+        ${JSONCPP_LIBRARY}
+        iot_drogon_http_transport
+    )
+    add_test(NAME controller_unit_tests COMMAND controller_unit_tests)
+    set_tests_properties(controller_unit_tests PROPERTIES TIMEOUT 45)
+endif()
+
+# Real PostgreSQL repository checks. Opt in explicitly because they require a
+# disposable test database initialized with the project's init.sql schema.
+if(BUILD_POSTGRES_INTEGRATION_TESTING)
+    add_executable(repository_integration_tests
+        test_main.cpp
+        integration/RepositoryIntegrationTests.cpp
+        ${PROJECT_SOURCE_DIR}/iot_core/src/users/repositories/UsersRepository.cpp
+        ${PROJECT_SOURCE_DIR}/iot_core/src/devices/repositories/DevicesRepository.cpp
+        ${PROJECT_SOURCE_DIR}/iot_core/src/telemetry/repositories/TelemetryRepository.cpp
+    )
+    target_include_directories(repository_integration_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${PROJECT_SOURCE_DIR}
+        ${PROJECT_SOURCE_DIR}/iot_core/src
+        ${JSONCPP_INCLUDE_DIR}
+    )
+    target_link_libraries(repository_integration_tests PRIVATE
+        Drogon::Drogon
+        ${JSONCPP_LIBRARY}
+    )
+    add_test(NAME repository_integration_tests COMMAND repository_integration_tests)
+    set_tests_properties(repository_integration_tests PROPERTIES TIMEOUT 120)
+endif()
+
+# Exercise the concrete Drogon transport against a one-shot local TCP server.
+# Unlike the client unit tests, this one uses real sockets and the Drogon loop.
+if(BUILD_CONTROLLER_TESTING)
+    add_executable(drogon_transport_integration_tests
+        transport/TransportTestMain.cpp
+        transport/DrogonHttpTransportTests.cpp
+        ${PROJECT_SOURCE_DIR}/http_adapter/src/ingest/services/AdapterService.cpp
+        ${PROJECT_SOURCE_DIR}/http_adapter/src/ingest/clients/IoTClient.cpp
+    )
+    target_include_directories(drogon_transport_integration_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${PROJECT_SOURCE_DIR}
+        ${JSONCPP_INCLUDE_DIR}
+        ${PROJECT_SOURCE_DIR}/http_adapter/src
+    )
+    target_link_libraries(drogon_transport_integration_tests PRIVATE
+        Drogon::Drogon
+        ${JSONCPP_LIBRARY}
+        iot_drogon_http_transport
+    )
+    add_test(NAME drogon_transport_integration_tests
+             COMMAND drogon_transport_integration_tests)
+    set_tests_properties(drogon_transport_integration_tests PROPERTIES TIMEOUT 90)
+endif()

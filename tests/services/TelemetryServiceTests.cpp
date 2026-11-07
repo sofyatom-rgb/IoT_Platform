@@ -3,6 +3,8 @@
 #include "telemetry/services/TelemetryService.h"
 
 #include <memory>
+#include <stdexcept>
+#include <utility>
 
 namespace {
 class FakeTelemetryRepository final : public ITelemetryRepository {
@@ -11,11 +13,29 @@ class FakeTelemetryRepository final : public ITelemetryRepository {
   mutable double temperature{0.0};
   mutable std::string failure;
   mutable int saves{0}, reads{0}, deletes{0};
+  mutable bool deferSave{false};
+  mutable std::function<void()> pendingSaveSuccess;
+  mutable std::function<void(const std::string &)> pendingSaveError;
 
   void save(int id, double value, std::function<void()> success,
             std::function<void(const std::string &)> error) const override {
     deviceId = id; temperature = value; ++saves;
-    if (failure.empty()) success(); else error(failure);
+    if (deferSave) {
+      pendingSaveSuccess = std::move(success);
+      pendingSaveError = std::move(error);
+    } else if (failure.empty()) {
+      success();
+    } else {
+      error(failure);
+    }
+  }
+
+  void completeDeferredSave() const {
+    if (failure.empty()) {
+      if (pendingSaveSuccess) pendingSaveSuccess();
+    } else if (pendingSaveError) {
+      pendingSaveError(failure);
+    }
   }
   void getByDeviceId(int id, std::function<void(const std::string &)> success,
                      std::function<void(const std::string &)> error) const override {
@@ -213,4 +233,128 @@ TEST_CASE(telemetry_read_and_delete_are_forwarded_to_repository) {
                              [](const std::string &) { EXPECT_TRUE(false); });
   EXPECT_TRUE(deleted);
   EXPECT_EQ(1, f.repository->deletes);
+}
+
+
+TEST_CASE(telemetry_repository_failure_stops_notification_pipeline) {
+  Fixture f;
+  f.repository->failure = "database unavailable";
+  int successCalls = 0;
+  int errorCalls = 0;
+  std::string error;
+
+  f.service.save(7, 55.0,
+                 [&](const std::string &) { ++successCalls; },
+                 [&](const std::string &value) { ++errorCalls; error = value; });
+
+  EXPECT_EQ(0, successCalls);
+  EXPECT_EQ(1, errorCalls);
+  EXPECT_EQ("database unavailable", error);
+  EXPECT_EQ(0, f.devices->lookups);
+  EXPECT_EQ(0, f.users->lookups);
+  EXPECT_EQ(0, f.notifications->calls);
+}
+
+TEST_CASE(telemetry_pipeline_can_complete_after_save_returns) {
+  Fixture f;
+  f.repository->deferSave = true;
+  int completionCalls = 0;
+  std::string result;
+
+  f.service.save(18, 31.0,
+                 [&](const std::string &value) {
+                   ++completionCalls;
+                   result = value;
+                 },
+                 [](const std::string &) { EXPECT_TRUE(false); });
+
+  // Repository completion is delayed: no downstream operation has started yet.
+  EXPECT_EQ(0, completionCalls);
+  EXPECT_EQ(0, f.devices->lookups);
+
+  f.repository->completeDeferredSave();
+
+  EXPECT_EQ(1, completionCalls);
+  EXPECT_EQ("sent", result);
+  EXPECT_EQ(1, f.devices->lookups);
+  EXPECT_EQ(1, f.users->lookups);
+  EXPECT_EQ(1, f.notifications->calls);
+}
+
+TEST_CASE(telemetry_success_callback_is_called_once_for_notification_failure) {
+  Fixture f;
+  f.notifications->failure = "HTTP 502";
+  int successCalls = 0;
+  int errorCalls = 0;
+  std::string result;
+
+  f.service.save(19, 45.0,
+                 [&](const std::string &value) {
+                   ++successCalls;
+                   result = value;
+                 },
+                 [&](const std::string &) { ++errorCalls; });
+
+  EXPECT_EQ(1, successCalls);
+  EXPECT_EQ(0, errorCalls);
+  EXPECT_EQ("delivery_failed: HTTP 502", result);
+}
+
+TEST_CASE(telemetry_read_and_delete_propagate_repository_errors) {
+  Fixture f;
+  f.repository->failure = "read-only database";
+
+  std::string readError;
+  int readSuccessCalls = 0;
+  f.service.getByDeviceId(
+      21,
+      [&](const std::string &) { ++readSuccessCalls; },
+      [&](const std::string &value) { readError = value; });
+  EXPECT_EQ(0, readSuccessCalls);
+  EXPECT_EQ("read-only database", readError);
+
+  std::string deleteError;
+  int deleteSuccessCalls = 0;
+  f.service.deleteByDeviceId(
+      21,
+      [&] { ++deleteSuccessCalls; },
+      [&](const std::string &value) { deleteError = value; });
+  EXPECT_EQ(0, deleteSuccessCalls);
+  EXPECT_EQ("read-only database", deleteError);
+}
+
+TEST_CASE(telemetry_save_reports_missing_notification_dependencies) {
+  auto repository = std::make_shared<FakeTelemetryRepository>();
+  TelemetryService service(repository);
+  std::string error;
+  int successCalls = 0;
+
+  service.save(5, 99.0,
+               [&](const std::string &) { ++successCalls; },
+               [&](const std::string &value) { error = value; });
+
+  EXPECT_EQ(0, successCalls);
+  EXPECT_EQ("TelemetryService notification dependencies are not configured", error);
+  EXPECT_EQ(0, repository->saves);
+}
+
+TEST_CASE(telemetry_constructor_rejects_null_dependencies) {
+  bool repositoryRejected = false;
+  try {
+    TelemetryService service(nullptr);
+  } catch (const std::invalid_argument &) {
+    repositoryRejected = true;
+  }
+  EXPECT_TRUE(repositoryRejected);
+
+  bool fullDependenciesRejected = false;
+  try {
+    TelemetryService service(
+        std::make_shared<FakeTelemetryRepository>(), 30.0,
+        std::make_shared<FakeDevicesService>(),
+        std::make_shared<FakeUsersService>(), nullptr);
+  } catch (const std::invalid_argument &) {
+    fullDependenciesRejected = true;
+  }
+  EXPECT_TRUE(fullDependenciesRejected);
 }
