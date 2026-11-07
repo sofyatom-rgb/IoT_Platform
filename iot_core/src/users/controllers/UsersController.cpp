@@ -1,4 +1,7 @@
 #include "users/controllers/UsersController.h"
+#include "users/repositories/UsersRepository.h"
+
+#include <memory>
 
 #include <cctype>
 #include <string>
@@ -98,7 +101,7 @@ void UsersController::create(
     return;
   }
 
-  UsersService service(drogon::app().getDbClient());
+  UsersService service(std::make_shared<UsersRepository>(drogon::app().getDbClient()));
   service.save(
       (*json)["email"].asString(),
       (*json)["password"].asString(),
@@ -132,7 +135,7 @@ void UsersController::deleteUser(
 
   const int userId = (*json)["user_id"].asInt();
 
-  UsersService service(drogon::app().getDbClient());
+  UsersService service(std::make_shared<UsersRepository>(drogon::app().getDbClient()));
   service.deleteById(
       userId,
       [callback]() {
@@ -179,7 +182,7 @@ void UsersController::updateUser(
     telegramChatId = (*json)["telegram_chat_id"].asString();
   }
 
-  UsersService service(drogon::app().getDbClient());
+  UsersService service(std::make_shared<UsersRepository>(drogon::app().getDbClient()));
   service.updateById(
       userId, email, password, name, telegramChatId,
       [callback]() {
@@ -210,7 +213,7 @@ void UsersController::getUser(
 
   int userId = std::stoi(userIdStr);
 
-  UsersService service(drogon::app().getDbClient());
+  UsersService service(std::make_shared<UsersRepository>(drogon::app().getDbClient()));
   service.getById(
       userId,
       [callback](const std::string &responseBody) {

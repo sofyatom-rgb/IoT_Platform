@@ -21,7 +21,7 @@ std::string normalizeKey(const std::string &key) {
 }
 
 }  // namespace
-
+//AES-256-CBC 
 Encoder::Encoder(std::string key) : key_(normalizeKey(key)) {}
 
 std::string Encoder::encode(const std::string &plaintext) const {

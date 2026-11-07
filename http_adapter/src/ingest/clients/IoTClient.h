@@ -1,27 +1,31 @@
 #pragma once
 
-#include <drogon/drogon.h>
 #include <functional>
+#include <memory>
 #include <string>
 
-// Клиент: отвечает за отправку HTTP-запросов во внешний сервис (iot_core).
-class IoTClient {
+#include "common/http/HttpTransport.h"
+#include "ingest/clients/IIoTClient.h"
+
+// Клиент IoT Core. Транспорт внедряется снаружи, чтобы HTTP-вызовы
+// можно было проверять без реальной сети и запущенного сервиса.
+class IoTClient : public IIoTClient {
  public:
-  explicit IoTClient(const std::string &baseUrl);
+  explicit IoTClient(std::shared_ptr<iot::http::IHttpTransport> transport);
 
   void sendTelemetry(int deviceId,
                      double temperature,
                      std::function<void()> success,
-                     std::function<void(const std::string &)> error) const;
+                     std::function<void(const std::string &)> error) const override;
 
   void getTelemetry(int deviceId,
                     std::function<void(const std::string &)> success,
-                    std::function<void(const std::string &)> error) const;
+                    std::function<void(const std::string &)> error) const override;
 
   void deleteTelemetry(int deviceId,
                        std::function<void()> success,
-                       std::function<void(const std::string &)> error) const;
+                       std::function<void(const std::string &)> error) const override;
 
  private:
-  std::string baseUrl_;
+  std::shared_ptr<iot::http::IHttpTransport> transport_;
 };

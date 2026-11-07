@@ -711,3 +711,93 @@ docker compose exec -T postgres psql -U postgres -d iot_platform \
 - Телеметрия сейчас хранит только `temperature`; другие показатели не предусмотрены.
 - API не предоставляет `PUT`/`PATCH` для изменения пользователя или устройства.
 - Adapter предназначен только для телеметрии; создание и удаление пользователей/устройств выполняется через Core.
+
+## Юнит-тестирование
+
+Для изоляции прикладной логики от инфраструктуры добавлены небольшие интерфейсы-порты. Реальные классы PostgreSQL/Drogon и HTTP-клиенты реализуют эти интерфейсы, а тесты передают вместо них fake-объекты. Благодаря этому обычные юнит-тесты не подключаются к PostgreSQL, не запускают HTTP-сервисы и не обращаются к Telegram.
+
+### Что покрыто
+
+| Область | Проверяемые сценарии |
+| --- | --- |
+| Base64 | RFC 4648 контрольные строки, бинарные данные, некорректный алфавит, padding, неканоничные pad-биты, очистка выходного буфера при ошибке |
+| CRC32 | Контрольный вектор IEEE `123456789`, пустая строка, hex-представление |
+| Encoder/Decoder | Round-trip для пустого/UTF-8/бинарного/длинного содержимого, новый IV, неправильный ключ, сломанный JSON, отсутствующие поля, неверный Base64, неверная checksum, короткий IV |
+| UsersService | Передача аргументов репозиторию, возврат ID, передача результата и ошибок |
+| DevicesService | Создание, получение данных устройства для уведомления, обновление и ошибки репозитория |
+| TelemetryService | Граница температурного порога, отсутствие необходимости в уведомлении, последовательность device → owner → chat ID → notification, отсутствие chat ID, ошибки поиска устройства/пользователя, ошибка доставки, ошибка сохранения, чтение и удаление |
+| AdapterService | Передача телеметрии в IoT Core, чтение/удаление и проброс callback-ошибок |
+| NotificationService | Формирование текста предупреждения, передача chat ID и проброс результата Telegram-клиента |
+
+Тесты написаны на небольшом встроенном test runner, чтобы не добавлять ещё одну обязательную стороннюю библиотеку в учебный проект. В репозитории определено 24 тест-кейса: 16 для сервисов, 4 для Base64/CRC32 и 4 для Encoder/Decoder. Каждый `TEST_CASE` выполняется отдельно, ошибки выводятся в терминал, а ненулевой код возврата ломает CTest. Четыре теста Encoder/Decoder включаются опцией `BUILD_CODEC_TESTING` и требуют development-заголовки JsonCpp. Успешные строки `[PASS]` и итоговая сводка выводятся зелёным, ошибки `[FAIL]` — красным. Чтобы увидеть вывод отдельных кейсов через CTest, используйте `ctest --test-dir build-tests --verbose`. Цвет можно отключить переменной `NO_COLOR=1`.
+
+### Сборка и запуск только юнит-тестов
+
+Сервисные тесты и тесты Base64/CRC32 не требуют Drogon или запущенной БД:
+
+```bash
+cmake -S . -B build-tests \
+  -DBUILD_APPLICATION=OFF \
+  -DBUILD_TESTING=ON \
+  -DBUILD_CODEC_TESTING=OFF
+cmake --build build-tests -j
+ctest --test-dir build-tests --output-on-failure
+```
+
+Чтобы включить также тесты AES-256-CBC и JSON-конверта Encoder/Decoder, установите development-пакеты OpenSSL и JsonCpp, затем соберите с `-DBUILD_CODEC_TESTING=ON` (это значение по умолчанию):
+
+```bash
+cmake -S . -B build-tests -DBUILD_APPLICATION=OFF -DBUILD_TESTING=ON
+cmake --build build-tests -j
+ctest --test-dir build-tests --output-on-failure
+```
+
+Для сборки самих микросервисов и тестов вместе оставьте `BUILD_APPLICATION=ON` (значение по умолчанию). В таком режиме дополнительно требуются Drogon, OpenSSL и JsonCpp:
+
+```bash
+cmake -S . -B build
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+```
+
+### Изменения архитектуры
+
+- `IUsersRepository`, `IDevicesRepository` и `ITelemetryRepository` отделяют прикладные сервисы от PostgreSQL-реализаций.
+- `IUsersService` и `IDevicesService` позволяют `TelemetryService` запрашивать владельца устройства и Telegram chat ID без создания конкретных сервисов внутри себя.
+- `INotificationServiceClient`, `IIoTClient` и `ITelegramBotClient` отделяют сценарии от реальных HTTP-запросов.
+- В точках сборки приложения (контроллеры и `main`) создаются реальные классы `UsersRepository`, `DevicesRepository`, `TelemetryRepository`, `IoTClient`, `NotificationServiceClient` и `TelegramBotClient`. В тестах те же места занимают fake-объекты.
+- `TelemetryService` больше не создаёт `UsersService` и `DevicesService` сам. Зависимости передаются через конструктор и удерживаются `shared_ptr`, чтобы оставаться доступными во время асинхронных callback-вызовов.
+- `BUILD_APPLICATION=OFF` позволяет конфигурировать тестовые цели без обязательной установки Drogon.
+- Base64-декодер дополнительно проверяет, что padding находится только в последнем блоке и что неиспользуемые биты последнего символа равны нулю; при ошибке частично декодированные данные не возвращаются.
+
+### Что пока не является unit-тестами
+
+SQL-репозитории, HTTP-клиенты и контроллеры пока не покрыты изолированными тестами. Репозитории лучше проверять интеграционными тестами с отдельной тестовой PostgreSQL-базой; HTTP-клиенты — тестовым HTTP-сервером/подменяемым транспортом; контроллеры — через тестовый HTTP-клиент Drogon. Не следует называть проверки этих слоёв unit-тестами, если они реально поднимают БД или сеть.
+
+## Unit-тесты HTTP-клиентов
+
+HTTP-клиенты используют общий порт `iot::http::IHttpTransport` (`common/http/HttpTransport.h`).
+В приложении передаётся `DrogonHttpTransport`, который выполняет реальные запросы через Drogon.
+В тестах передаётся fake-транспорт, который записывает метод, путь и JSON-поля запроса и возвращает заранее заданный HTTP-ответ. Поэтому сетевые запросы и работающие микросервисы для unit-тестов не нужны.
+
+Добавлен набор `client_unit_tests`:
+- `IoTClient`: POST `/telemetry`, POST `/telemetry/query`, DELETE `/telemetry`, тело запроса, HTTP-ошибки и сетевые ошибки;
+- `NotificationServiceClient`: URL/путь, JSON-поля уведомления, успешный ответ и разбор сообщений об ошибках;
+- `TelegramBotClient`: путь с bot token, JSON-поля, успешный ответ Telegram, отказ API, некорректный JSON и сетевые ошибки.
+
+Переконфигурировать существующий каталог тестов (CMake сохранит уже заданные опции):
+
+```bash
+cmake -S . -B build-tests
+cmake --build build-tests -j$(nproc)
+ctest --test-dir build-tests --output-on-failure -V
+```
+
+После изменения исходников обычный цикл остаётся таким:
+
+```bash
+cmake --build build-tests -j$(nproc)
+ctest --test-dir build-tests --output-on-failure
+```
+
+`Repositories` выполняют реальные SQL-запросы через Drogon ORM, поэтому их корректные тесты относятся к интеграционному уровню и должны запускаться с отдельной тестовой PostgreSQL. Контроллеры связаны с Drogon HTTP request/response и созданием сервисов; их следует покрывать отдельными HTTP-тестами с тестовым сервером и внедряемыми сервисами. Эти две категории не включены в число unit-тестов клиентов и не маскируются fake-репозиториями.

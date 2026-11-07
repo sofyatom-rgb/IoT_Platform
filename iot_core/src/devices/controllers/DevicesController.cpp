@@ -1,4 +1,7 @@
 #include "devices/controllers/DevicesController.h"
+#include "devices/repositories/DevicesRepository.h"
+
+#include <memory>
 
 #include <string>
 #include <utility>
@@ -54,7 +57,7 @@ void DevicesController::create(
     return;
   }
 
-  DevicesService service(drogon::app().getDbClient());
+  DevicesService service(std::make_shared<DevicesRepository>(drogon::app().getDbClient()));
   service.save(
       (*json)["owner_id"].asInt(),
       (*json)["name"].asString(),
@@ -88,7 +91,7 @@ void DevicesController::deleteDevice(
 
   const int deviceId = (*json)["device_id"].asInt();
 
-  DevicesService service(drogon::app().getDbClient());
+  DevicesService service(std::make_shared<DevicesRepository>(drogon::app().getDbClient()));
   service.deleteById(
       deviceId,
       [callback]() {
@@ -130,7 +133,7 @@ void DevicesController::updateDevice(
   std::string name = (*json)["name"].asString();
   std::string type = (*json)["type"].asString();
 
-  DevicesService service(drogon::app().getDbClient());
+  DevicesService service(std::make_shared<DevicesRepository>(drogon::app().getDbClient()));
   service.updateById(
       deviceId, ownerId, name, type,
       [callback]() {
@@ -161,7 +164,7 @@ void DevicesController::getDevice(
 
   int deviceId = std::stoi(deviceIdStr);
 
-  DevicesService service(drogon::app().getDbClient());
+  DevicesService service(std::make_shared<DevicesRepository>(drogon::app().getDbClient()));
   service.getById(
       deviceId,
       [callback](const std::string &responseBody) {

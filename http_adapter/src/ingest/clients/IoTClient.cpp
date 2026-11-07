@@ -1,105 +1,90 @@
 #include "ingest/clients/IoTClient.h"
 
+#include <stdexcept>
 #include <utility>
 
-IoTClient::IoTClient(const std::string &baseUrl) : baseUrl_(baseUrl) {}
+IoTClient::IoTClient(std::shared_ptr<iot::http::IHttpTransport> transport)
+    : transport_(std::move(transport)) {
+  if (!transport_) {
+    throw std::invalid_argument("IoTClient requires an HTTP transport");
+  }
+}
 
 void IoTClient::sendTelemetry(
     int deviceId, double temperature, std::function<void()> success,
     std::function<void(const std::string &)> error) const {
+  iot::http::Request request;
+  request.method = iot::http::Method::Post;
+  request.path = "/telemetry";
+  request.jsonBody = {{"device_id", static_cast<std::int64_t>(deviceId)},
+                      {"temperature", temperature}};
 
-  // Создаем HTTP клиент
-  auto client = drogon::HttpClient::newHttpClient(baseUrl_);
-
-  // Формируем запрос
-  auto req = drogon::HttpRequest::newHttpRequest();
-  req->setMethod(drogon::Post);
-  req->setPath("/telemetry");
-
-  // Формируем JSON тело
-  Json::Value body;
-  body["device_id"] = deviceId;
-  body["temperature"] = temperature;
-
-  req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-  Json::StreamWriterBuilder wb;
-  wb["indentation"] = "";
-  req->setBody(Json::writeString(wb, body));
-  // Отправляем асинхронный запрос
-  client->sendRequest(req, [success,
-                            error](drogon::ReqResult result,
-                                   const drogon::HttpResponsePtr &response) {
-    if (result == drogon::ReqResult::Ok &&
-        response->getStatusCode() == drogon::k200OK) {
-      success();
-    } else {
-      std::string errMsg =
-          "Failed to send to iot_core. HTTP Status: " +
-          std::to_string(response ? static_cast<int>(response->getStatusCode())
-                                  : 0);
-      error(errMsg);
-    }
-  });
+  transport_->send(
+      request,
+      [success = std::move(success), error = std::move(error)](
+          iot::http::Result result,
+          std::optional<iot::http::Response> response) {
+        if (result == iot::http::Result::Ok && response &&
+            response->statusCode == 200) {
+          if (success) success();
+          return;
+        }
+        const int status = response ? response->statusCode : 0;
+        if (error) {
+          error("Failed to send to iot_core. HTTP Status: " +
+                std::to_string(status));
+        }
+      });
 }
 
 void IoTClient::getTelemetry(
     int deviceId, std::function<void(const std::string &)> success,
     std::function<void(const std::string &)> error) const {
-  // Создаем HTTP клиент
-  auto client = drogon::HttpClient::newHttpClient(baseUrl_);
+  iot::http::Request request;
+  request.method = iot::http::Method::Post;
+  request.path = "/telemetry/query";
+  request.jsonBody = {{"device_id", static_cast<std::int64_t>(deviceId)}};
 
-  // Передаём device_id в JSON, не помещая данные в URL.
-  auto req = drogon::HttpRequest::newHttpRequest();
-  req->setMethod(drogon::Post);
-  req->setPath("/telemetry/query");
-  Json::Value body;
-  body["device_id"] = deviceId;
-  req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-  Json::StreamWriterBuilder wb;
-  wb["indentation"] = "";
-  req->setBody(Json::writeString(wb, body));
-  // Отправляем асинхронный запрос
-  client->sendRequest(req, [success,
-                            error](drogon::ReqResult result,
-                                   const drogon::HttpResponsePtr &response) {
-    if (result == drogon::ReqResult::Ok &&
-        response->getStatusCode() == drogon::k200OK) {
-      success(std::string(response->getBody()));
-    } else {
-      std::string errMsg =
-          "Failed to get telemetry from iot_core. HTTP Status: " +
-          std::to_string(response ? static_cast<int>(response->getStatusCode())
-                                  : 0);
-      error(errMsg);
-    }
-  });
+  transport_->send(
+      request,
+      [success = std::move(success), error = std::move(error)](
+          iot::http::Result result,
+          std::optional<iot::http::Response> response) {
+        if (result == iot::http::Result::Ok && response &&
+            response->statusCode == 200) {
+          if (success) success(response->body);
+          return;
+        }
+        const int status = response ? response->statusCode : 0;
+        if (error) {
+          error("Failed to get telemetry from iot_core. HTTP Status: " +
+                std::to_string(status));
+        }
+      });
 }
 
 void IoTClient::deleteTelemetry(
     int deviceId, std::function<void()> success,
     std::function<void(const std::string &)> error) const {
-  auto client = drogon::HttpClient::newHttpClient(baseUrl_);
-  auto req = drogon::HttpRequest::newHttpRequest();
-  req->setMethod(drogon::Delete);
-  req->setPath("/telemetry");
-  Json::Value body;
-  body["device_id"] = deviceId;
-  req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-  Json::StreamWriterBuilder wb;
-  wb["indentation"] = "";
-  req->setBody(Json::writeString(wb, body));
-  client->sendRequest(req, [success,
-                            error](drogon::ReqResult result,
-                                   const drogon::HttpResponsePtr &response) {
-    if (result == drogon::ReqResult::Ok &&
-        response->getStatusCode() == drogon::k200OK) {
-      success();
-    } else {
-      std::string errMsg =
-          "Failed to delete telemetry from iot_core. HTTP Status: " +
-          std::to_string(response ? static_cast<int>(response->getStatusCode())
-                                  : 0);
-      error(errMsg);
-    }
-  });
+  iot::http::Request request;
+  request.method = iot::http::Method::Delete;
+  request.path = "/telemetry";
+  request.jsonBody = {{"device_id", static_cast<std::int64_t>(deviceId)}};
+
+  transport_->send(
+      request,
+      [success = std::move(success), error = std::move(error)](
+          iot::http::Result result,
+          std::optional<iot::http::Response> response) {
+        if (result == iot::http::Result::Ok && response &&
+            response->statusCode == 200) {
+          if (success) success();
+          return;
+        }
+        const int status = response ? response->statusCode : 0;
+        if (error) {
+          error("Failed to delete telemetry from iot_core. HTTP Status: " +
+                std::to_string(status));
+        }
+      });
 }

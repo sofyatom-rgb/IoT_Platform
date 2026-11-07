@@ -1,19 +1,24 @@
 #pragma once
 
-#include <drogon/drogon.h>
-
 #include <functional>
+#include <memory>
 #include <string>
 
-class TelegramBotClient {
+#include "clients/ITelegramBotClient.h"
+#include "common/http/HttpTransport.h"
+
+class TelegramBotClient : public ITelegramBotClient {
  public:
-  explicit TelegramBotClient(std::string botToken);
+  TelegramBotClient(
+      std::string botToken,
+      std::shared_ptr<iot::http::IHttpTransport> transport);
 
   void sendMessage(const std::string &chatId,
                    const std::string &text,
                    std::function<void()> success,
-                   std::function<void(const std::string &)> error) const;
+                   std::function<void(const std::string &)> error) const override;
 
  private:
   std::string botToken_;
+  std::shared_ptr<iot::http::IHttpTransport> transport_;
 };

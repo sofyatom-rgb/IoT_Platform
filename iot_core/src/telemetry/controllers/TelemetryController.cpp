@@ -1,4 +1,13 @@
 #include "telemetry/controllers/TelemetryController.h"
+#include "telemetry/repositories/TelemetryRepository.h"
+#include "telemetry/clients/NotificationServiceClient.h"
+#include "common/http/DrogonHttpTransport.h"
+#include "devices/repositories/DevicesRepository.h"
+#include "devices/services/DevicesService.h"
+#include "users/repositories/UsersRepository.h"
+#include "users/services/UsersService.h"
+
+#include <memory>
 
 #include <cmath>
 #include <sstream>
@@ -72,12 +81,19 @@ void TelemetryController::create(
   }
 
   const auto config = drogon::app().getCustomConfig();
-  NotificationServiceClient notificationClient(
-      config["notification_service_url"].asString());
-  TelemetryService service(
-      drogon::app().getDbClient(),
-      config["temperature_threshold"].asDouble(),
-      std::move(notificationClient));
+  const auto db = drogon::app().getDbClient();
+  auto telemetryRepository = std::make_shared<TelemetryRepository>(db);
+  auto devicesService = std::make_shared<DevicesService>(
+      std::make_shared<DevicesRepository>(db));
+  auto usersService = std::make_shared<UsersService>(
+      std::make_shared<UsersRepository>(db));
+  auto notificationClient = std::make_shared<NotificationServiceClient>(
+      config["notification_service_url"].asString(),
+      std::make_shared<iot::http::DrogonHttpTransport>(
+          config["notification_service_url"].asString()));
+  TelemetryService service(telemetryRepository,
+                           config["temperature_threshold"].asDouble(),
+                           devicesService, usersService, notificationClient);
   service.save(
       (*json)["device_id"].asInt(), (*json)["temperature"].asDouble(),
       [callback](const std::string &notificationStatus) {
@@ -109,7 +125,7 @@ void TelemetryController::getTelemetry(
 
   const int deviceId = (*json)["device_id"].asInt();
 
-  TelemetryService service(drogon::app().getDbClient());
+  TelemetryService service(std::make_shared<TelemetryRepository>(drogon::app().getDbClient()));
   service.getByDeviceId(
       deviceId,
       [callback](const std::string &responseBody) {
@@ -150,7 +166,7 @@ void TelemetryController::deleteTelemetry(
 
   const int deviceId = (*json)["device_id"].asInt();
 
-  TelemetryService service(drogon::app().getDbClient());
+  TelemetryService service(std::make_shared<TelemetryRepository>(drogon::app().getDbClient()));
   service.deleteByDeviceId(
       deviceId,
       [callback]() {

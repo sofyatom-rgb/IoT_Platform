@@ -3,10 +3,12 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <utility>
 
 #include "clients/TelegramBotClient.h"
+#include "common/http/DrogonHttpTransport.h"
 #include "controllers/NotificationController.h"
 
 int main(int, char *argv[]) {
@@ -19,7 +21,11 @@ int main(int, char *argv[]) {
   const auto configPath = std::filesystem::absolute(argv[0]).parent_path() /
                           "NotificationHTTPConfig.json";
   drogon::app().loadConfigFile(configPath.string());
-  NotificationService notificationService{TelegramBotClient{telegramBotToken}};
+  NotificationService notificationService{
+      std::make_shared<TelegramBotClient>(
+          telegramBotToken,
+          std::make_shared<iot::http::DrogonHttpTransport>(
+              "https://api.telegram.org"))};
   NotificationController controller(std::move(notificationService));
   controller.registerRoutes();
 

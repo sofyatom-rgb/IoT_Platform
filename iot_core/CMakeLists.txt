@@ -11,11 +11,11 @@ add_executable(iot_core
     src/devices/services/DevicesService.cpp
     src/devices/repositories/DevicesRepository.cpp
 )
-target_include_directories(iot_core PRIVATE src /usr/include/jsoncpp)
+target_include_directories(iot_core PRIVATE src ${PROJECT_SOURCE_DIR} ${JSONCPP_INCLUDE_DIR})
 set_target_properties(iot_core PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
-target_link_libraries(iot_core PRIVATE Drogon::Drogon)
+target_link_libraries(iot_core PRIVATE Drogon::Drogon ${JSONCPP_LIBRARY} iot_drogon_http_transport)
 
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/config/HTTPConfig.json

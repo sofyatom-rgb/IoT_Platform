@@ -1,62 +1,68 @@
 #include "clients/TelegramBotClient.h"
 
-#include <sstream>
+#include <stdexcept>
 #include <utility>
 
-TelegramBotClient::TelegramBotClient(std::string botToken)
-    : botToken_(std::move(botToken)) {}
+TelegramBotClient::TelegramBotClient(
+    std::string botToken,
+    std::shared_ptr<iot::http::IHttpTransport> transport)
+    : botToken_(std::move(botToken)), transport_(std::move(transport)) {
+  if (!transport_) {
+    throw std::invalid_argument("TelegramBotClient requires an HTTP transport");
+  }
+}
 
 void TelegramBotClient::sendMessage(
-    const std::string &chatId,
-    const std::string &text,
+    const std::string &chatId, const std::string &text,
     std::function<void()> success,
     std::function<void(const std::string &)> error) const {
-  auto client = drogon::HttpClient::newHttpClient("https://api.telegram.org");
-  auto request = drogon::HttpRequest::newHttpRequest();
-  request->setMethod(drogon::Post);
-  request->setPath("/bot" + botToken_ + "/sendMessage");
-  request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+  iot::http::Request request;
+  request.method = iot::http::Method::Post;
+  request.path = "/bot" + botToken_ + "/sendMessage";
+  request.jsonBody = {{"chat_id", chatId}, {"text", text}};
 
-  Json::Value body;
-  body["chat_id"] = chatId;
-  body["text"] = text;
-  request->setBody(body.toStyledString());
-
-  client->sendRequest(
+  transport_->send(
       request,
       [success = std::move(success), error = std::move(error)](
-          drogon::ReqResult result,
-          const drogon::HttpResponsePtr &response) {
-        if (result != drogon::ReqResult::Ok || !response) {
-          const auto status =
-              response ? static_cast<int>(response->getStatusCode()) : 0;
-          error("Telegram API request failed (HTTP " +
-                std::to_string(status) + ")");
+          iot::http::Result result,
+          std::optional<iot::http::Response> response) {
+        if (result != iot::http::Result::Ok || !response) {
+          const int status = response ? response->statusCode : 0;
+          if (error) {
+            error("Telegram API request failed (HTTP " +
+                  std::to_string(status) + ")");
+          }
           return;
         }
 
-        Json::CharReaderBuilder builder;
-        Json::Value payload;
-        std::string parseErrors;
-        const std::string responseBody(response->getBody());
-        std::istringstream input(responseBody);
-        if (!Json::parseFromStream(builder, input, &payload, &parseErrors)) {
-          if (response->getStatusCode() != drogon::k200OK) {
-            error("Telegram API request failed (HTTP " +
-                  std::to_string(static_cast<int>(response->getStatusCode())) +
-                  ")");
+        if (!response->jsonParsed) {
+          if (response->statusCode != 200) {
+            if (error) {
+              error("Telegram API request failed (HTTP " +
+                    std::to_string(response->statusCode) + ")");
+            }
             return;
           }
-          error("Could not parse Telegram API response: " + parseErrors);
-          return;
-        }
-        if (!payload["ok"].isBool() || !payload["ok"].asBool()) {
-          const auto description = payload["description"].asString();
-          error(description.empty() ? "Telegram API rejected the message"
-                                    : "Telegram API error: " + description);
+          const std::string suffix = response->jsonParseError.empty()
+                                         ? std::string{}
+                                         : ": " + response->jsonParseError;
+          if (error) error("Could not parse Telegram API response" + suffix);
           return;
         }
 
-        success();
+        const bool *ok = iot::http::boolField(response->jsonBody, "ok");
+        if (response->statusCode != 200 || ok == nullptr || !*ok) {
+          const auto *description =
+              iot::http::stringField(response->jsonBody, "description");
+          if (description != nullptr && !description->empty()) {
+            if (error) error("Telegram API error: " + *description);
+          } else if (error) {
+            error("Telegram API request failed (HTTP " +
+                  std::to_string(response->statusCode) + ")");
+          }
+          return;
+        }
+
+        if (success) success();
       });
 }

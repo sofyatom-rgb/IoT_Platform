@@ -1,4 +1,8 @@
 #include "ingest/controllers/IngestController.h"
+#include "ingest/clients/IoTClient.h"
+#include "common/http/DrogonHttpTransport.h"
+
+#include <memory>
 
 #include <sstream>
 #include <string>
@@ -109,7 +113,8 @@ void IngestController::ingest(
 
   const std::string iotCoreUrl =
       drogon::app().getCustomConfig()["iot_core_url"].asString();
-  AdapterService service(iotCoreUrl);
+  AdapterService service(std::make_shared<IoTClient>(
+          std::make_shared<iot::http::DrogonHttpTransport>(iotCoreUrl)));
 
   service.processTelemetry(
       payload["device_id"].asInt(),
@@ -160,7 +165,8 @@ void IngestController::getTelemetry(
 
   const std::string iotCoreUrl =
       drogon::app().getCustomConfig()["iot_core_url"].asString();
-  AdapterService service(iotCoreUrl);
+  AdapterService service(std::make_shared<IoTClient>(
+          std::make_shared<iot::http::DrogonHttpTransport>(iotCoreUrl)));
 
   service.getTelemetry(
       payload["device_id"].asInt(),
@@ -217,7 +223,8 @@ void IngestController::deleteTelemetry(
 
   const std::string iotCoreUrl =
       drogon::app().getCustomConfig()["iot_core_url"].asString();
-  AdapterService service(iotCoreUrl);
+  AdapterService service(std::make_shared<IoTClient>(
+          std::make_shared<iot::http::DrogonHttpTransport>(iotCoreUrl)));
 
   service.deleteTelemetry(
       payload["device_id"].asInt(),
