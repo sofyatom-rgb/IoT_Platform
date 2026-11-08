@@ -91,7 +91,8 @@ add_executable(client_unit_tests
     test_main.cpp
     clients/ClientTests.cpp
     ${PROJECT_SOURCE_DIR}/http_adapter/src/ingest/clients/IoTClient.cpp
-    ${PROJECT_SOURCE_DIR}/iot_core/src/telemetry/clients/NotificationServiceClient.cpp
+    ${PROJECT_SOURCE_DIR}/iot_core/src/telemetry/clients/RuleEngineClient.cpp
+    ${PROJECT_SOURCE_DIR}/rule_engine/src/clients/NotificationClient.cpp
     ${PROJECT_SOURCE_DIR}/notification_service/src/clients/TelegramBotClient.cpp
     ${PROJECT_SOURCE_DIR}/notification_service/src/clients/WorkerThreadPool.cpp
 )
@@ -99,6 +100,7 @@ target_include_directories(client_unit_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${PROJECT_SOURCE_DIR}
     ${PROJECT_SOURCE_DIR}/iot_core/src
+    ${PROJECT_SOURCE_DIR}/rule_engine/src
     ${PROJECT_SOURCE_DIR}/http_adapter/src
     ${PROJECT_SOURCE_DIR}/notification_service/src
 )
@@ -134,7 +136,7 @@ add_executable(telemetry_notification_pipeline_tests
     test_main.cpp
     integration/TelemetryNotificationPipelineTests.cpp
     ${PROJECT_SOURCE_DIR}/iot_core/src/telemetry/services/TelemetryService.cpp
-    ${PROJECT_SOURCE_DIR}/iot_core/src/telemetry/clients/NotificationServiceClient.cpp
+    ${PROJECT_SOURCE_DIR}/iot_core/src/telemetry/clients/RuleEngineClient.cpp
 )
 target_include_directories(telemetry_notification_pipeline_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

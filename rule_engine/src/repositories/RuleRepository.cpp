@@ -110,23 +110,29 @@ void RuleRepository::deleteRule(
       ruleId);
 }
 
-void RuleRepository::getChatIdForDevice(
+void RuleRepository::getNotificationTargetsForDevice(
     int deviceId,
-    std::function<void(const std::string&)> success,
+    std::function<void(const NotificationTargets&)> success,
     std::function<void(const std::string&)> error) const {
-  // devices.owner_id -> users.id -> users.telegram_chat_id
   db_->execSqlAsync(
-      "SELECT u.telegram_chat_id "
+      "SELECT d.name AS device_name, u.telegram_chat_id, u.email "
       "FROM devices d "
       "JOIN users u ON u.id = d.owner_id "
-      "WHERE d.id = $1 AND u.telegram_chat_id IS NOT NULL",
+      "WHERE d.id = $1",
       [success](const drogon::orm::Result& r) {
+        NotificationTargets targets;
         if (!r.empty()) {
-          auto v = r[0]["telegram_chat_id"];
-          success(v.isNull() ? std::string{} : v.as<std::string>());
-        } else {
-          success(std::string{});  // пустой — чат не настроен
+          targets.deviceName = r[0]["device_name"].as<std::string>();
+          const auto chatId = r[0]["telegram_chat_id"];
+          if (!chatId.isNull()) {
+            targets.chatId = chatId.as<std::string>();
+          }
+          const auto email = r[0]["email"];
+          if (!email.isNull()) {
+            targets.email = email.as<std::string>();
+          }
         }
+        success(targets);
       },
       [error](const drogon::orm::DrogonDbException& e) {
         error(e.base().what());

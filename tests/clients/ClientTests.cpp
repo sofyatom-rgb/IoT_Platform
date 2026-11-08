@@ -15,7 +15,8 @@
 #include "clients/WorkerThreadPool.h"
 #include "common/http/HttpTransport.h"
 #include "ingest/clients/IoTClient.h"
-#include "telemetry/clients/NotificationServiceClient.h"
+#include "clients/NotificationClient.h"
+#include "telemetry/clients/RuleEngineClient.h"
 
 namespace {
 
@@ -70,16 +71,24 @@ public:
 // IoTClient: проверяем не fake-объект сервиса, а настоящий код HTTP-клиента.
 TEST_CASE(iot_client_send_uses_post_telemetry_and_correct_json_fields) {
   auto transport = std::make_shared<FakeHttpTransport>();
-  transport->nextResponse = response(200, "{}");
+  transport->nextResponse = response(
+      200, R"({"notification_status":"not_triggered"})",
+      {{"notification_status", std::string("not_triggered")}});
   IoTClient client(transport);
 
   bool succeeded = false;
+  std::string notificationStatus;
   std::string errorMessage;
   client.sendTelemetry(
-      42, 23.75, [&] { succeeded = true; },
+      42, 23.75,
+      [&](const std::string &status) {
+        succeeded = true;
+        notificationStatus = status;
+      },
       [&](const std::string &error) { errorMessage = error; });
 
   EXPECT_TRUE(succeeded);
+  EXPECT_EQ("not_triggered", notificationStatus);
   EXPECT_TRUE(errorMessage.empty());
   EXPECT_EQ(1U, transport->requests.size());
   EXPECT_EQ(iot::http::Method::Post, lastRequest(*transport).method);
@@ -91,6 +100,22 @@ TEST_CASE(iot_client_send_uses_post_telemetry_and_correct_json_fields) {
                        lastRequest(*transport).jsonBody.at("temperature")));
 }
 
+TEST_CASE(iot_client_send_reports_missing_notification_status) {
+  auto transport = std::make_shared<FakeHttpTransport>();
+  transport->nextResponse = response(200, "{}");
+  IoTClient client(transport);
+
+  bool succeeded = false;
+  std::string errorMessage;
+  client.sendTelemetry(
+      42, 23.75, [&](const std::string &) { succeeded = true; },
+      [&](const std::string &error) { errorMessage = error; });
+
+  EXPECT_FALSE(succeeded);
+  EXPECT_EQ("IoT Core response is missing a valid notification_status",
+            errorMessage);
+}
+
 TEST_CASE(iot_client_send_reports_non_200_http_status) {
   auto transport = std::make_shared<FakeHttpTransport>();
   transport->nextResponse = response(503, "service unavailable");
@@ -99,7 +124,7 @@ TEST_CASE(iot_client_send_reports_non_200_http_status) {
   bool succeeded = false;
   std::string errorMessage;
   client.sendTelemetry(
-      7, 18.0, [&] { succeeded = true; },
+      7, 18.0, [&](const std::string &) { succeeded = true; },
       [&](const std::string &error) { errorMessage = error; });
 
   EXPECT_FALSE(succeeded);
@@ -162,77 +187,124 @@ TEST_CASE(iot_client_reports_network_failure_without_response) {
   EXPECT_TRUE(errorMessage.find("HTTP Status: 0") != std::string::npos);
 }
 
-// NotificationServiceClient.
-TEST_CASE(notification_client_posts_expected_payload_and_handles_success) {
+// RuleEngineClient.
+TEST_CASE(rule_engine_client_posts_telemetry_and_returns_rule_status) {
   auto transport = std::make_shared<FakeHttpTransport>();
-  transport->nextResponse = response(200, "{\"status\":\"ok\"}");
-  NotificationServiceClient client("http://notification-service", transport);
+  transport->nextResponse = response(
+      200, R"({"status":"ok","notification_status":"telegram=sent; email=sent"})",
+      {{"status", std::string("ok")},
+       {"notification_status", std::string("telegram=sent; email=sent")}});
+  RuleEngineClient client("http://rule-engine", transport);
 
-  bool succeeded = false;
+  std::string notificationStatus;
   std::string errorMessage;
-  client.sendTemperatureAlert(
-      "chat-123", "Boiler", 81.5, 70.0, [&] { succeeded = true; },
+  client.checkTelemetry(
+      12, 31.5, [&](const std::string &status) { notificationStatus = status; },
       [&](const std::string &error) { errorMessage = error; });
 
-  EXPECT_TRUE(succeeded);
+  EXPECT_EQ("telegram=sent; email=sent", notificationStatus);
   EXPECT_TRUE(errorMessage.empty());
   EXPECT_EQ(iot::http::Method::Post, lastRequest(*transport).method);
-  EXPECT_EQ(std::string("/notifications/temperature"),
+  EXPECT_EQ(std::string("/telemetry"),
             lastRequest(*transport).path);
   EXPECT_EQ(
-      std::string("chat-123"),
-      std::get<std::string>(lastRequest(*transport).jsonBody.at("chat_id")));
-  EXPECT_EQ(std::string("Boiler"),
-            std::get<std::string>(
-                lastRequest(*transport).jsonBody.at("device_name")));
-  EXPECT_EQ(81.5, std::get<double>(
+      std::int64_t(12),
+      std::get<std::int64_t>(lastRequest(*transport).jsonBody.at("device_id")));
+  EXPECT_EQ(31.5, std::get<double>(
                       lastRequest(*transport).jsonBody.at("temperature")));
-  EXPECT_EQ(70.0,
-            std::get<double>(lastRequest(*transport).jsonBody.at("threshold")));
 }
 
-TEST_CASE(notification_client_uses_error_message_from_service_response) {
+TEST_CASE(rule_engine_client_uses_error_message_from_service_response) {
   auto transport = std::make_shared<FakeHttpTransport>();
   transport->nextResponse =
-      response(400, "{\"message\":\"invalid chat id\"}",
-               {{"message", std::string("invalid chat id")}});
-  NotificationServiceClient client("http://notification-service", transport);
+      response(500, "{\"message\":\"notification failed\"}",
+               {{"message", std::string("notification failed")}});
+  RuleEngineClient client("http://rule-engine", transport);
 
   bool succeeded = false;
   std::string errorMessage;
-  client.sendTemperatureAlert(
-      "", "Boiler", 81.5, 70.0, [&] { succeeded = true; },
+  client.checkTelemetry(
+      12, 31.5, [&](const std::string &) { succeeded = true; },
       [&](const std::string &error) { errorMessage = error; });
 
   EXPECT_FALSE(succeeded);
-  EXPECT_TRUE(errorMessage.find("400") != std::string::npos);
-  EXPECT_TRUE(errorMessage.find("invalid chat id") != std::string::npos);
+  EXPECT_TRUE(errorMessage.find("500") != std::string::npos);
+  EXPECT_TRUE(errorMessage.find("notification failed") != std::string::npos);
 }
 
-TEST_CASE(notification_client_rejects_empty_base_url_without_sending) {
+TEST_CASE(rule_engine_client_rejects_empty_base_url_without_sending) {
   auto transport = std::make_shared<FakeHttpTransport>();
-  NotificationServiceClient client("", transport);
+  RuleEngineClient client("", transport);
 
   std::string errorMessage;
-  client.sendTemperatureAlert(
-      "1", "Boiler", 80.0, 70.0, [] {},
+  client.checkTelemetry(
+      1, 80.0, [](const std::string &) {},
       [&](const std::string &error) { errorMessage = error; });
 
   EXPECT_EQ(0U, transport->requests.size());
   EXPECT_TRUE(errorMessage.find("not configured") != std::string::npos);
 }
 
-TEST_CASE(notification_client_reports_generic_http_error) {
+TEST_CASE(rule_engine_client_reports_generic_http_error) {
   auto transport = std::make_shared<FakeHttpTransport>();
   transport->nextResponse = response(502, "not-json");
   transport->nextResponse->jsonParsed = false;
-  NotificationServiceClient client("http://notification-service", transport);
+  RuleEngineClient client("http://rule-engine", transport);
 
   std::string errorMessage;
-  client.sendTemperatureAlert(
-      "1", "Boiler", 80.0, 70.0, [] {},
+  client.checkTelemetry(
+      1, 80.0, [](const std::string &) {},
       [&](const std::string &error) { errorMessage = error; });
   EXPECT_TRUE(errorMessage.find("HTTP 502") != std::string::npos);
+}
+
+TEST_CASE(notification_client_forwards_device_and_all_notification_recipients) {
+  auto transport = std::make_shared<FakeHttpTransport>();
+  transport->nextResponse = response(
+      200, R"({"status":"ok","telegram":"sent","email":"sent"})",
+      {{"status", std::string("ok")},
+       {"telegram", std::string("sent")},
+       {"email", std::string("sent")}});
+  NotificationClient client("http://notification-service", transport);
+
+  std::string statuses;
+  std::string errorMessage;
+  client.sendTemperatureAlert(
+      42, "chat-42", "owner@example.com", "Boiler", 81.5, 70.0,
+      [&](const std::string &value) { statuses = value; },
+      [&](const std::string &value) { errorMessage = value; });
+
+  EXPECT_EQ("telegram=sent; email=sent", statuses);
+  EXPECT_TRUE(errorMessage.empty());
+  EXPECT_EQ(iot::http::Method::Post, lastRequest(*transport).method);
+  EXPECT_EQ("/notifications/temperature", lastRequest(*transport).path);
+  EXPECT_EQ(std::int64_t(42),
+            std::get<std::int64_t>(
+                lastRequest(*transport).jsonBody.at("device_id")));
+  EXPECT_EQ("chat-42",
+            std::get<std::string>(
+                lastRequest(*transport).jsonBody.at("chat_id")));
+  EXPECT_EQ("owner@example.com",
+            std::get<std::string>(lastRequest(*transport).jsonBody.at("email")));
+}
+
+TEST_CASE(notification_client_resets_deduplication_for_device) {
+  auto transport = std::make_shared<FakeHttpTransport>();
+  NotificationClient client("http://notification-service", transport);
+  bool succeeded = false;
+  std::string errorMessage;
+
+  client.clearTemperatureAlert(
+      42, [&] { succeeded = true; },
+      [&](const std::string &value) { errorMessage = value; });
+
+  EXPECT_TRUE(succeeded);
+  EXPECT_TRUE(errorMessage.empty());
+  EXPECT_EQ(iot::http::Method::Post, lastRequest(*transport).method);
+  EXPECT_EQ("/notifications/temperature/normal", lastRequest(*transport).path);
+  EXPECT_EQ(std::int64_t(42),
+            std::get<std::int64_t>(
+                lastRequest(*transport).jsonBody.at("device_id")));
 }
 
 // TelegramBotClient.

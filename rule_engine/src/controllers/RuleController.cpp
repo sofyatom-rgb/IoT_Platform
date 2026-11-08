@@ -203,15 +203,16 @@ void RuleController::registerRoutes() {
 
         makeService()->checkAndNotify(
             deviceId, temperature,
-            [cb]() {
+            [cb](const std::string& notificationStatus) {
               Json::Value ok;
               ok["status"] = "ok";
+              ok["notification_status"] = notificationStatus;
               reply(cb, drogon::k200OK, ok);
             },
             [cb](const std::string &msg) {
               LOG_ERROR << "checkAndNotify failed: " << msg;
               reply(cb, drogon::k500InternalServerError,
-                    errorJson("notification failed"));
+                    errorJson(msg));
             });
       },
       {drogon::Post});

@@ -141,10 +141,11 @@ void IngestController::ingest(
   service.processTelemetry(
       payload["device_id"].asInt(),
       payload["temperature"].asDouble(),
-      [callback, this]() {
+      [callback, this](const std::string &notificationStatus) {
         Json::Value body;
         body["status"]  = "ok";
         body["message"] = "Data forwarded to IoT Core";
+        body["notification_status"] = notificationStatus;
         callback(encodeResponse(body));
       },
       [callback, this](const std::string &error) {

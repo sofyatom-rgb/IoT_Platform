@@ -15,7 +15,11 @@ class RecordingHttpTransport final : public iot::http::IHttpTransport {
   mutable std::vector<iot::http::Request> requests;
   iot::http::Result result{iot::http::Result::Ok};
   std::optional<iot::http::Response> response{
-      iot::http::Response{200, "{}", true, {}, {}}};
+      iot::http::Response{200, R"({"notification_status":"not_triggered"})",
+                          true,
+                          {{"notification_status",
+                            std::string("not_triggered")}},
+                          {}}};
 
   void send(const iot::http::Request &request,
             iot::http::Completion completion) const override {
@@ -35,12 +39,18 @@ TEST_CASE(adapter_pipeline_uses_real_iot_client_and_posts_telemetry) {
   AdapterService adapter(client);
 
   bool succeeded = false;
+  std::string status;
   std::string error;
   adapter.processTelemetry(
-      64, 27.25, [&] { succeeded = true; },
+      64, 27.25,
+      [&](const std::string &value) {
+        succeeded = true;
+        status = value;
+      },
       [&](const std::string &message) { error = message; });
 
   EXPECT_TRUE(succeeded);
+  EXPECT_EQ("not_triggered", status);
   EXPECT_TRUE(error.empty());
   EXPECT_EQ(std::size_t{1}, transport->requests.size());
   EXPECT_EQ(iot::http::Method::Post, lastRequest(*transport).method);
@@ -58,7 +68,8 @@ TEST_CASE(adapter_pipeline_propagates_iot_core_http_error) {
 
   int successCalls = 0;
   std::string error;
-  adapter.processTelemetry(64, 27.25, [&] { ++successCalls; },
+  adapter.processTelemetry(64, 27.25,
+                           [&](const std::string &) { ++successCalls; },
                            [&](const std::string &message) { error = message; });
 
   EXPECT_EQ(0, successCalls);

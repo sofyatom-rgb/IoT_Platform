@@ -6,7 +6,7 @@ IoT Platform — учебный backend для регистрации польз
 
 1. **IoT Core** — основной сервис для пользователей, устройств и сохранения телеметрии. Адрес по умолчанию: `http://localhost:8080`.
 2. **HTTP Adapter** — дополнительный HTTP-вход для интеграций и IoT-клиентов. Адрес по умолчанию: `http://localhost:8081`. Он принимает телеметрию и проксирует запросы к IoT Core.
-3. **Notification Service** — внутренний HTTP-сервис, принимающий события от Core и отправляющий уведомления через Telegram Bot API и/или Gmail SMTP (email). Адрес по умолчанию: `http://localhost:8082`.
+3. **Notification Service** — внутренний HTTP-сервис, принимающий проверенные Rule Engine события и отправляющий уведомления через Telegram Bot API и/или SMTP (email). Адрес по умолчанию: `http://localhost:8082`.
 4. **Rule Engine** — отдельный сервис для CRUD правил температуры и проверки показания по правилам устройства. Адрес по умолчанию: `http://localhost:8083`.
 
 ## Содержание
@@ -45,7 +45,7 @@ IoT_Platform/
 │       │   ├── services/
 │       │   │   └── TelemetryService.cpp # Слой бизнес-логики телеметрии
 │       │   ├── clients/
-│       │   │   └── NotificationServiceClient.cpp # HTTP-клиент для Notification Service (chat_id + email)
+│       │   │   └── RuleEngineClient.cpp # Передаёт сохранённую телеметрию в Rule Engine
 │       │   └── repositories/
 │       │       └── TelemetryRepository.cpp # SQL для таблицы telemetry
 │       ├── users/
@@ -107,7 +107,7 @@ IoT_Platform/
 - **Service** передаёт операцию репозиторию. Здесь располагается бизнес-логика.
 - **Repository** выполняет SQL-запросы через Drogon ORM.
 - В Adapter контроллер вызывает сервис, сервис использует HTTP-клиент, а HTTP-клиент обращается к Core.
-- Core вызывает Notification Service через `NotificationServiceClient`; сервис уведомлений параллельно отправляет в настроенные каналы: Telegram (`TelegramBotClient`, tgbot-cpp) и Email (`EmailService`, SMTP через libcurl с TLS и MIME `multipart/alternative`). Блокирующие вызовы выполняются в общем пуле потоков, event loop Drogon не блокируется.
+- После сохранения телеметрии Core передаёт показание в Rule Engine. Только Rule Engine проверяет правила, получает контакты владельца устройства и вызывает Notification Service. Notification Service отправляет событие в настроенные каналы: Telegram (`TelegramBotClient`, tgbot-cpp) и Email (`EmailService`, SMTP через libcurl с TLS и MIME `multipart/alternative`). Блокирующие вызовы email выполняются в общем пуле потоков, event loop Drogon не блокируется.
 
 Core и Rule Engine используют PostgreSQL; значения в SQL передаются параметрами (`$1`, `$2`, …), а не подставляются конкатенацией в SQL-строку.
 
@@ -135,9 +135,12 @@ IoT-устройство / curl / клиентское приложение
                                  │ HTTP-запрос на :8080
                                  └──────────────► IoT Core
                                                       │
-                                  если температура выше порога Core
+                                  после сохранения показания
                                                       ▼
-                                          NotificationServiceClient
+                                              Rule Engine :8083
+                                       проверяет правила в PostgreSQL
+                                                      │
+                                        если правило сработало
                                                       │ HTTP :8082
                                                       ▼
                                            Notification Controller
@@ -145,8 +148,6 @@ IoT-устройство / curl / клиентское приложение
                                    Notification Service ─┬─→ TelegramBotClient → Telegram Bot API
                                                          └─→ EmailService (libcurl) → SMTP
 
-Отдельно: клиент → Rule Engine :8083 → PostgreSQL (rules/devices/users)
-                          при нарушении → Notification Service :8082
 ```
 
 ### Когда обращаться напрямую, а когда через Adapter
@@ -157,7 +158,7 @@ IoT-устройство / curl / клиентское приложение
 
 Оба пути записи сохраняют данные в одну и ту же базу: Adapter не имеет собственного подключения к PostgreSQL. Если нужен только один процесс при локальной проверке, запросы телеметрии можно направлять напрямую в Core; для работы Adapter должны быть запущены оба сервиса.
 
-Если превышен температурный порог, Core запрашивает у владельца устройства контакты для уведомлений (Telegram `chat_id` и email) из PostgreSQL, затем отправляет событие в Notification Service. Тот параллельно пытается доставить уведомление в каждый настроенный канал. Ошибка доставки логируется отдельно и не отменяет уже сохранённую телеметрию.
+При записи через Core телеметрия сначала сохраняется в PostgreSQL, затем Core вызывает Rule Engine. Rule Engine проверяет все правила устройства; при нарушении он получает из PostgreSQL контакты владельца (Telegram `chat_id` и email) и отправляет событие в Notification Service. Ни Core, ни Adapter самостоятельно правила не проверяют и уведомления не отправляют. Ошибка вызова Rule Engine возвращается клиенту как ошибка после сохранения показания; перед повторной отправкой проверьте историю, чтобы не создать дубликат.
 
 ## Требования
 
@@ -248,7 +249,7 @@ docker compose up -d
 | Пользователь | `postgres` |
 | Пароль | `postgres` |
 
-Core подключается к БД на `127.0.0.1:5433` согласно `iot_core/config/PostgreSQLConfig.json`. У Adapter соединения с БД нет.
+Core и Rule Engine подключаются к общей БД на `127.0.0.1:5433`; у Adapter соединения с БД нет.
 
 ### 2. Запустить IoT Core
 
@@ -308,9 +309,9 @@ export SMTP_FROM_EMAIL=notifications@example.test
 
 Откройте `http://127.0.0.1:8026`, чтобы показать полученное письмо. Mailpit перехватывает почту локально и не отправляет её настоящему адресату. Также доступны внешние SMTP-серверы: для production задайте `SMTP_SECURITY=starttls` (`smtp.gmail.com:587`) или `SMTP_SECURITY=tls` (порт `465`) и используйте пароль приложения. Не включайте `SMTP_SECURITY=none` для внешних хостов.
 
-Для демонстрации полного уведомления создайте пользователя с `telegram_chat_id`, устройство для него и отправьте через `POST /telemetry` показание выше порога (`30°C` по умолчанию). В Telegram и Mailpit придёт алерт; повторное превышение подавляется до показания в норме (`<=30°C`), после чего следующий алерт снова отправится. Показание можно отправить через Postman или curl — физический датчик для этой демонстрации не нужен.
+Для демонстрации полного уведомления создайте пользователя с `telegram_chat_id` и email, устройство для него и правило в Rule Engine. Отправьте через Adapter или Core показание, нарушающее это правило. В Telegram и/или Mailpit придёт алерт; повторы подавляются до следующего показания, которое не нарушает ни одного правила. Показание можно отправить через Postman или curl — физический датчик для демонстрации не нужен.
 
-Температурное уведомление сейчас формируется для существующего порога Core и имеет уровень `WARNING`. Повторные превышения подавляются по `device_id`, пока Core не получит нормальное показание. Состояние хранится в памяти Notification Service и сбрасывается при его перезапуске; между перезапусками или несколькими экземплярами сервиса дедупликация не сохраняется. Обработчик `POST /notifications/email` принимает общие поля события и уровни `INFO`, `WARNING`, `CRITICAL` для дальнейшего расширения.
+Температурный алерт имеет уровень `WARNING`. Повторы подавляются по `device_id`, пока Rule Engine не получит показание, не нарушающее правила. Состояние хранится в памяти Notification Service и сбрасывается при его перезапуске; между перезапусками или несколькими экземплярами сервиса дедупликация не сохраняется. Обработчик `POST /notifications/email` принимает общие поля события и уровни `INFO`, `WARNING`, `CRITICAL` для дальнейшего расширения.
 
 ### 4. Запустить HTTP Adapter
 
@@ -330,9 +331,9 @@ Rule Engine использует ту же PostgreSQL и Notification Service, �
 ./build/bin/rule_engine
 ```
 
-Для проверки правил запустите PostgreSQL и Notification Service. Создание правил и проверку температуры выполняйте через API Rule Engine, описанный ниже. Это независимый от Core endpoint: текущие `POST /telemetry` в Core и `POST /ingest` в Adapter автоматически не вызывают Rule Engine, а запрос `POST /telemetry` в Rule Engine только проверяет правила и не сохраняет показание в таблицу `telemetry`.
+Для штатного потока запустите PostgreSQL, Notification Service, Rule Engine и Core. Создайте правило через API Rule Engine. Затем отправляйте телеметрию через Adapter (`POST /ingest`) либо напрямую в Core (`POST /telemetry`): оба пути сохранят показание и передадут его Rule Engine. `POST /telemetry` самого Rule Engine оставлен как точка тестирования проверки; он не сохраняет показание в историю.
 
-Удобно держать PostgreSQL, Core, Notification Service и Adapter в отдельных терминалах. Для уведомлений должны быть запущены Core и Notification Service.
+Удобно держать PostgreSQL, Core, Rule Engine, Notification Service и Adapter в отдельных терминалах. Для проверки телеметрии должны быть запущены Core и Rule Engine; для срабатываний также нужен Notification Service.
 
 ### Конфигурационные файлы
 
@@ -350,7 +351,7 @@ Rule Engine использует ту же PostgreSQL и Notification Service, �
 - `SMTP_FROM_EMAIL`, `SMTP_SENDER_NAME` — адрес и имя отправителя;
 - `SMTP_TIMEOUT_SECONDS` — сетевой таймаут (по умолчанию 20 секунд);
 - `PLATFORM_URL` — необязательная ссылка на платформу в письме; кнопка скрыта, если URL не задан.
-- В `iot_core/config/HTTPConfig.json` в `custom_config` задаются `temperature_threshold` и `notification_service_url`.
+- В `iot_core/config/HTTPConfig.json` задаётся `rule_engine_url`.
 
 CMake копирует HTTP-конфиги и email-шаблоны в build-каталог. После изменения email-шаблонов повторите конфигурацию/сборку.
 
@@ -385,7 +386,7 @@ Content-Type: application/json
 | `DELETE` | `/users` | `user_id` | Удалить пользователя |
 | `POST` | `/devices` | `owner_id`, `name`, `type` | Создать устройство |
 | `DELETE` | `/devices` | `device_id` | Удалить устройство |
-| `POST` | `/telemetry` | `device_id`, `temperature` | Добавить показание |
+| `POST` | `/telemetry` | `device_id`, `temperature` | Сохранить показание и передать его Rule Engine |
 | `POST` | `/telemetry/query` | `device_id` | Получить до 10 последних показаний |
 | `DELETE` | `/telemetry` | `device_id` | Удалить все показания устройства |
 
@@ -393,7 +394,7 @@ Content-Type: application/json
 
 | Метод | Путь | Тело JSON | Назначение |
 |---|---|---|---|
-| `POST` | `/ingest` | `device_id`, `temperature` | Переслать показание в Core |
+| `POST` | `/ingest` | `device_id`, `temperature` | Переслать показание в Core, который сохраняет его и вызывает Rule Engine |
 | `POST` | `/telemetry/query` | `device_id` | Получить показания через Core |
 | `DELETE` | `/telemetry` | `device_id` | Удалить показания через Core |
 
@@ -411,11 +412,11 @@ Adapter не реализует маршруты пользователей и �
 | `DELETE` | `/rules/{id}` | — | Удалить правило |
 | `POST` | `/telemetry` | `device_id`, `temperature` | Проверить показание; при срабатывании отправить уведомление |
 
-Правила принадлежат `device_id`. Если хотя бы одно условие истинно, Rule Engine отправляет алерт владельцу устройства, если у пользователя заполнен `telegram_chat_id`. Проверка не сохраняет показание и не имеет дедупликации: повторные запросы с температурой, всё ещё нарушающей правило, повторно отправляют уведомление.
+Правила принадлежат `device_id`. Если хотя бы одно условие истинно, Rule Engine отправляет алерт на доступные контакты владельца: Telegram и/или email. При нормальном показании он сбрасывает состояние уведомления, чтобы следующее срабатывание снова отправило алерт. Запись через Core или Adapter сохраняет показание до проверки; прямой тестовый вызов Rule Engine историю не меняет.
 
 ### Создать правило и проверить температуру
 
-Сначала создайте пользователя и устройство через Core, затем сохраните выданный `device_id`. Для уведомления у пользователя должен быть настроен `telegram_chat_id`, а Notification Service должен быть запущен.
+Сначала создайте пользователя и устройство через Core, затем сохраните выданный `device_id`. Для Telegram у пользователя должен быть настроен `telegram_chat_id`, для email — его email и включённый SMTP в Notification Service.
 
 Создать правило «температура выше 30»:
 
@@ -431,7 +432,15 @@ curl -i -X POST http://localhost:8083/rules \
 curl -i 'http://localhost:8083/rules?device_id=1'
 ```
 
-Проверить показание — если любое правило нарушено, отправится уведомление:
+В обычном сценарии отправляйте показание через Core — оно сохранится и будет передано Rule Engine:
+
+```sh
+curl -i -X POST http://localhost:8080/telemetry \
+  -H 'Content-Type: application/json' \
+  -d '{"device_id":1,"temperature":31.5}'
+```
+
+Для тестирования только правила можно отправить показание напрямую в Rule Engine; этот запрос не сохраняет телеметрию:
 
 ```sh
 curl -i -X POST http://localhost:8083/telemetry \
@@ -439,7 +448,7 @@ curl -i -X POST http://localhost:8083/telemetry \
   -d '{"device_id":1,"temperature":31.5}'
 ```
 
-Изменить правило можно через `PUT /rules/{rule_id}` с теми же полями, удалить — через `DELETE /rules/{rule_id}`. Редактирование и проверка требуют работающей БД; отправка алерта также требует доступного Notification Service и настроенного канала доставки.
+Изменить правило можно через `PUT /rules/{rule_id}` с теми же полями, удалить — через `DELETE /rules/{rule_id}`. Редактирование и проверка требуют работающей БД и Notification Service; для email SMTP должен быть включён и настроен.
 
 ### Проверить Core — `GET /ping`
 
@@ -556,20 +565,14 @@ curl -i -X POST http://localhost:8080/telemetry \
 Успешный ответ:
 
 ```json
-{"status":"ok"}
+{"status":"ok","notification_status":"not_triggered"}
 ```
 
 Каждый запрос вставляет **новую** запись. Время ставится базой автоматически. `device_id` должен ссылаться на существующее устройство.
 
-Если температура выше `temperature_threshold` из `iot_core/config/HTTPConfig.json`, Core находит владельца устройства и его контакты (`telegram_chat_id`, `email`), затем вызывает Notification Service. Уведомление отправляется параллельно по всем настроенным каналам. Ошибка доставки логируется отдельно и не отменяет уже сохранённую телеметрию.
+После сохранения Core отправляет каждое показание в Rule Engine. Rule Engine проверяет правила устройства и при срабатывании передаёт событие в Notification Service. Core не выбирает получателей и не проверяет температурный порог.
 
-В ответе на сохранение телеметрии поле `notification_status` показывает итог:
-- `not_required` — температура не выше порога;
-- `sent` — все отправляемые каналы доставили;
-- `sent_partial: ...` — часть каналов доставила, часть упала;
-- `delivery_failed: ...` — все каналы упали;
-- `no_contact_info` — у пользователя нет ни `telegram_chat_id`, ни `email`;
-- `device_lookup_failed: ...` / `user_lookup_failed: ...` — ошибка поиска.
+В ответе Core поле `notification_status` содержит результат Rule Engine: `not_triggered`, `no_rules`, `no_recipients` либо статусы каналов, например `telegram=sent; email=sent` или `telegram=sent; email=skipped_duplicate`. Ошибка обращения к Rule Engine или Notification Service возвращается как HTTP 500, хотя запись телеметрии к этому моменту уже сохранена.
 
 ### Записать показание через Adapter — `POST /ingest`
 
@@ -582,10 +585,10 @@ curl -i -X POST http://localhost:8081/ingest \
 Тело совпадает с прямым запросом к Core. Успешный ответ Adapter:
 
 ```json
-{"status":"ok","message":"Data forwarded to IoT Core"}
+{"status":"ok","message":"Data forwarded to IoT Core","notification_status":"not_triggered"}
 ```
 
-Adapter делает внутренний HTTP `POST /telemetry` в Core. Если Core недоступен или отвергает запрос, Adapter возвращает `status: error` и описание ошибки. Запись в любом случае создаётся в таблице `telemetry` Core, а не в отдельном хранилище Adapter.
+Adapter делает внутренний HTTP `POST /telemetry` в Core. Core сохраняет запись и вызывает Rule Engine. Если Core или downstream Rule Engine отвергает запрос, Adapter возвращает `status: error`; запись могла уже сохраниться в таблице `telemetry`, поэтому перед повтором проверьте историю.
 
 ### Получить телеметрию напрямую — `POST /telemetry/query` в Core
 
@@ -729,7 +732,7 @@ docker compose exec -T postgres psql -U postgres -d iot_platform \
 
 ## Структура базы данных
 
-Инициализирующий скрипт `init.sql` задаёт три таблицы:
+Инициализирующий скрипт `init.sql` задаёт четыре таблицы:
 
 ```text
 users
@@ -853,13 +856,13 @@ docker compose exec -T postgres psql -U postgres -d iot_platform \
 | Набор | Содержание | Тип |
 | --- | --- | --- |
 | `service_unit_tests` | UsersService, DevicesService, TelemetryService, AdapterService, NotificationService; ошибки зависимостей, отложенные callback-и, отсутствие повторного вызова | Unit |
-| `client_unit_tests` | IoTClient и NotificationServiceClient с fake HTTP-транспортом; TelegramBotClient с fake Telegram API, проверка async-вызова и обработки ошибок | Unit без внешней сети |
+| `client_unit_tests` | IoTClient и RuleEngineClient с fake HTTP-транспортом; TelegramBotClient с fake Telegram API | Unit без внешней сети |
 | `controller_validation_tests` | Разбор положительных ID, числовые значения, chat ID, обязательные поля и нечисловые значения | Unit чистых функций валидации |
 | `controller_unit_tests` | Реальные обработчики Users, Devices, Telemetry, Ingest и Notification с fake-сервисами; JSON-валидация, forwarding, статусы ошибок | Unit обработчиков с подменёнными зависимостями |
 | `codec_primitive_tests` | Base64, CRC32: контрольные векторы, бинарные данные, padding и некорректный ввод | Unit |
 | `codec_unit_tests` | Encoder/Decoder: AES-256-CBC round-trip, случайный IV, неправильный ключ, повреждённый envelope и checksum | Unit; требуется OpenSSL и JsonCpp development headers |
 | `adapter_pipeline_tests` | Реальный AdapterService вместе с реальным IoTClient и подменённой только сетевой границей | Component test |
-| `telemetry_notification_pipeline_tests` | Реальный TelemetryService вместе с NotificationServiceClient; проверяется, что уведомление отправляется только при превышении порога | Component test |
+| `telemetry_notification_pipeline_tests` | Проверяется, что Core сначала сохраняет показание, а затем передаёт его в Rule Engine | Component test |
 | `drogon_transport_integration_tests` | Фактический HTTP-запрос через Drogon к локальному TCP-серверу: POST/GET/PUT/DELETE, JSON, HTTP 503, не-JSON ответ, пустой URL и сквозной путь AdapterService → IoTClient → Drogon transport | Integration / component E2E slice |
 | `repository_integration_tests` | UsersRepository, DevicesRepository и TelemetryRepository с реальной PostgreSQL: CRUD, уникальность email, FK и каскадное удаление | Integration |
 
@@ -964,7 +967,7 @@ ctest --test-dir build-tests -N
 ### Архитектурные изменения для тестируемости
 
 - `IUsersRepository`, `IDevicesRepository`, `ITelemetryRepository` отделяют сервисы от PostgreSQL.
-- `IUsersService`, `IDevicesService`, `INotificationServiceClient`, `IIoTClient` и `ITelegramBotClient` позволяют передавать fake-зависимости в сервисы и обработчики.
+- `IUsersService`, `IDevicesService`, `IRuleEngineClient`, `IIoTClient` и `ITelegramBotClient` позволяют передавать fake-зависимости в сервисы и обработчики.
 - `IHttpTransport` отделяет формирование HTTP-запроса от отправки. В приложении используется `DrogonHttpTransport`, в тестах клиентов — fake-транспорт.
 - Контроллеры Users/Devices/Telemetry теперь получают сервисы через конструктор; IngestController также допускает передачу `IIoTClient`. Реальные реализации собираются в `main.cpp`/точках композиции.
 - Общие проверки входных данных вынесены в `common/validation/RequestValidation.h`. Это чистые функции без зависимости от Drogon, их можно тестировать отдельно.
@@ -972,7 +975,7 @@ ctest --test-dir build-tests -N
 
 ### Ограничения
 
-- Unit-тесты `IoTClient` и `NotificationServiceClient` проверяют запросы на границе fake HTTP-транспорта. `TelegramBotClient` проверяется через fake Telegram API; внешняя сеть не используется.
+- Unit-тесты `IoTClient` и `RuleEngineClient` проверяют запросы на границе fake HTTP-транспорта. `TelegramBotClient` проверяется через fake Telegram API; внешняя сеть не используется.
 - Контроллерные unit-тесты вызывают методы обработчиков напрямую, а не поднимают HTTP-сервер для каждого контроллера. Маршрутизация/полный wire-format контроллеров дополнительно может быть покрыт E2E тестами.
 - PostgreSQL integration tests требуют отдельной тестовой БД и запускаются только по явной опции `BUILD_POSTGRES_INTEGRATION_TESTING=ON`.
 - Валидация email сейчас проверяет наличие непустого значения, а не полное соответствие RFC. Пароли в текущей учебной схеме всё ещё сохраняются как обычный текст; тесты не делают такую реализацию безопасной для production.

@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "clients/NotificationClient.h"
 #include "repositories/RuleRepository.h"
 
 // Сервис правил: проверяет телеметрию против правил и при нарушении шлёт уведомление.
@@ -50,10 +51,10 @@ class RuleService {
   void checkAndNotify(
       int deviceId,
       double temperature,
-      std::function<void()> success,
+      std::function<void(const std::string&)> success,
       std::function<void(const std::string&)> error) const;
 
  private:
   drogon::orm::DbClientPtr db_;
-  std::string notificationUrl_;
+  std::shared_ptr<NotificationClient> notificationClient_;
 };

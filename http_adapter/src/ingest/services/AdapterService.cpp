@@ -9,7 +9,8 @@ AdapterService::AdapterService(std::shared_ptr<IIoTClient> client)
 }
 
 void AdapterService::processTelemetry(
-    int deviceId, double temperature, std::function<void()> success,
+    int deviceId, double temperature,
+    std::function<void(const std::string &)> success,
     std::function<void(const std::string &)> error) const {
   client_->sendTelemetry(deviceId, temperature, std::move(success),
                          std::move(error));

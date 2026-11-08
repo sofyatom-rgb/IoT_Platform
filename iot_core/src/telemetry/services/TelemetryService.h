@@ -4,25 +4,17 @@
 #include <memory>
 #include <string>
 
-#include "devices/services/IDevicesService.h"
-#include "telemetry/clients/INotificationServiceClient.h"
+#include "telemetry/clients/IRuleEngineClient.h"
 #include "telemetry/repositories/ITelemetryRepository.h"
-#include "users/services/IUsersService.h"
 
-// Сценарий сохранения телеметрии и отправки уведомления.
-// Все внешние зависимости внедряются через порты: тесты могут подменить БД,
-// поиск владельца/пользователя и HTTP-клиент обычными fake-объектами.
+// Saves telemetry, then asks Rule Engine to evaluate the reading.
 class TelemetryService {
  public:
-  // Для сценариев чтения/удаления, которым нужен только репозиторий.
+  // For read/delete operations that do not need Rule Engine.
   explicit TelemetryService(std::shared_ptr<ITelemetryRepository> repository);
 
-  // Полная конфигурация для сохранения телеметрии и возможного уведомления.
   TelemetryService(std::shared_ptr<ITelemetryRepository> repository,
-                   double temperatureThreshold,
-                   std::shared_ptr<IDevicesService> devices,
-                   std::shared_ptr<IUsersService> users,
-                   std::shared_ptr<INotificationServiceClient> notificationClient);
+                   std::shared_ptr<IRuleEngineClient> ruleEngineClient);
 
   void save(int deviceId, double temperature,
             std::function<void(const std::string &)> success,
@@ -35,8 +27,5 @@ class TelemetryService {
 
  private:
   std::shared_ptr<ITelemetryRepository> repository_;
-  double temperatureThreshold_{0.0};
-  std::shared_ptr<IDevicesService> devices_;
-  std::shared_ptr<IUsersService> users_;
-  std::shared_ptr<INotificationServiceClient> notificationClient_;
+  std::shared_ptr<IRuleEngineClient> ruleEngineClient_;
 };

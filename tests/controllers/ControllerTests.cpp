@@ -14,7 +14,7 @@
 #include "ingest/controllers/IngestController.h"
 #include "ingest/clients/IIoTClient.h"
 #include "telemetry/controllers/TelemetryController.h"
-#include "telemetry/clients/INotificationServiceClient.h"
+#include "telemetry/clients/IRuleEngineClient.h"
 #include "telemetry/repositories/ITelemetryRepository.h"
 #include "telemetry/services/TelemetryService.h"
 #include "users/controllers/UsersController.h"
@@ -221,12 +221,12 @@ class FakeTelemetryUsers final : public IUsersService {
                std::function<void(const std::string &)>) const override { success("{}"); }
 };
 
-class FakeNotificationClient final : public INotificationServiceClient {
+class FakeRuleEngineClient final : public IRuleEngineClient {
  public:
-  void sendTemperatureAlert(const std::string &, const std::string &, double,
-                             double, std::function<void()> success,
-                             std::function<void(const std::string &)>) const override {
-    success();
+  void checkTelemetry(int, double,
+                      std::function<void(const std::string &)> success,
+                      std::function<void(const std::string &)>) const override {
+    success("not_triggered");
   }
 };
 
@@ -256,12 +256,13 @@ class FakeIoTClient final : public IIoTClient {
   mutable double temperature{0.0};
   mutable std::string failure;
 
-  void sendTelemetry(int id, double value, std::function<void()> success,
+  void sendTelemetry(int id, double value,
+                     std::function<void(const std::string &)> success,
                      std::function<void(const std::string &)> error) const override {
     ++sendCalls;
     deviceId = id;
     temperature = value;
-    if (failure.empty()) success(); else error(failure);
+    if (failure.empty()) success("not_triggered"); else error(failure);
   }
   void getTelemetry(int id, std::function<void(const std::string &)> success,
                     std::function<void(const std::string &)> error) const override {
@@ -280,10 +281,7 @@ class FakeIoTClient final : public IIoTClient {
 std::shared_ptr<TelemetryService> makeTelemetryService(
     std::shared_ptr<FakeTelemetryRepository> repository) {
   return std::make_shared<TelemetryService>(
-      std::move(repository), 30.0,
-      std::make_shared<FakeTelemetryDevices>(),
-      std::make_shared<FakeTelemetryUsers>(),
-      std::make_shared<FakeNotificationClient>());
+      std::move(repository), std::make_shared<FakeRuleEngineClient>());
 }
 }  // namespace
 

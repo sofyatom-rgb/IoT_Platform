@@ -15,7 +15,7 @@ class IoTClient : public IIoTClient {
 
   void sendTelemetry(int deviceId,
                      double temperature,
-                     std::function<void()> success,
+                     std::function<void(const std::string &)> success,
                      std::function<void(const std::string &)> error) const override;
 
   void getTelemetry(int deviceId,

@@ -1,13 +1,17 @@
 #include "services/RuleService.h"
 
-#include "clients/NotificationClient.h"
+#include "common/http/DrogonHttpTransport.h"
 #include "repositories/RuleRepository.h"
 
 #include <utility>
 
 RuleService::RuleService(drogon::orm::DbClientPtr db,
                          std::string notificationServiceUrl)
-    : db_(std::move(db)), notificationUrl_(std::move(notificationServiceUrl)) {}
+    : db_(std::move(db)),
+      notificationClient_(std::make_shared<NotificationClient>(
+          notificationServiceUrl,
+          std::make_shared<iot::http::DrogonHttpTransport>(
+              notificationServiceUrl))) {}
 
 void RuleService::createRule(
     int deviceId,
@@ -57,62 +61,55 @@ void RuleService::deleteRule(
 void RuleService::checkAndNotify(
     int deviceId,
     double temperature,
-    std::function<void()> success,
+    std::function<void(const std::string&)> success,
     std::function<void(const std::string&)> error) const {
   auto repo = std::make_shared<RuleRepository>(db_);
-  std::string url = notificationUrl_;
-  // 1. Получаем правила для устройства
+  auto notificationClient = notificationClient_;
   repo->getRulesForDevice(
       deviceId,
-      [url, deviceId, temperature, repo, success,
+      [deviceId, temperature, repo, notificationClient, success,
        error](const std::vector<Rule>& rules) mutable {
         if (rules.empty()) {
-          success();  // правил нет — ничего не проверяем
+          notificationClient->clearTemperatureAlert(
+              deviceId,
+              [success]() { success("no_rules"); }, error);
           return;
         }
 
-        // 2. Получаем chat_id владельца устройства
-        repo->getChatIdForDevice(
+        const Rule* triggeredRule = nullptr;
+        for (const auto& rule : rules) {
+          const bool trigger =
+              (rule.op == ">" && temperature > rule.value) ||
+              (rule.op == "<" && temperature < rule.value) ||
+              (rule.op == "=" && temperature == rule.value) ||
+              (rule.op == "!=" && temperature != rule.value);
+          if (trigger) {
+            triggeredRule = &rule;
+            break;
+          }
+        }
+
+        if (triggeredRule == nullptr) {
+          notificationClient->clearTemperatureAlert(
+              deviceId,
+              [success]() { success("not_triggered"); }, error);
+          return;
+        }
+
+        const double threshold = triggeredRule->value;
+        repo->getNotificationTargetsForDevice(
             deviceId,
-            [url, deviceId, temperature, rules, repo, success,
-             error](const std::string& chatId) mutable {
-              if (chatId.empty()) {
-                success();  // чат не настроен — уведомлять некому
+            [deviceId, temperature, threshold, notificationClient, success,
+             error](const NotificationTargets& targets) mutable {
+              if (targets.chatId.empty() && targets.email.empty()) {
+                notificationClient->clearTemperatureAlert(
+                    deviceId,
+                    [success]() { success("no_recipients"); }, error);
                 return;
               }
-
-              // 3. Проверяем каждое правило
-              bool violated = false;
-              
-              double triggeredThreshold = 0.0;
-              for (const auto& rule : rules) {
-                bool trigger = false;
-                if (rule.op == ">") trigger = temperature > rule.value;
-                if (rule.op == "<") trigger = temperature < rule.value;
-                if (rule.op == "=") trigger = temperature == rule.value;
-                if (rule.op == "!=") trigger = temperature != rule.value;
-
-                if (trigger) {
-                  violated = true;
-                  triggeredThreshold = rule.value;
-                  break;
-                }
-              }
-
-              if (!violated) {
-                success();  // все правила в норме
-                return;
-              }
-
-              // 4. Отправляем уведомление через notification_service
-              auto client = std::make_shared<NotificationClient>(url);
-              client->sendTemperatureAlert(
-                  chatId,
-                  "device_" + std::to_string(deviceId),
-                  temperature,
-                  triggeredThreshold,
-                  [success]() { success(); },
-                  [error](const std::string& err) { error(err); });
+              notificationClient->sendTemperatureAlert(
+                  deviceId, targets.chatId, targets.email, targets.deviceName,
+                  temperature, threshold, success, error);
             },
             error);
       },

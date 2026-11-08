@@ -12,10 +12,11 @@ class FakeIoTClient final : public IIoTClient {
   mutable std::string failure;
   mutable int sends{0}, reads{0}, deletes{0};
 
-  void sendTelemetry(int id, double value, std::function<void()> success,
+  void sendTelemetry(int id, double value,
+                     std::function<void(const std::string &)> success,
                      std::function<void(const std::string &)> error) const override {
     deviceId = id; temperature = value; ++sends;
-    if (failure.empty()) success(); else error(failure);
+    if (failure.empty()) success("not_triggered"); else error(failure);
   }
   void getTelemetry(int id, std::function<void(const std::string &)> success,
                     std::function<void(const std::string &)> error) const override {
@@ -34,9 +35,15 @@ TEST_CASE(adapter_service_delegates_ingest_and_preserves_callbacks) {
   auto client = std::make_shared<FakeIoTClient>();
   AdapterService service(client);
   bool succeeded = false;
-  service.processTelemetry(11, 23.5, [&] { succeeded = true; },
+  std::string status;
+  service.processTelemetry(11, 23.5,
+                           [&](const std::string &value) {
+                             succeeded = true;
+                             status = value;
+                           },
                            [](const std::string &) { EXPECT_TRUE(false); });
   EXPECT_TRUE(succeeded);
+  EXPECT_EQ("not_triggered", status);
   EXPECT_EQ(11, client->deviceId);
   EXPECT_EQ(23.5, client->temperature);
   EXPECT_EQ(1, client->sends);

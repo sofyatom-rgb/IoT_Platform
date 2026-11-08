@@ -13,6 +13,12 @@ struct Rule {
   double value;
 };
 
+struct NotificationTargets {
+  std::string chatId;
+  std::string email;
+  std::string deviceName;
+};
+
 // Репозиторий правил: работает с таблицей rules в PostgreSQL.
 class RuleRepository {
  public:
@@ -53,10 +59,10 @@ class RuleRepository {
       std::function<void()> success,
       std::function<void(const std::string&)> error) const;
 
-  // Получить telegram_chat_id владельца устройства
-  void getChatIdForDevice(
+  // Получить контакты владельца устройства и имя устройства
+  void getNotificationTargetsForDevice(
       int deviceId,
-      std::function<void(const std::string&)> success,
+      std::function<void(const NotificationTargets&)> success,
       std::function<void(const std::string&)> error) const;
 
  private:
