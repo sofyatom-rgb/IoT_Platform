@@ -75,3 +75,5 @@ Testing/
 # External submodules / nested repos
 drogon/
 commands.txt
+.postman/
+postman/
