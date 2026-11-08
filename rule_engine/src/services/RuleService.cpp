@@ -60,11 +60,11 @@ void RuleService::checkAndNotify(
     std::function<void()> success,
     std::function<void(const std::string&)> error) const {
   auto repo = std::make_shared<RuleRepository>(db_);
-
+  std::string url = notificationUrl_;
   // 1. Получаем правила для устройства
   repo->getRulesForDevice(
       deviceId,
-      [this, deviceId, temperature, repo, success,
+      [url, deviceId, temperature, repo, success,
        error](const std::vector<Rule>& rules) mutable {
         if (rules.empty()) {
           success();  // правил нет — ничего не проверяем
@@ -74,7 +74,7 @@ void RuleService::checkAndNotify(
         // 2. Получаем chat_id владельца устройства
         repo->getChatIdForDevice(
             deviceId,
-            [this, deviceId, temperature, rules, repo, success,
+            [url, deviceId, temperature, rules, repo, success,
              error](const std::string& chatId) mutable {
               if (chatId.empty()) {
                 success();  // чат не настроен — уведомлять некому
@@ -83,6 +83,8 @@ void RuleService::checkAndNotify(
 
               // 3. Проверяем каждое правило
               bool violated = false;
+              
+              double triggeredThreshold = 0.0;
               for (const auto& rule : rules) {
                 bool trigger = false;
                 if (rule.op == ">") trigger = temperature > rule.value;
@@ -92,6 +94,7 @@ void RuleService::checkAndNotify(
 
                 if (trigger) {
                   violated = true;
+                  triggeredThreshold = rule.value;
                   break;
                 }
               }
@@ -102,12 +105,12 @@ void RuleService::checkAndNotify(
               }
 
               // 4. Отправляем уведомление через notification_service
-              auto client = std::make_shared<NotificationClient>(notificationUrl_);
+              auto client = std::make_shared<NotificationClient>(url);
               client->sendTemperatureAlert(
                   chatId,
                   "device_" + std::to_string(deviceId),
                   temperature,
-                  0.0,  // threshold не известен на стороне rule_engine, берём из правила
+                  triggeredThreshold,
                   [success]() { success(); },
                   [error](const std::string& err) { error(err); });
             },

@@ -28,7 +28,7 @@ void NotificationClient::sendTemperatureAlert(
 
   client->sendRequest(
       req,
-      [success = std::move(success), error = std::move(error)](
+      [client, success = std::move(success), error = std::move(error)](
           drogon::ReqResult result, const drogon::HttpResponsePtr& response) {
         if (result == drogon::ReqResult::Ok &&
             response->getStatusCode() == drogon::k200OK) {

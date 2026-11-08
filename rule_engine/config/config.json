@@ -1,4 +1,7 @@
 {
+  "listeners": [
+    { "address": "0.0.0.0", "port": 8083 }
+  ],
   "db_clients": [
     {
       "rdbms": "postgresql",
@@ -11,5 +14,8 @@
       "number_of_connections": 4,
       "timeout": 3.0
     }
-  ]
+  ],
+  "custom_config": {
+    "notification_service_url": "http://127.0.0.1:8082"
+  }
 }
