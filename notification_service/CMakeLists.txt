@@ -1,3 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+
+project(notification_service)
+
 add_executable(notification_service
     src/main.cpp
     src/controllers/NotificationController.cpp
