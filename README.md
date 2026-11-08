@@ -2,11 +2,12 @@
 
 IoT Platform — учебный backend для регистрации пользователей и устройств, приёма температурных показаний, чтения телеметрии и отправки уведомлений в Telegram. Сервисы написаны на C++ с Drogon, данные хранятся в PostgreSQL.
 
-В проекте есть три HTTP-сервиса:
+В проекте есть четыре HTTP-сервиса:
 
-1. **IoT Core** — основной сервис и единственный компонент, который работает с PostgreSQL. Адрес по умолчанию: `http://localhost:8080`.
+1. **IoT Core** — основной сервис для пользователей, устройств и сохранения телеметрии. Адрес по умолчанию: `http://localhost:8080`.
 2. **HTTP Adapter** — дополнительный HTTP-вход для интеграций и IoT-клиентов. Адрес по умолчанию: `http://localhost:8081`. Он принимает телеметрию и проксирует запросы к IoT Core.
 3. **Notification Service** — внутренний HTTP-сервис, принимающий события от Core и отправляющий уведомления через Telegram Bot API и/или Gmail SMTP (email). Адрес по умолчанию: `http://localhost:8082`.
+4. **Rule Engine** — отдельный сервис для CRUD правил температуры и проверки показания по правилам устройства. Адрес по умолчанию: `http://localhost:8083`.
 
 ## Содержание
 
@@ -87,11 +88,16 @@ IoT_Platform/
 │       ├── notifications/            # Email config, SMTP service, templates
 │       └── resources/email/          # HTML и текстовые шаблоны писем
 │
+├── rule_engine/                      # HTTP API правил и проверки телеметрии
+│   ├── config/config.json            # Исходный конфиг: порт 8083, PostgreSQL, Notification Service
+│   └── src/                          # Controller → Service → Repository
+│
 └── build/                            # Генерируется CMake; здесь находятся бинарники
     └── bin/
         ├── iot_core
         ├── http_adapter
         ├── notification_service
+        ├── rule_engine
         └── *.json                    # Копии конфигов, загружаемые приложениями
 ```
 
@@ -103,7 +109,7 @@ IoT_Platform/
 - В Adapter контроллер вызывает сервис, сервис использует HTTP-клиент, а HTTP-клиент обращается к Core.
 - Core вызывает Notification Service через `NotificationServiceClient`; сервис уведомлений параллельно отправляет в настроенные каналы: Telegram (`TelegramBotClient`, tgbot-cpp) и Email (`EmailService`, SMTP через libcurl с TLS и MIME `multipart/alternative`). Блокирующие вызовы выполняются в общем пуле потоков, event loop Drogon не блокируется.
 
-В Core данные из SQL привязываются параметрами (`$1`, `$2`, …), а не подставляются конкатенацией в SQL-строку.
+Core и Rule Engine используют PostgreSQL; значения в SQL передаются параметрами (`$1`, `$2`, …), а не подставляются конкатенацией в SQL-строку.
 
 ## Поток данных
 
@@ -120,7 +126,7 @@ IoT-устройство / curl / клиентское приложение
                   │              ▼
                   │         PostgreSQL
                   │
-                  └── через Adapter: HTTP :8081
+                  ├── через Adapter: HTTP :8081
                                  │
                                  ▼
                          Adapter Controller
@@ -129,7 +135,7 @@ IoT-устройство / curl / клиентское приложение
                                  │ HTTP-запрос на :8080
                                  └──────────────► IoT Core
                                                       │
-                                  если температура выше порога
+                                  если температура выше порога Core
                                                       ▼
                                           NotificationServiceClient
                                                       │ HTTP :8082
@@ -138,6 +144,9 @@ IoT-устройство / curl / клиентское приложение
                                                       │
                                    Notification Service ─┬─→ TelegramBotClient → Telegram Bot API
                                                          └─→ EmailService (libcurl) → SMTP
+
+Отдельно: клиент → Rule Engine :8083 → PostgreSQL (rules/devices/users)
+                          при нарушении → Notification Service :8082
 ```
 
 ### Когда обращаться напрямую, а когда через Adapter
@@ -193,6 +202,7 @@ CMake собирает цели:
 - `iot_core`;
 - `http_adapter`;
 - `notification_service`;
+- `rule_engine`;
 - `codec_cli` (утилита для работы с кодеком Adapter).
 
 Бинарники создаются в `build/bin/`, копии конфигурационных файлов — в `build/config/`. После изменения исходников пересоберите проект:
@@ -312,6 +322,16 @@ export SMTP_FROM_EMAIL=notifications@example.test
 
 Ожидаемый порт по умолчанию: `8081`. В конфигурации Adapter задан адрес Core `http://127.0.0.1:8080`.
 
+### 5. Запустить Rule Engine (при необходимости)
+
+Rule Engine использует ту же PostgreSQL и Notification Service, но работает отдельным процессом на порту `8083`:
+
+```sh
+./build/bin/rule_engine
+```
+
+Для проверки правил запустите PostgreSQL и Notification Service. Создание правил и проверку температуры выполняйте через API Rule Engine, описанный ниже. Это независимый от Core endpoint: текущие `POST /telemetry` в Core и `POST /ingest` в Adapter автоматически не вызывают Rule Engine, а запрос `POST /telemetry` в Rule Engine только проверяет правила и не сохраняет показание в таблицу `telemetry`.
+
 Удобно держать PostgreSQL, Core, Notification Service и Adapter в отдельных терминалах. Для уведомлений должны быть запущены Core и Notification Service.
 
 ### Конфигурационные файлы
@@ -320,6 +340,7 @@ export SMTP_FROM_EMAIL=notifications@example.test
 
 - `iot_core/config/HTTPConfig.json` — адрес и порт Core;
 - `iot_core/config/PostgreSQLConfig.json` — host, порт, база и учётные данные PostgreSQL;
+- `rule_engine/config/config.json` — исходный конфиг Rule Engine; CMake копирует его в `build/config/RuleEngineConfig.json`;
 - `http_adapter/src/config/AdapterConfig.json` — адрес/порт Adapter и URL Core;
 - локальный `.env` (игнорируется Git) или окружение — настройки SMTP; реальные секреты нельзя добавлять в Git;
 - `SMTP_ENABLED` — включает SMTP (по умолчанию `false`);
@@ -377,6 +398,48 @@ Content-Type: application/json
 | `DELETE` | `/telemetry` | `device_id` | Удалить показания через Core |
 
 Adapter не реализует маршруты пользователей и устройств. Их нужно создавать и удалять напрямую через Core.
+
+#### Rule Engine (`http://localhost:8083`)
+
+| Метод | Путь | Тело / параметры | Назначение |
+|---|---|---|---|
+| `GET` | `/ping` | нет | Проверка доступности |
+| `POST` | `/rules` | `device_id`, `operator`, `value` | Создать правило (`>`, `<`, `=`, `!=`) |
+| `GET` | `/rules?device_id=ID` | query `device_id` | Получить правила устройства |
+| `GET` | `/rules/{id}` | — | Получить правило |
+| `PUT` | `/rules/{id}` | `device_id`, `operator`, `value` | Изменить правило |
+| `DELETE` | `/rules/{id}` | — | Удалить правило |
+| `POST` | `/telemetry` | `device_id`, `temperature` | Проверить показание; при срабатывании отправить уведомление |
+
+Правила принадлежат `device_id`. Если хотя бы одно условие истинно, Rule Engine отправляет алерт владельцу устройства, если у пользователя заполнен `telegram_chat_id`. Проверка не сохраняет показание и не имеет дедупликации: повторные запросы с температурой, всё ещё нарушающей правило, повторно отправляют уведомление.
+
+### Создать правило и проверить температуру
+
+Сначала создайте пользователя и устройство через Core, затем сохраните выданный `device_id`. Для уведомления у пользователя должен быть настроен `telegram_chat_id`, а Notification Service должен быть запущен.
+
+Создать правило «температура выше 30»:
+
+```sh
+curl -i -X POST http://localhost:8083/rules \
+  -H 'Content-Type: application/json' \
+  -d '{"device_id":1,"operator":">","value":30}'
+```
+
+Успешный ответ содержит `rule_id`. Посмотреть правила устройства:
+
+```sh
+curl -i 'http://localhost:8083/rules?device_id=1'
+```
+
+Проверить показание — если любое правило нарушено, отправится уведомление:
+
+```sh
+curl -i -X POST http://localhost:8083/telemetry \
+  -H 'Content-Type: application/json' \
+  -d '{"device_id":1,"temperature":31.5}'
+```
+
+Изменить правило можно через `PUT /rules/{rule_id}` с теми же полями, удалить — через `DELETE /rules/{rule_id}`. Редактирование и проверка требуют работающей БД; отправка алерта также требует доступного Notification Service и настроенного канала доставки.
 
 ### Проверить Core — `GET /ping`
 

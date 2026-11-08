@@ -24,6 +24,15 @@ CREATE TABLE IF NOT EXISTS devices (
     type TEXT NOT NULL
 );
 
+-- Таблица правил для устройств (rule engine)
+-- device_id ссылается на устройство, которому принадлежит правило
+CREATE TABLE IF NOT EXISTS rules (
+    rule_id SERIAL PRIMARY KEY,
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    operator TEXT NOT NULL CHECK (operator IN ('>', '<', '=', '!=')),
+    value DOUBLE PRECISION NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS telemetry (
     id SERIAL PRIMARY KEY,
     device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,

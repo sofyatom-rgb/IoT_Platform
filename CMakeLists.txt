@@ -58,6 +58,7 @@ if(BUILD_APPLICATION)
     add_subdirectory(iot_core)
     add_subdirectory(http_adapter)
     add_subdirectory(notification_service)
+    add_subdirectory(rule_engine)
 endif()
 
 if(BUILD_TESTING)
