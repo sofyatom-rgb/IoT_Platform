@@ -23,13 +23,20 @@ CREATE TABLE IF NOT EXISTS devices (
     name TEXT NOT NULL,
     type TEXT NOT NULL
 );
-
+-- Создать тип enum для операторов > < = !=
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'rule_operator') THEN
+        CREATE TYPE rule_operator AS ENUM ('>', '<', '=', '!=');
+    END IF;
+END
+$$;
 -- Таблица правил (rule engine).
 -- Правило — это само условие: оператор и пороговое значение.
 -- Оно больше не привязано к конкретному устройству в этой таблице.
 CREATE TABLE IF NOT EXISTS rules (
     rule_id SERIAL PRIMARY KEY,
-    operator TEXT NOT NULL CHECK (operator IN ('>', '<', '=', '!=')),
+    operator rule_operator NOT NULL,
     value DOUBLE PRECISION NOT NULL
 );
 

@@ -45,8 +45,8 @@ void RuleRepository::createRule(
           return;
         }
         trans->execSqlAsync(
-            "INSERT INTO rules (operator, value) VALUES ($1, $2) "
-            "RETURNING rule_id",
+            "INSERT INTO rules (operator, value) VALUES ($1::rule_operator, $2) "
+"RETURNING rule_id",
             [=](const drogon::orm::Result& r) {
               int ruleId = r[0]["rule_id"].as<int>();
               trans->execSqlAsync(
@@ -124,7 +124,7 @@ void RuleRepository::updateRule(
     std::function<void()> success,
     std::function<void(const std::string&)> error) const {
   db_->execSqlAsync(
-      "UPDATE rules SET operator = $1, value = $2 WHERE rule_id = $3",
+      "UPDATE rules SET operator = $1::rule_operator, value = $2 WHERE rule_id = $3",
       [success](const drogon::orm::Result&) { success(); },
       [error](const drogon::orm::DrogonDbException& e) {
         error(e.base().what());
