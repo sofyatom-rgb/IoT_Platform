@@ -39,3 +39,9 @@ void DevicesService::getById(int deviceId,
                              std::function<void(const std::string &)> error) const {
   repository_->getById(deviceId, std::move(success), std::move(error));
 }
+
+void DevicesService::getByOwnerId(
+    int ownerId, std::function<void(const std::string &)> success,
+    std::function<void(const std::string &)> error) const {
+  repository_->getByOwnerId(ownerId, std::move(success), std::move(error));
+}

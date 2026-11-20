@@ -48,7 +48,11 @@ void DevicesController::registerRoutes() {
       "/devices",
       [this](const drogon::HttpRequestPtr &request,
              std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        getDevice(request, std::move(callback));
+        if (!request->getParameter("owner_id").empty()) {
+          listDevices(request, std::move(callback));
+        } else {
+          getDevice(request, std::move(callback));
+        }
       },
       {drogon::Get});
 }
@@ -235,6 +239,41 @@ void DevicesController::getDevice(
           response->setStatusCode(drogon::k500InternalServerError);
           callback(response);
         }
+      },
+      [callback](const std::string &error) {
+        Json::Value body;
+        body["status"] = "error";
+        body["message"] = error;
+        auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+        response->setStatusCode(drogon::k500InternalServerError);
+        callback(response);
+      });
+}
+
+void DevicesController::listDevices(
+    const drogon::HttpRequestPtr &request,
+    std::function<void(const drogon::HttpResponsePtr &)> callback) {
+  const auto ownerId = iot::validation::parsePositiveId(request->getParameter("owner_id"));
+  if (!ownerId) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "Expected a positive owner_id parameter";
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
+    return;
+  }
+  service_->getByOwnerId(
+      *ownerId,
+      [callback](const std::string &responseBody) {
+        Json::Value body;
+        Json::CharReaderBuilder builder;
+        std::string errors;
+        std::istringstream input(responseBody);
+        if (!Json::parseFromStream(builder, input, &body, &errors)) {
+          body = Json::Value(Json::arrayValue);
+        }
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
       },
       [callback](const std::string &error) {
         Json::Value body;

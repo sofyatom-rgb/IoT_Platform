@@ -1,0 +1,2 @@
+import type { Rule, Status, Telemetry } from './types';
+export function deriveDeviceStatus(last:Telemetry|undefined,rules:Rule[],now=Date.now()):Status { if(!last)return 'offline'; const violates=rules.some(r=>r.operator==='>'?last.temperature>r.value:r.operator==='<'?last.temperature<r.value:r.operator==='='?last.temperature===r.value:last.temperature!==r.value); if(violates)return 'alert'; const age=now-new Date(last.time+'Z').getTime(); return age<900000?'online':age<3600000?'stale':'offline'; }

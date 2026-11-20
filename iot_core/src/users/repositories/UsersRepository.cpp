@@ -49,7 +49,7 @@ void UsersRepository::updateById(int userId,
                                  std::function<void()> success,
                                  std::function<void(const std::string &)> error) const {
   db_->execSqlAsync(
-      "UPDATE users SET email = $1, password = $2, name = $3, telegram_chat_id = NULLIF($4, '') WHERE id = $5",
+      "UPDATE users SET email = $1, password = CASE WHEN $2 = '' THEN password ELSE $2 END, name = $3, telegram_chat_id = NULLIF($4, '') WHERE id = $5",
       [success](const drogon::orm::Result &) {
         success();
       },
@@ -64,7 +64,7 @@ void UsersRepository::getById(
     std::function<void(const std::string &)> success,
     std::function<void(const std::string &)> error) const {
   db_->execSqlAsync(
-      "SELECT id, email, password, name, telegram_chat_id FROM users WHERE id = $1",
+      "SELECT id, email, name, telegram_chat_id FROM users WHERE id = $1",
       [success, error](const drogon::orm::Result &r) {
         if (r.empty()) {
           Json::Value body;
@@ -76,7 +76,6 @@ void UsersRepository::getById(
         Json::Value item;
         item["id"] = r[0]["id"].as<int>();
         item["email"] = r[0]["email"].as<std::string>();
-        item["password"] = r[0]["password"].as<std::string>();
         item["name"] = r[0]["name"].as<std::string>();
         auto tg = r[0]["telegram_chat_id"];
         item["telegram_chat_id"] = tg.isNull() ? Json::Value::null : tg.as<std::string>();
@@ -86,6 +85,24 @@ void UsersRepository::getById(
         error(e.base().what());
       },
       userId);
+}
+
+void UsersRepository::getByEmail(
+    const std::string &email, std::function<void(const std::string &)> success,
+    std::function<void(const std::string &)> error) const {
+  db_->execSqlAsync(
+      "SELECT id, email, name, telegram_chat_id FROM users WHERE email = $1",
+      [success, error](const drogon::orm::Result &r) {
+        if (r.empty()) { error("User not found"); return; }
+        Json::Value item;
+        item["id"] = r[0]["id"].as<int>();
+        item["email"] = r[0]["email"].as<std::string>();
+        item["name"] = r[0]["name"].isNull() ? "" : r[0]["name"].as<std::string>();
+        const auto chatId = r[0]["telegram_chat_id"];
+        item["telegram_chat_id"] = chatId.isNull() ? Json::Value::null : chatId.as<std::string>();
+        success(Json::FastWriter().write(item));
+      },
+      [error](const drogon::orm::DrogonDbException &e) { error(e.base().what()); }, email);
 }
 
 void UsersRepository::getNotificationTargets(

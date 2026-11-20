@@ -49,3 +49,9 @@ void UsersService::getById(int userId,
                            std::function<void(const std::string &)> error) const {
   repository_->getById(userId, std::move(success), std::move(error));
 }
+
+void UsersService::getByEmail(const std::string &email,
+                              std::function<void(const std::string &)> success,
+                              std::function<void(const std::string &)> error) const {
+  repository_->getByEmail(email, std::move(success), std::move(error));
+}

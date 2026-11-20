@@ -83,6 +83,26 @@ void DevicesRepository::getById(
       deviceId);
 }
 
+void DevicesRepository::getByOwnerId(
+    int ownerId, std::function<void(const std::string &)> success,
+    std::function<void(const std::string &)> error) const {
+  db_->execSqlAsync(
+      "SELECT id, owner_id, name, type FROM devices WHERE owner_id = $1 ORDER BY id",
+      [success](const drogon::orm::Result &rows) {
+        Json::Value items(Json::arrayValue);
+        for (const auto &row : rows) {
+          Json::Value item;
+          item["id"] = row["id"].as<int>();
+          item["owner_id"] = row["owner_id"].as<int>();
+          item["name"] = row["name"].as<std::string>();
+          item["type"] = row["type"].as<std::string>();
+          items.append(item);
+        }
+        success(Json::FastWriter().write(items));
+      },
+      [error](const drogon::orm::DrogonDbException &e) { error(e.base().what()); }, ownerId);
+}
+
 void DevicesRepository::getNotificationInfo(
     int deviceId,
     std::function<void(int, const std::string &)> success,

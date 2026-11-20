@@ -25,6 +25,8 @@ class DevicesService : public IDevicesService {
                   std::function<void(const std::string &)> error) const override;
   void getById(int deviceId, std::function<void(const std::string &)> success,
                std::function<void(const std::string &)> error) const override;
+  void getByOwnerId(int ownerId, std::function<void(const std::string &)> success,
+                    std::function<void(const std::string &)> error) const override;
 
  private:
   std::shared_ptr<IDevicesRepository> repository_;

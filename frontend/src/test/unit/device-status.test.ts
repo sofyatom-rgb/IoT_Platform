@@ -1,0 +1,3 @@
+import { describe, expect, it } from 'vitest';
+import { deriveDeviceStatus } from '../../lib/device-status';
+describe('deriveDeviceStatus',()=>{const now=Date.now();const t=(minutes:number,temp=20)=>({id:1,device_id:1,temperature:temp,time:new Date(now-minutes*60000).toISOString().slice(0,19)});it('derives network states',()=>{expect(deriveDeviceStatus(t(2),[],now)).toBe('online');expect(deriveDeviceStatus(t(20),[],now)).toBe('stale');expect(deriveDeviceStatus(t(80),[],now)).toBe('offline');expect(deriveDeviceStatus(t(2,31),[{rule_id:1,device_id:1,operator:'>',value:30}],now)).toBe('alert')})});

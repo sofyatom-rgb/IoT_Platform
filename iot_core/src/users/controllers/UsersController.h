@@ -24,6 +24,8 @@ class UsersController {
 
   void getUser(const drogon::HttpRequestPtr &request,
                std::function<void(const drogon::HttpResponsePtr &)> callback);
+  void loginByEmail(const drogon::HttpRequestPtr &request,
+                    std::function<void(const drogon::HttpResponsePtr &)> callback);
 
  private:
   std::shared_ptr<IUsersService> service_;

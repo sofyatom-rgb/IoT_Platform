@@ -1,0 +1,5 @@
+import type { Device, Rule, Telemetry, User } from '../types';
+const now=Date.now(); const iso=(mins:number)=>new Date(now-mins*60000).toISOString().slice(0,19);
+export const db:{users:User[];devices:Device[];telemetry:Telemetry[];rules:Rule[]}={users:[{id:1,email:'demo@iot.local',name:'Алексей Воронов',telegram_chat_id:'-100123456',role:'user'},{id:2,email:'admin@iot.local',name:'Мария Орлова',telegram_chat_id:null,role:'admin'}],devices:[['Датчик кухни','temperature'],['Серверная','temperature'],['Теплица','humidity'],['Холодильный склад','temperature'],['Котельная','pressure'],['Склад № 4','energy']].map(([name,type],i)=>({id:i+1,owner_id:1,name,type,created_at:iso(7000-i*90)})),telemetry:[],rules:[{rule_id:1,device_id:2,operator:'>',value:28},{rule_id:2,device_id:4,operator:'>',value:6},{rule_id:3,device_id:1,operator:'<',value:15}]};
+db.devices.forEach((d,index)=>{for(let i=0;i<10;i++)db.telemetry.push({id:db.telemetry.length+1,device_id:d.id,temperature:Number((18+index*1.7+Math.sin(i)*3+(index===1&&i===0?10:0)).toFixed(1)),time:iso(index===2?30+i*20:i*8+index*2)});});
+let next=99; export const id=()=>++next;

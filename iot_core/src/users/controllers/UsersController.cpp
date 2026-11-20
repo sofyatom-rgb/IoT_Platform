@@ -39,6 +39,14 @@ bool getTelegramChatId(const Json::Value &json, std::string &chatId) {
 }  // namespace
 
 void UsersController::registerRoutes() {
+  // Temporary development login: password validation will be added with Sprint 5 auth.
+  drogon::app().registerHandler(
+      "/auth/login",
+      [this](const drogon::HttpRequestPtr &request,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
+        loginByEmail(request, std::move(callback));
+      },
+      {drogon::Post});
   // POST /users -> создать пользователя.
   drogon::app().registerHandler(
       "/users",
@@ -93,9 +101,9 @@ void UsersController::create(
 
   if (!(*json)["email"].isString() || !(*json)["password"].isString() ||
       !(*json)["name"].isString() ||
-      !iot::validation::isValidUserFields(
-          (*json)["email"].asString(), (*json)["password"].asString(),
-          (*json)["name"].asString())) {
+      !iot::validation::hasNonWhitespace((*json)["email"].asString()) ||
+      !iot::validation::hasNonWhitespace((*json)["password"].asString()) ||
+      !iot::validation::hasNonWhitespace((*json)["name"].asString())) {
     Json::Value body;
     body["status"] = "error";
     body["message"] = "email, password and name are required non-empty strings";
@@ -207,11 +215,8 @@ void UsersController::updateUser(
     return;
   }
 
-  if (!(*json)["email"].isString() || !(*json)["password"].isString() ||
-      !(*json)["name"].isString() ||
-      !iot::validation::isValidUserFields(
-          (*json)["email"].asString(), (*json)["password"].asString(),
-          (*json)["name"].asString())) {
+  if (!(*json)["email"].isString() || !(*json)["name"].isString() ||
+      (*json)["email"].asString().empty() || (*json)["name"].asString().empty()) {
     Json::Value body;
     body["status"] = "error";
     body["message"] = "email, password and name are required non-empty strings";
@@ -222,7 +227,7 @@ void UsersController::updateUser(
   }
 
   const std::string email = (*json)["email"].asString();
-  const std::string password = (*json)["password"].asString();
+  const std::string password = (*json)["password"].isString() ? (*json)["password"].asString() : "";
   const std::string name = (*json)["name"].asString();
 
   service_->updateById(
@@ -239,6 +244,42 @@ void UsersController::updateUser(
         body["message"] = error;
         auto response = drogon::HttpResponse::newHttpJsonResponse(body);
         response->setStatusCode(drogon::k500InternalServerError);
+        callback(response);
+      });
+}
+
+void UsersController::loginByEmail(
+    const drogon::HttpRequestPtr &request,
+    std::function<void(const drogon::HttpResponsePtr &)> callback) {
+  const auto json = request->getJsonObject();
+  if (!json || !(*json)["email"].isString() || (*json)["email"].asString().empty()) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "email is required";
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
+    return;
+  }
+  service_->getByEmail(
+      (*json)["email"].asString(),
+      [callback](const std::string &responseBody) {
+        Json::Value body;
+        Json::CharReaderBuilder builder;
+        std::string errors;
+        std::istringstream input(responseBody);
+        if (!Json::parseFromStream(builder, input, &body, &errors)) {
+          body["status"] = "error";
+          body["message"] = "Failed to parse user data";
+        }
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+      },
+      [callback](const std::string &error) {
+        Json::Value body;
+        body["status"] = "error";
+        body["message"] = error;
+        auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+        response->setStatusCode(drogon::k404NotFound);
         callback(response);
       });
 }

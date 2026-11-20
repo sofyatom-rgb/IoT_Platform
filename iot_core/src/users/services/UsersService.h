@@ -32,6 +32,8 @@ class UsersService : public IUsersService {
                   std::function<void(const std::string &)> error) const override;
   void getById(int userId, std::function<void(const std::string &)> success,
                std::function<void(const std::string &)> error) const override;
+  void getByEmail(const std::string &email, std::function<void(const std::string &)> success,
+                  std::function<void(const std::string &)> error) const override;
 
  private:
   std::shared_ptr<IUsersRepository> repository_;

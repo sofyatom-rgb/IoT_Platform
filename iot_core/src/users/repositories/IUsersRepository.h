@@ -43,4 +43,6 @@ class IUsersRepository {
   virtual void getById(int userId,
                        std::function<void(const std::string &)> success,
                        std::function<void(const std::string &)> error) const = 0;
+  virtual void getByEmail(const std::string &, std::function<void(const std::string &)> ,
+                          std::function<void(const std::string &)> error) const { error("Email lookup is unavailable"); }
 };

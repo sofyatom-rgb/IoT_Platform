@@ -21,4 +21,6 @@ class IDevicesRepository {
   virtual void getById(int deviceId,
                        std::function<void(const std::string &)> success,
                        std::function<void(const std::string &)> error) const = 0;
+  virtual void getByOwnerId(int, std::function<void(const std::string &)> ,
+                            std::function<void(const std::string &)> error) const { error("Device list is unavailable"); }
 };

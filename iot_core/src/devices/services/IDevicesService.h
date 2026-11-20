@@ -19,4 +19,6 @@ class IDevicesService {
                           std::function<void(const std::string &)>) const = 0;
   virtual void getById(int, std::function<void(const std::string &)>,
                        std::function<void(const std::string &)>) const = 0;
+  virtual void getByOwnerId(int, std::function<void(const std::string &)>,
+                            std::function<void(const std::string &)> error) const { error("Device list is unavailable"); }
 };

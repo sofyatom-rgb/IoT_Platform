@@ -37,6 +37,8 @@ class DevicesRepository : public IDevicesRepository {
   void getById(int deviceId,
                std::function<void(const std::string &)> success,
                std::function<void(const std::string &)> error) const override;
+  void getByOwnerId(int ownerId, std::function<void(const std::string &)> success,
+                    std::function<void(const std::string &)> error) const override;
 
  private:
   drogon::orm::DbClientPtr db_;
