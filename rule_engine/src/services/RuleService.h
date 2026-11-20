@@ -32,13 +32,12 @@ class RuleService {
       std::function<void(const std::vector<Rule>&)> success,
       std::function<void(const std::string&)> error) const;
 
-  void updateRule(
-      int ruleId,
-      int deviceId,
-      const std::string& op,
-      double value,
-      std::function<void()> success,
-      std::function<void(const std::string&)> error) const;
+void updateRule(
+    int ruleId,
+    const std::string& op,
+    double value,
+    std::function<void()> success,
+    std::function<void(const std::string&)> error) const;
 
   void deleteRule(
       int ruleId,
@@ -52,6 +51,17 @@ class RuleService {
       double temperature,
       std::function<void()> success,
       std::function<void(const std::string&)> error) const;
+    void attachToDevice(
+    int ruleId,
+    int deviceId,
+    std::function<void()> success,
+    std::function<void(const std::string&)> error) const;
+
+    void detachFromDevice(
+        int ruleId,
+        int deviceId,
+        std::function<void()> success,
+        std::function<void(const std::string&)> error) const;
 
  private:
   drogon::orm::DbClientPtr db_;

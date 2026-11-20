@@ -24,19 +24,25 @@ CREATE TABLE IF NOT EXISTS devices (
     type TEXT NOT NULL
 );
 
--- Таблица правил для устройств (rule engine)
--- device_id ссылается на устройство, которому принадлежит правило
+-- Таблица правил (rule engine).
+-- Правило — это само условие: оператор и пороговое значение.
+-- Оно больше не привязано к конкретному устройству в этой таблице.
 CREATE TABLE IF NOT EXISTS rules (
     rule_id SERIAL PRIMARY KEY,
-    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
     operator TEXT NOT NULL CHECK (operator IN ('>', '<', '=', '!=')),
     value DOUBLE PRECISION NOT NULL
 );
 
--- Добавляем rule_id в устройства (обратная ссылка, чтобы через девайс узнать его правило)
--- Циклическая зависимость разрешается через ALTER TABLE после создания rules
-ALTER TABLE devices
-    ADD COLUMN IF NOT EXISTS rule_id INTEGER REFERENCES rules(id);
+-- Связующая таблица многие-ко-многим:
+--   одному правилу может быть assigned(назначено) много устройств,
+--   одному устройству может быть assigned(назначено) много правил.
+--   device_to_rule.device_id -> devices.id
+--   device_to_rule.rule_id  -> rules.rule_id
+CREATE TABLE IF NOT EXISTS device_to_rule (
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    rule_id INTEGER NOT NULL REFERENCES rules(rule_id) ON DELETE CASCADE,
+    PRIMARY KEY (device_id, rule_id)
+);
 
 CREATE TABLE IF NOT EXISTS telemetry (
     id SERIAL PRIMARY KEY,

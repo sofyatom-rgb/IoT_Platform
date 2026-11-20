@@ -4,27 +4,67 @@
 
 RuleRepository::RuleRepository(drogon::orm::DbClientPtr db)
     : db_(std::move(db)) {}
+void RuleRepository::attachToDevice(
+    int ruleId,
+    int deviceId,
+    std::function<void()> success,
+    std::function<void(const std::string&)> error) const {
+  db_->execSqlAsync(
+      "INSERT INTO device_to_rule (device_id, rule_id) VALUES ($1, $2) "
+      "ON CONFLICT DO NOTHING",
+      [success](const drogon::orm::Result&) { success(); },
+      [error](const drogon::orm::DrogonDbException& e) {
+        error(e.base().what());
+      },
+      deviceId, ruleId);
+}
 
+void RuleRepository::detachFromDevice(
+    int ruleId,
+    int deviceId,
+    std::function<void()> success,
+    std::function<void(const std::string&)> error) const {
+  db_->execSqlAsync(
+      "DELETE FROM device_to_rule WHERE device_id = $1 AND rule_id = $2",
+      [success](const drogon::orm::Result&) { success(); },
+      [error](const drogon::orm::DrogonDbException& e) {
+        error(e.base().what());
+      },
+      deviceId, ruleId);
+}
 void RuleRepository::createRule(
     int deviceId,
     const std::string& op,
     double value,
     std::function<void(int)> success,
     std::function<void(const std::string&)> error) const {
-  db_->execSqlAsync(
-      "INSERT INTO rules (device_id, operator, value) VALUES ($1, $2, $3) "
-      "RETURNING rule_id",
-      [success](const drogon::orm::Result& r) {
-        if (!r.empty()) {
-          success(r[0]["rule_id"].as<int>());
-        } else {
-          success(-1);
+    db_->newTransactionAsync(
+      [=](const std::shared_ptr<drogon::orm::Transaction>& trans) {
+        if (!trans) {
+          error("Cannot start transaction");
+          return;
         }
-      },
-      [error](const drogon::orm::DrogonDbException& e) {
-        error(e.base().what());
-      },
-      deviceId, op, value);
+        trans->execSqlAsync(
+            "INSERT INTO rules (operator, value) VALUES ($1, $2) "
+            "RETURNING rule_id",
+            [=](const drogon::orm::Result& r) {
+              int ruleId = r[0]["rule_id"].as<int>();
+              trans->execSqlAsync(
+                  "INSERT INTO device_to_rule (device_id, rule_id) "
+                  "VALUES ($1, $2)",
+                  [=](const drogon::orm::Result&) { success(ruleId); },
+                  [=](const drogon::orm::DrogonDbException& e) {
+                    trans->rollback();
+                    error(e.base().what());
+                  },
+                  deviceId, ruleId);
+            },
+            [=](const drogon::orm::DrogonDbException& e) {
+              trans->rollback();
+              error(e.base().what());
+            },
+            op, value);
+      });
 }
 
 void RuleRepository::getRuleById(
@@ -32,7 +72,7 @@ void RuleRepository::getRuleById(
     std::function<void(const Rule&)> success,
     std::function<void(const std::string&)> error) const {
   db_->execSqlAsync(
-      "SELECT rule_id, device_id, operator, value FROM rules WHERE rule_id = $1",
+      "SELECT rule_id, operator, value FROM rules WHERE rule_id = $1",
       [success, error](const drogon::orm::Result& r) {
         if (r.empty()) {
           error("Rule not found");
@@ -40,7 +80,6 @@ void RuleRepository::getRuleById(
         }
         Rule rule;
         rule.rule_id = r[0]["rule_id"].as<int>();
-        rule.device_id = r[0]["device_id"].as<int>();
         rule.op = r[0]["operator"].as<std::string>();
         rule.value = r[0]["value"].as<double>();
         success(rule);
@@ -56,14 +95,16 @@ void RuleRepository::getRulesForDevice(
     std::function<void(const std::vector<Rule>&)> success,
     std::function<void(const std::string&)> error) const {
   db_->execSqlAsync(
-      "SELECT rule_id, device_id, operator, value FROM rules WHERE device_id = $1",
+      "SELECT r.rule_id, r.operator, r.value "
+      "FROM rules r "
+      "JOIN device_to_rule dr ON dr.rule_id = r.rule_id "
+      "WHERE dr.device_id = $1",
       [success](const drogon::orm::Result& r) {
         std::vector<Rule> rules;
         rules.reserve(r.size());
         for (const auto& row : r) {
           Rule rule;
           rule.rule_id = row["rule_id"].as<int>();
-          rule.device_id = row["device_id"].as<int>();
           rule.op = row["operator"].as<std::string>();
           rule.value = row["value"].as<double>();
           rules.push_back(std::move(rule));
@@ -78,21 +119,17 @@ void RuleRepository::getRulesForDevice(
 
 void RuleRepository::updateRule(
     int ruleId,
-    int deviceId,
     const std::string& op,
     double value,
     std::function<void()> success,
     std::function<void(const std::string&)> error) const {
   db_->execSqlAsync(
-      "UPDATE rules SET device_id = $1, operator = $2, value = $3 "
-      "WHERE rule_id = $4",
-      [success](const drogon::orm::Result&) {
-        success();
-      },
+      "UPDATE rules SET operator = $1, value = $2 WHERE rule_id = $3",
+      [success](const drogon::orm::Result&) { success(); },
       [error](const drogon::orm::DrogonDbException& e) {
         error(e.base().what());
       },
-      deviceId, op, value, ruleId);
+      op, value, ruleId);
 }
 
 void RuleRepository::deleteRule(

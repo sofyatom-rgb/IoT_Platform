@@ -8,7 +8,21 @@
 RuleService::RuleService(drogon::orm::DbClientPtr db,
                          std::string notificationServiceUrl)
     : db_(std::move(db)), notificationUrl_(std::move(notificationServiceUrl)) {}
+void RuleService::attachToDevice(
+    int ruleId, int deviceId,
+    std::function<void()> success,
+    std::function<void(const std::string&)> error) const {
+  auto repo = std::make_shared<RuleRepository>(db_);
+  repo->attachToDevice(ruleId, deviceId, std::move(success), std::move(error));
+}
 
+void RuleService::detachFromDevice(
+    int ruleId, int deviceId,
+    std::function<void()> success,
+    std::function<void(const std::string&)> error) const {
+  auto repo = std::make_shared<RuleRepository>(db_);
+  repo->detachFromDevice(ruleId, deviceId, std::move(success), std::move(error));
+}
 void RuleService::createRule(
     int deviceId,
     const std::string& op,
@@ -37,13 +51,12 @@ void RuleService::getRulesForDevice(
 
 void RuleService::updateRule(
     int ruleId,
-    int deviceId,
     const std::string& op,
     double value,
     std::function<void()> success,
     std::function<void(const std::string&)> error) const {
   auto repo = std::make_shared<RuleRepository>(db_);
-  repo->updateRule(ruleId, deviceId, op, value, std::move(success), std::move(error));
+  repo->updateRule(ruleId, op, value, std::move(success), std::move(error));
 }
 
 void RuleService::deleteRule(
