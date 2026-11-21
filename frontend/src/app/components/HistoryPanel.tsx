@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import { CalendarDays } from 'lucide-react';
+import { isAlertReading } from '../../lib/device-status';
 import { msk, parseTimestamp, relative, temperature } from '../../lib/format';
 import type { Rule, Telemetry, TimeRange } from '../../lib/types';
 import { RangeControls, rangeLabel, type RangeMode } from './DateRangePicker';
@@ -19,13 +20,6 @@ type HistoryPanelProps = {
   current?: Telemetry | null;
   theme?: DeviceTheme;
 };
-
-function violates(rule: Rule, value: number): boolean {
-  if (rule.operator === '>') return value > rule.value;
-  if (rule.operator === '<') return value < rule.value;
-  if (rule.operator === '=') return value === rule.value;
-  return value !== rule.value;
-}
 
 export function HistoryPanel({
   title,
@@ -98,7 +92,7 @@ export function HistoryPanel({
             <span>Температура</span>
           </div>
           {visible.map(({ item }) => {
-            const bad = rules?.every((rule) => violates(rule, item.temperature)) ?? false;
+            const bad = isAlertReading(rules, item.temperature);
             return (
               <div className={`history-item ${bad ? 'alert' : ''}`} key={item.id}>
                 <span className="history-time">
