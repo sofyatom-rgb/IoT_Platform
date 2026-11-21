@@ -455,7 +455,7 @@ function Devices() {
           </div>
           <label className="field">
             <span>Название</span>
-            <input name="name" required minLength={2} placeholder="Например, Температура в 336 комнате" />
+            <input name="name" required minLength={2} placeholder="Например, температура на улице" />
           </label>
           <ChoiceButtons
             label="Тип датчика"
