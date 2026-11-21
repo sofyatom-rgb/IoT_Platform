@@ -86,7 +86,7 @@ TEST_CASE(telemetry_pipeline_saves_then_sends_real_notification_http_request) {
   EXPECT_EQ(1U, fixture.transport.requests().size());
   const auto &request = fixture.transport.lastRequest();
   EXPECT_EQ(iot::http::Method::Post, request.method);
-  EXPECT_EQ(std::string("/notifications/temperature"), request.path);
+  EXPECT_EQ(std::string("/notifications/temperature-alerts"), request.path);
   EXPECT_EQ(std::string("chat-9001"),
             std::get<std::string>(request.jsonBody.at("chat_id")));
   EXPECT_EQ(std::string("Greenhouse sensor"),

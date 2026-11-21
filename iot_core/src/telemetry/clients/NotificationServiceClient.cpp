@@ -28,7 +28,7 @@ void NotificationServiceClient::sendTemperatureAlert(
 
   iot::http::Request request;
   request.method = iot::http::Method::Post;
-  request.path = "/notifications/temperature";
+  request.path = "/notifications/temperature-alerts";
   request.jsonBody = {{"chat_id", chatId},
                       {"device_name", deviceName},
                       {"temperature", temperature},

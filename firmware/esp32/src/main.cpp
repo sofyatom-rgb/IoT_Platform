@@ -10,11 +10,8 @@
 #include <utility>
 #include <vector>
 
-#include "codec.h"
 #include "secrets.h"
 
-static_assert(sizeof(CODEC_KEY) - 1 == 32,
-              "CODEC_KEY must be exactly 32 ASCII bytes (do not hex-decode it)");
 static_assert(DEVICE_ID > 0, "DEVICE_ID must be a positive integer");
 
 namespace {
@@ -81,7 +78,7 @@ bool connectWifi() {
   return true;
 }
 
-bool sendTelemetry(const std::string& envelope) {
+bool sendTelemetry(const std::string& payload) {
   WiFiClient client;
   HTTPClient http;
   http.setConnectTimeout(kHttpConnectTimeoutMs);
@@ -94,17 +91,17 @@ bool sendTelemetry(const std::string& envelope) {
 
   http.addHeader("Content-Type", "application/json");
 
-  std::vector<uint8_t> body(envelope.begin(), envelope.end());
+  std::vector<uint8_t> body(payload.begin(), payload.end());
   const int status = http.POST(body.data(), body.size());
 
   Serial.printf("[http] status=%d\n", status);
   if (status < 0) {
     Serial.printf("[http] error: %s\n", http.errorToString(status).c_str());
-  } else if (status != 200 && status != 400 && status != 502) {
+  } else if (status != 201 && status != 400 && status != 502) {
     Serial.printf("[http] unexpected status: %d\n", status);
   }
   http.end();
-  return status == 200 || status == 502;
+  return status == 201 || status == 502;
 }
 
 }  // namespace
@@ -135,7 +132,7 @@ void setup() {
 void loop() {
   static uint32_t lastMeasurement = 0;
   static bool firstCycle = true;
-  static std::string pendingEnvelope;
+  static std::string pendingPayload;
   static uint8_t failedSends = 0;
   const uint32_t now = millis();
 
@@ -147,13 +144,13 @@ void loop() {
   lastMeasurement = now;
 
   // Неудачную отправку повторяем в следующем цикле, пока сеть не восстановится
-  if (!pendingEnvelope.empty()) {
+  if (!pendingPayload.empty()) {
     if (WiFi.status() != WL_CONNECTED) {
       connectWifi();
     }
     Serial.println("[http] retry previous reading");
-    if (sendTelemetry(pendingEnvelope)) {
-      pendingEnvelope.clear();
+    if (sendTelemetry(pendingPayload)) {
+      pendingPayload.clear();
       failedSends = 0;
     } else if (++failedSends >= 2) {
       // Wi-Fi может оставаться "подключённым" без маршрута к адаптеру
@@ -178,23 +175,11 @@ void loop() {
   }
   Serial.printf("[sensor] temperature: %.2f C\n", temperature);
 
-  // Build JSON payload: {"device_id":N,"temperature":T}
-  char payload[96];
-  std::snprintf(payload, sizeof(payload),
-                "{\"device_id\":%d,\"temperature\":%.4f}", DEVICE_ID,
+  // REST: device_id уже в URL, в теле только temperature.
+  char payload[64];
+  std::snprintf(payload, sizeof(payload), "{\"temperature\":%.4f}",
                 static_cast<double>(temperature));
   Serial.printf("[payload] %s\n", payload);
-
-  // Envelope: {"checksum":"...","ciphertext":"..."}
-  std::string envelope;
-  std::string error;
-  const auto* key = reinterpret_cast<const uint8_t*>(CODEC_KEY);
-  if (!codec::encodeEnvelope(key, payload, envelope, error)) {
-    Serial.printf("[codec] error: %s\n", error.c_str());
-    return;
-  }
-  Serial.printf("[codec] envelope (%u bytes): %s\n",
-                static_cast<unsigned>(envelope.size()), envelope.c_str());
 
   // Send if Wi-Fi connected, otherwise try to connect
   if (WiFi.status() != WL_CONNECTED) {
@@ -204,8 +189,8 @@ void loop() {
     }
   }
 
-  if (!sendTelemetry(envelope)) {
-    pendingEnvelope = std::move(envelope);
+  if (!sendTelemetry(payload)) {
+    pendingPayload = payload;
     return;
   }
 

@@ -20,10 +20,6 @@ class NotificationController {
   void clearTemperatureAlert(
       int deviceId,
       std::function<void(const drogon::HttpResponsePtr &)> callback);
-  // Легаси-вариант: device_id передаётся в JSON-теле.
-  void clearTemperatureAlert(
-      const drogon::HttpRequestPtr &request,
-      std::function<void(const drogon::HttpResponsePtr &)> callback);
   void sendEmailAlert(
       const drogon::HttpRequestPtr &request,
       std::function<void(const drogon::HttpResponsePtr &)> callback);

@@ -25,51 +25,15 @@ TelemetryController::TelemetryController(std::shared_ptr<TelemetryService> servi
 }
 
 void TelemetryController::registerRoutes() {
-  // POST /telemetry -> сохранить показание.
-  drogon::app().registerHandler(
-      "/telemetry",
-      [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        create(request, std::move(callback));
-      },
-      {drogon::Post});
-
-  // GET /ping -> ответить pong.
-  drogon::app().registerHandler(
-      "/ping",
-      [](const drogon::HttpRequestPtr &,
-         std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        auto response = drogon::HttpResponse::newHttpResponse();
-        response->setBody("pong\n");
-        callback(response);
-      },
-      {drogon::Get});
-
-  // POST /telemetry/query supports latest, time-range, all-time, and cursor reads.
-  drogon::app().registerHandler(
-      "/telemetry/query",
-      [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        getTelemetry(request, std::move(callback));
-      },
-      {drogon::Post});
-
-  // DELETE /telemetry with JSON {"device_id": X} -> удалить телеметрию.
-  drogon::app().registerHandler(
-      "/telemetry",
-      [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        deleteTelemetry(request, std::move(callback));
-      },
-      {drogon::Delete});
-
-  // REST-варианты: id устройства в URI.
+  // id устройства в URI.
   drogon::app().registerHandler(
       "/devices/{id}/telemetry",
       [this](const drogon::HttpRequestPtr &request,
              std::function<void(const drogon::HttpResponsePtr &)> &&callback,
              int deviceId) {
-        request->setParameter("device_id", std::to_string(deviceId));
+        // setParameter отключает разбор query-строки, поэтому добавляем id
+        // именно как query-параметр — фильтры истории должны читаться.
+        request->setQueryParameter("device_id", std::to_string(deviceId));
         create(request, std::move(callback));
       },
       {drogon::Post});
@@ -79,7 +43,9 @@ void TelemetryController::registerRoutes() {
       [this](const drogon::HttpRequestPtr &request,
              std::function<void(const drogon::HttpResponsePtr &)> &&callback,
              int deviceId) {
-        request->setParameter("device_id", std::to_string(deviceId));
+        // setParameter отключает разбор query-строки, поэтому добавляем id
+        // именно как query-параметр — фильтры истории должны читаться.
+        request->setQueryParameter("device_id", std::to_string(deviceId));
         getTelemetry(request, std::move(callback));
       },
       {drogon::Get});
@@ -89,7 +55,9 @@ void TelemetryController::registerRoutes() {
       [this](const drogon::HttpRequestPtr &request,
              std::function<void(const drogon::HttpResponsePtr &)> &&callback,
              int deviceId) {
-        request->setParameter("device_id", std::to_string(deviceId));
+        // setParameter отключает разбор query-строки, поэтому добавляем id
+        // именно как query-параметр — фильтры истории должны читаться.
+        request->setQueryParameter("device_id", std::to_string(deviceId));
         deleteTelemetry(request, std::move(callback));
       },
       {drogon::Delete});
@@ -121,17 +89,13 @@ void TelemetryController::create(
     return;
   }
 
-  // REST передаёт id в URI, старый вариант — в JSON.
+  // device_id передаётся в URI, в теле только temperature.
   int deviceId = 0;
   const std::string idParam = request->getParameter("device_id");
-  if (!idParam.empty()) {
-    try {
-      deviceId = std::stoi(idParam);
-    } catch (...) {
-      deviceId = 0;
-    }
-  } else if (json && (*json)["device_id"].isInt()) {
-    deviceId = (*json)["device_id"].asInt();
+  try {
+    deviceId = std::stoi(idParam);
+  } catch (...) {
+    deviceId = 0;
   }
 
   if (!iot::validation::isValidTelemetryInput(
@@ -142,7 +106,7 @@ void TelemetryController::create(
     Json::Value body;
     body["status"] = "error";
     body["message"] =
-        "Expected a positive integer device_id and finite numeric temperature";
+        "Expected a positive device ID in the URI and finite numeric temperature";
     auto response = drogon::HttpResponse::newHttpJsonResponse(body);
     response->setStatusCode(drogon::k400BadRequest);
     callback(response);
@@ -172,7 +136,6 @@ void TelemetryController::create(
 void TelemetryController::getTelemetry(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
-  const auto json = request->getJsonObject();
   int deviceId = 0;
   const std::string idParam = request->getParameter("device_id");
   if (!idParam.empty()) {
@@ -181,62 +144,45 @@ void TelemetryController::getTelemetry(
     } catch (...) {
       deviceId = 0;
     }
-  } else if (json && (*json)["device_id"].isInt()) {
-    deviceId = (*json)["device_id"].asInt();
   }
   if (!iot::validation::isPositiveId(deviceId)) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "Expected a positive integer device_id";
+    body["message"] = "Expected a positive integer device_id in the URI";
     auto response = drogon::HttpResponse::newHttpJsonResponse(body);
     response->setStatusCode(drogon::k400BadRequest);
     callback(response);
     return;
   }
 
-  // REST-запрос приходит без тела, поэтому используем обычный запрос истории.
-  if (!json) {
-    service_->queryByDeviceId(
-        deviceId, TelemetryQuery{},
-        [callback](const std::string &responseBody) {
-          Json::CharReaderBuilder builder;
-          std::string errs;
-          Json::Value dataArray;
-          std::istringstream iss(responseBody);
-          if (Json::parseFromStream(builder, iss, &dataArray, &errs)) {
-            callback(drogon::HttpResponse::newHttpJsonResponse(dataArray));
-          } else {
-            Json::Value body;
-            body["status"] = "error";
-            body["message"] = "Failed to parse telemetry data";
-            auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-            response->setStatusCode(drogon::k500InternalServerError);
-            callback(response);
-          }
-        },
-        [callback](const std::string &error) {
-          Json::Value body;
-          body["status"] = "error";
-          body["message"] = error;
-          auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-          response->setStatusCode(drogon::k500InternalServerError);
-          callback(response);
-        });
-    return;
+  // Фильтры истории передаются query-параметрами.
+  const std::string from = request->getParameter("from");
+  const std::string to = request->getParameter("to");
+  const std::string afterIdParam = request->getParameter("after_id");
+  const std::string allTimeParam = request->getParameter("all_time");
+  const bool hasFrom = !from.empty();
+  const bool hasTo = !to.empty();
+  const bool hasAfterId = !afterIdParam.empty();
+  const bool hasAllTime = !allTimeParam.empty();
+
+  int afterId = 0;
+  bool badAfterId = false;
+  if (hasAfterId) {
+    try {
+      afterId = std::stoi(afterIdParam);
+      badAfterId = afterId < 0;
+    } catch (...) {
+      badAfterId = true;
+    }
   }
-  TelemetryQuery query;
-  const bool hasFrom = json->isMember("from");
-  const bool hasTo = json->isMember("to");
-  const bool hasAfterId = json->isMember("after_id");
-  const bool hasAllTime = json->isMember("all_time");
+  const bool badAllTime =
+      hasAllTime && allTimeParam != "true" && allTimeParam != "false" &&
+      allTimeParam != "1" && allTimeParam != "0";
+
   if (hasFrom != hasTo ||
-      (hasFrom &&
-       (!isUtcTimestamp((*json)["from"]) || !isUtcTimestamp((*json)["to"]) ||
-        (*json)["from"].asString() > (*json)["to"].asString())) ||
-      (hasAfterId &&
-       (!(*json)["after_id"].isInt() || (*json)["after_id"].asInt() < 0)) ||
-      (hasAllTime && !(*json)["all_time"].isBool()) ||
-      (hasAfterId && hasFrom) ||
+      (hasFrom && (!isUtcTimestamp(Json::Value(from)) ||
+                   !isUtcTimestamp(Json::Value(to)) || from > to)) ||
+      badAfterId || badAllTime || (hasAfterId && hasFrom) ||
       (hasAllTime && (hasFrom || hasAfterId))) {
     Json::Value body;
     body["status"] = "error";
@@ -247,12 +193,15 @@ void TelemetryController::getTelemetry(
     callback(response);
     return;
   }
+
+  TelemetryQuery query;
   if (hasFrom) {
-    query.from = (*json)["from"].asString();
-    query.to = (*json)["to"].asString();
+    query.from = from;
+    query.to = to;
   }
-  if (hasAfterId) query.afterId = (*json)["after_id"].asInt();
-  query.allTime = hasAllTime && (*json)["all_time"].asBool();
+  if (hasAfterId) query.afterId = afterId;
+  query.allTime =
+      hasAllTime && (allTimeParam == "true" || allTimeParam == "1");
 
   service_->queryByDeviceId(
       deviceId, query,
@@ -286,22 +235,17 @@ void TelemetryController::getTelemetry(
 void TelemetryController::deleteTelemetry(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
-  const auto json = request->getJsonObject();
   int deviceId = 0;
   const std::string idParam = request->getParameter("device_id");
-  if (!idParam.empty()) {
-    try {
-      deviceId = std::stoi(idParam);
-    } catch (...) {
-      deviceId = 0;
-    }
-  } else if (json && (*json)["device_id"].isInt()) {
-    deviceId = (*json)["device_id"].asInt();
+  try {
+    deviceId = std::stoi(idParam);
+  } catch (...) {
+    deviceId = 0;
   }
   if (!iot::validation::isPositiveId(deviceId)) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "Expected a positive integer device_id";
+    body["message"] = "Expected a positive device ID in the URI";
     auto response = drogon::HttpResponse::newHttpJsonResponse(body);
     response->setStatusCode(drogon::k400BadRequest);
     callback(response);

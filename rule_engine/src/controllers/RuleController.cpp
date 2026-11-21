@@ -53,19 +53,13 @@ void RuleController::registerRoutes() {
     return std::make_shared<RuleService>(drogon::app().getDbClient(), url);
   };
 
-  // GET /health — проверка доступности; /ping оставлен как старый алиас.
-  auto handleHealth = [](const drogon::HttpRequestPtr &, Callback &&cb) {
-    Json::Value body;
-    body["status"] = "ok";
-    reply(cb, drogon::k200OK, body);
-  };
-  drogon::app().registerHandler("/health", handleHealth, {drogon::Get});
+  // GET /health — проверка доступности.
   drogon::app().registerHandler(
-      "/ping",
+      "/health",
       [](const drogon::HttpRequestPtr &, Callback &&cb) {
-        auto resp = drogon::HttpResponse::newHttpResponse();
-        resp->setBody("pong\n");
-        cb(resp);
+        Json::Value body;
+        body["status"] = "ok";
+        reply(cb, drogon::k200OK, body);
       },
       {drogon::Get});
 
@@ -227,9 +221,9 @@ drogon::app().registerHandler(
     },
     {drogon::Delete});
   // POST /telemetry-events — проверить правила для пришедшей температуры.
-  // /telemetry оставлен для совместимости со старыми вызывающими.
-  auto handleTelemetry = [makeService](const drogon::HttpRequestPtr &req,
-                                       Callback &&cb) {
+  drogon::app().registerHandler(
+      "/telemetry-events",
+      [makeService](const drogon::HttpRequestPtr &req, Callback &&cb) {
         auto json = req->getJsonObject();
         if (!json || !json->isMember("device_id") ||
             !json->isMember("temperature") ||
@@ -257,10 +251,8 @@ drogon::app().registerHandler(
               reply(cb, drogon::k500InternalServerError,
                     errorJson(msg));
             });
-  };
-  drogon::app().registerHandler("/telemetry-events", handleTelemetry,
-                                {drogon::Post});
-  drogon::app().registerHandler("/telemetry", handleTelemetry, {drogon::Post});
+      },
+      {drogon::Post});
 
   // POST /notification-cooldown/reset -> сбросить 5-минутный тайм-аут уведомлений устройства.
   drogon::app().registerHandler(

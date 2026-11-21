@@ -412,18 +412,7 @@ CMake копирует HTTP-конфиги и email-шаблоны в build-ка
 - `/notifications/email` и `/notifications/email/test` приведены к коллекциям `/notifications/emails` и `/notifications/test-emails`.
 - Rule Engine принимает телеметрические события через `POST /telemetry-events`.
 
-Старые URL оставлены как алиасы для фронтенда, ESP32 и сохранённых curl/Postman-запросов, но новые интеграции должны использовать REST-пути из таблиц ниже.
-
-| Старый путь | REST-аналог |
-|---|---|
-| `/users?id=...` | `/users/{id}` |
-| `/devices?id=...` | `/devices/{id}` |
-| `/telemetry`, `/telemetry/query` | `/devices/{id}/telemetry` |
-| `/ingest` (Adapter) | `POST /devices/{id}/telemetry` (Adapter) |
-| `/ping` | `/health` |
-| `/notifications/temperature/normal` | `DELETE /notifications/temperature-alerts/{device_id}` |
-| `/notifications/email`, `/notifications/email/test` | `/notifications/emails`, `/notifications/test-emails` |
-| `/telemetry` (Rule Engine) | `/telemetry-events` |
+Старые URL больше не регистрируются. Обновите внешние клиенты и сохранённые curl/Postman-запросы. ESP32 тоже шлёт показания на REST-путь адаптера `POST /devices/{id}/telemetry` обычным JSON без шифрования.
 
 ### Сводная таблица маршрутов
 

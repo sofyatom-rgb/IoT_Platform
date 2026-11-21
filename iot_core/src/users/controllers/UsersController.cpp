@@ -69,7 +69,7 @@ bool parseId(const std::string &s, int &out) {
 }  // namespace
 
 void UsersController::registerRoutes() {
-  // REST-вариант маршрутов: id в URI, но менять можно только свой профиль.
+  // id в URI, но менять можно только свой профиль.
   const auto isSelf = [](const drogon::HttpRequestPtr &request, int userId) {
     return userId > 0 && request->attributes()->get<int>("user_id") == userId;
   };
@@ -124,33 +124,6 @@ void UsersController::registerRoutes() {
         create(request, std::move(callback));
       },
       {drogon::Post});
-
-  // DELETE /users -> удалить себя (id берётся из токена).
-  drogon::app().registerHandler(
-      "/users",
-      [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        deleteUser(request, std::move(callback));
-      },
-      {drogon::Delete, "AuthFilter"});
-
-  // PUT /users?id=X -> обновить себя.
-  drogon::app().registerHandler(
-      "/users",
-      [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        updateUser(request, std::move(callback));
-      },
-      {drogon::Put, "AuthFilter"});
-
-  // GET /users?id=X -> получить себя.
-  drogon::app().registerHandler(
-      "/users",
-      [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        getUser(request, std::move(callback));
-      },
-      {drogon::Get, "AuthFilter"});
 }
 
 void UsersController::create(

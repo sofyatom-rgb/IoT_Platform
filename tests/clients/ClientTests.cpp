@@ -24,7 +24,7 @@ iot::http::Response response(
 // IoTClient: проверяем не fake-объект сервиса, а настоящий код HTTP-клиента.
 TEST_CASE(iot_client_send_uses_post_telemetry_and_correct_json_fields) {
   test::HttpTransportMock transport;
-  transport.response() = response(200, "{}");
+  transport.response() = response(201, "{}");
   IoTClient client(transport.shared());
 
   bool succeeded = false;
@@ -37,9 +37,9 @@ TEST_CASE(iot_client_send_uses_post_telemetry_and_correct_json_fields) {
   EXPECT_TRUE(errorMessage.empty());
   EXPECT_EQ(1U, transport.requests().size());
   EXPECT_EQ(iot::http::Method::Post, transport.lastRequest().method);
-  EXPECT_EQ(std::string("/telemetry"), transport.lastRequest().path);
-  EXPECT_EQ(std::int64_t(42),
-            std::get<std::int64_t>(transport.lastRequest().jsonBody.at("device_id")));
+  EXPECT_EQ(std::string("/devices/42/telemetry"), transport.lastRequest().path);
+  EXPECT_TRUE(transport.lastRequest().jsonBody.find("device_id") ==
+              transport.lastRequest().jsonBody.end());
   EXPECT_EQ(23.75,
             std::get<double>(transport.lastRequest().jsonBody.at("temperature")));
   fakeit::Verify(Method(transport.mock(), send)).Once();
@@ -71,10 +71,9 @@ TEST_CASE(iot_client_get_uses_query_endpoint_and_returns_response_body) {
       19, [&](const std::string &body) { received = body; },
       [&](const std::string &error) { errorMessage = error; });
 
-  EXPECT_EQ(iot::http::Method::Post, transport.lastRequest().method);
-  EXPECT_EQ(std::string("/telemetry/query"), transport.lastRequest().path);
-  EXPECT_EQ(std::int64_t(19),
-            std::get<std::int64_t>(transport.lastRequest().jsonBody.at("device_id")));
+  EXPECT_EQ(iot::http::Method::Get, transport.lastRequest().method);
+  EXPECT_EQ(std::string("/devices/19/telemetry"), transport.lastRequest().path);
+  EXPECT_TRUE(transport.lastRequest().jsonBody.empty());
   EXPECT_EQ(std::string("[{\"temperature\":21.5}]"), received);
   EXPECT_TRUE(errorMessage.empty());
   fakeit::Verify(Method(transport.mock(), send)).Once();
@@ -82,7 +81,7 @@ TEST_CASE(iot_client_get_uses_query_endpoint_and_returns_response_body) {
 
 TEST_CASE(iot_client_delete_uses_delete_telemetry_and_device_id) {
   test::HttpTransportMock transport;
-  transport.response() = response(200, "{}");
+  transport.response() = response(204, "");
   IoTClient client(transport.shared());
 
   bool succeeded = false;
@@ -94,9 +93,8 @@ TEST_CASE(iot_client_delete_uses_delete_telemetry_and_device_id) {
   EXPECT_TRUE(succeeded);
   EXPECT_TRUE(errorMessage.empty());
   EXPECT_EQ(iot::http::Method::Delete, transport.lastRequest().method);
-  EXPECT_EQ(std::string("/telemetry"), transport.lastRequest().path);
-  EXPECT_EQ(std::int64_t(5),
-            std::get<std::int64_t>(transport.lastRequest().jsonBody.at("device_id")));
+  EXPECT_EQ(std::string("/devices/5/telemetry"), transport.lastRequest().path);
+  EXPECT_TRUE(transport.lastRequest().jsonBody.empty());
   fakeit::Verify(Method(transport.mock(), send)).Once();
 }
 
@@ -132,7 +130,7 @@ TEST_CASE(notification_client_posts_expected_payload_and_handles_success) {
   EXPECT_TRUE(succeeded);
   EXPECT_TRUE(errorMessage.empty());
   EXPECT_EQ(iot::http::Method::Post, transport.lastRequest().method);
-  EXPECT_EQ(std::string("/notifications/temperature"),
+  EXPECT_EQ(std::string("/notifications/temperature-alerts"),
             transport.lastRequest().path);
   EXPECT_EQ(std::string("chat-123"),
             std::get<std::string>(transport.lastRequest().jsonBody.at("chat_id")));

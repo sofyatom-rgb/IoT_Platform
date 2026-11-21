@@ -70,31 +70,7 @@ void IngestController::registerRoutes() {
       },
       {drogon::Get});
 
-  drogon::app().registerHandler(
-      "/ingest",
-      [this](const drogon::HttpRequestPtr &req,
-             std::function<void(const drogon::HttpResponsePtr &)> &&cb) {
-        ingest(req, std::move(cb));
-      },
-      {drogon::Post});
-
-  drogon::app().registerHandler(
-      "/telemetry/query",
-      [this](const drogon::HttpRequestPtr &req,
-             std::function<void(const drogon::HttpResponsePtr &)> &&cb) {
-        getTelemetry(req, std::move(cb));
-      },
-      {drogon::Post});
-
-  drogon::app().registerHandler(
-      "/telemetry",
-      [this](const drogon::HttpRequestPtr &req,
-             std::function<void(const drogon::HttpResponsePtr &)> &&cb) {
-        deleteTelemetry(req, std::move(cb));
-      },
-      {drogon::Delete});
-
-  // REST-варианты: device_id в URI, тело содержит только temperature.
+  // device_id в URI, тело содержит только temperature.
   drogon::app().registerHandler(
       "/devices/{id}/telemetry",
       [this](const drogon::HttpRequestPtr &req,
@@ -181,66 +157,48 @@ drogon::HttpResponsePtr IngestController::encodeResponse(const Json::Value &body
 void IngestController::ingest(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
-  const auto env = request->getJsonObject();
-  // REST-клиент присылает обычный JSON с temperature, ESP32 — закодированный envelope.
-  const std::string deviceIdParam = request->getParameter("device_id");
-  const bool restPayload = !deviceIdParam.empty() && env &&
-                           (*env)["temperature"].isNumeric();
-  const auto reply = [this, restPayload](
-                         const Json::Value &body,
-                         drogon::HttpStatusCode status =
-                             drogon::k200OK) {
-    auto response = restPayload
-                        ? drogon::HttpResponse::newHttpJsonResponse(body)
-                        : encodeResponse(body);
+  const auto reply = [](const Json::Value &body,
+                        drogon::HttpStatusCode status) {
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
     response->setStatusCode(status);
     return response;
   };
 
-  if (!env) {
+  const auto json = request->getJsonObject();
+  if (!json) {
     callback(reply(makeJson({{"status", "error"},
                              {"message", "Invalid JSON in Adapter"}}),
                    drogon::k400BadRequest));
     return;
   }
 
-  Json::Value payload;
-  std::string err;
-  if (restPayload) {
-    payload = *env;
-  } else if (!decodeRequest(*env, payload, err)) {
-    callback(reply(makeJson({{"status", "error"},
-                             {"message", "Decode failed: " + err}}),
-                   drogon::k400BadRequest));
-    return;
+  // device_id приходит в URI, в теле только temperature.
+  const std::string idParam = request->getParameter("device_id");
+  int deviceId = 0;
+  try {
+    deviceId = std::stoi(idParam);
+  } catch (...) {
+    deviceId = 0;
   }
-
-  // REST передаёт device_id в URI; /ingest оставляет его в расшифрованном payload.
-  if (!deviceIdParam.empty() &&
-      iot::validation::isPositiveId(std::atoi(deviceIdParam.c_str()))) {
-    payload["device_id"] = std::atoi(deviceIdParam.c_str());
-  }
-
-  if (!payload["device_id"].isInt() || !payload["temperature"].isNumeric() ||
-      !iot::validation::isValidTelemetryInput(
-          payload["device_id"].asInt(), payload["temperature"].asDouble())) {
+  if (!iot::validation::isPositiveId(deviceId) ||
+      !(*json)["temperature"].isNumeric() ||
+      !iot::validation::isValidTelemetryInput(deviceId,
+                                              (*json)["temperature"].asDouble())) {
     callback(reply(makeJson(
                        {{"status", "error"},
-                        {"message", "Decoded payload must contain positive integer device_id and finite numeric temperature"}}),
+                        {"message", "Expected a positive device ID in the URI and finite numeric temperature"}}),
                    drogon::k400BadRequest));
     return;
   }
 
   AdapterService service(iotClient_);
-
   service.processTelemetry(
-      payload["device_id"].asInt(),
-      payload["temperature"].asDouble(),
-      [callback, reply, restPayload](const std::string &notificationStatus) {
+      deviceId, (*json)["temperature"].asDouble(),
+      [callback, reply](const std::string &notificationStatus) {
         callback(reply(makeJson({{"status", "ok"},
                                  {"message", "Data forwarded to IoT Core"},
                                  {"notification_status", notificationStatus}}),
-                       restPayload ? drogon::k201Created : drogon::k200OK));
+                       drogon::k201Created));
       },
       [callback, reply](const std::string &error) {
         callback(reply(makeJson({{"status", "error"}, {"message", error}}),

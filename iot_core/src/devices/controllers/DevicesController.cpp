@@ -15,38 +15,16 @@ void DevicesController::registerRoutes() {
       },
       {drogon::Post, "AuthFilter"});
 
-  // DELETE /devices with JSON {"device_id": X} -> удалить устройство.
+  // GET /devices -> список устройств текущего пользователя.
   drogon::app().registerHandler(
       "/devices",
       [this](const drogon::HttpRequestPtr &request,
              std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        deleteDevice(request, std::move(callback));
-      },
-      {drogon::Delete, "AuthFilter"});
-
-  // PUT /devices?id=X -> обновить устройство.
-  drogon::app().registerHandler(
-      "/devices",
-      [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        updateDevice(request, std::move(callback));
-      },
-      {drogon::Put, "AuthFilter"});
-
-  // GET /devices?id=X -> получить устройство.
-  drogon::app().registerHandler(
-      "/devices",
-      [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        if (request->getParameter("id").empty()) {
-          listDevices(request, std::move(callback));
-        } else {
-          getDevice(request, std::move(callback));
-        }
+        listDevices(request, std::move(callback));
       },
       {drogon::Get, "AuthFilter"});
 
-  // REST-варианты: id устройства передаётся в URI.
+  // id устройства передаётся в URI.
   drogon::app().registerHandler(
       "/devices/{id}",
       [this](const drogon::HttpRequestPtr &request,
@@ -128,7 +106,6 @@ void DevicesController::create(
 void DevicesController::deleteDevice(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
-  const auto json = request->getJsonObject();
   const int userId = request->attributes()->get<int>("user_id");
   if (userId <= 0) {
     Json::Value body;
@@ -138,17 +115,13 @@ void DevicesController::deleteDevice(
     return;
   }
 
-  // REST передаёт id в URI, старый вариант — в JSON.
+  // device_id передаётся в URI.
   int deviceId = 0;
   const std::string idParam = request->getParameter("device_id");
-  if (!idParam.empty()) {
-    try {
-      deviceId = std::stoi(idParam);
-    } catch (...) {
-      deviceId = 0;
-    }
-  } else if (json && (*json)["device_id"].isInt()) {
-    deviceId = (*json)["device_id"].asInt();
+  try {
+    deviceId = std::stoi(idParam);
+  } catch (...) {
+    deviceId = 0;
   }
   if (deviceId <= 0) {
     Json::Value body;

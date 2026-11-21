@@ -72,36 +72,6 @@ void NotificationController::registerRoutes() {
         sendTestEmail(request, std::move(callback));
       },
       {drogon::Post});
-
-  // Старые пути остаются алисами для фронтенда и ранее сохранённых клиентов.
-  drogon::app().registerHandler(
-      "/notifications/temperature",
-      [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        sendTemperatureAlert(request, std::move(callback));
-      },
-      {drogon::Post});
-  drogon::app().registerHandler(
-      "/notifications/temperature/normal",
-      [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        clearTemperatureAlert(request, std::move(callback));
-      },
-      {drogon::Post});
-  drogon::app().registerHandler(
-      "/notifications/email",
-      [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        sendEmailAlert(request, std::move(callback));
-      },
-      {drogon::Post});
-  drogon::app().registerHandler(
-      "/notifications/email/test",
-      [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        sendTestEmail(request, std::move(callback));
-      },
-      {drogon::Post});
 }
 
 void NotificationController::sendTemperatureAlert(
@@ -162,23 +132,6 @@ void NotificationController::clearTemperatureAlert(
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);
   callback(response);
-}
-
-void NotificationController::clearTemperatureAlert(
-    const drogon::HttpRequestPtr &request,
-    std::function<void(const drogon::HttpResponsePtr &)> callback) {
-  const auto json = request->getJsonObject();
-  if (!json || !(*json)["device_id"].isInt() ||
-      (*json)["device_id"].asInt() <= 0) {
-    callback(jsonError("Expected a positive device_id",
-                       drogon::k400BadRequest));
-    return;
-  }
-  service_.clearTemperatureAlert((*json)["device_id"].asInt());
-  Json::Value body;
-  body["status"] = "ok";
-  body["email"] = "alert_cleared";
-  callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
 void NotificationController::sendEmailAlert(

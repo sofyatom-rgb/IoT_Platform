@@ -84,7 +84,7 @@ export const liveApi = {
     const id = Number(auth.user_id);
     sessionStorage.setItem(tokenKey, String(auth.token));
     sessionStorage.setItem(ownerKey, String(id));
-    const raw = await request<Record<string, unknown>>(core, `/users?id=${id}`);
+    const raw = await request<Record<string, unknown>>(core, `/users/${id}`);
     return {
       id,
       email: String(raw.email ?? email),
@@ -105,39 +105,37 @@ export const liveApi = {
     const result = await request<Record<string, unknown>[]>(core, '/devices');
     return result.map(deviceFrom);
   },
-  async device(id: number): Promise<Device> { const result = await request<Record<string, unknown>>(core, `/devices?id=${id}`); remember(id); return deviceFrom(result); },
+  async device(id: number): Promise<Device> { const result = await request<Record<string, unknown>>(core, `/devices/${id}`); remember(id); return deviceFrom(result); },
   async saveDevice(data: Omit<Device, 'id'|'owner_id'|'created_at'>, existing?: Device): Promise<Device> {
-    if (existing) { await request(core, `/devices?id=${existing.id}`, { method: 'PUT', body: JSON.stringify({ ...data, owner_id: existing.owner_id }) }); return { ...existing, ...data }; }
+    if (existing) { await request(core, `/devices/${existing.id}`, { method: 'PUT', body: JSON.stringify(data) }); return { ...existing, ...data }; }
     const result = await request<Record<string, unknown>>(core, '/devices', { method: 'POST', body: JSON.stringify(data) });
     const ownerId = Number(tokenPayload()?.sub ?? 0);
     const device = { ...data, id: Number(result.device_id), owner_id: ownerId, created_at: '' }; remember(device.id); return device;
   },
-  async deleteDevice(id: number): Promise<void> { await request(core, '/devices', { method: 'DELETE', body: JSON.stringify({ device_id: id }) }); forget(id); },
+  async deleteDevice(id: number): Promise<void> { await request(core, `/devices/${id}`, { method: 'DELETE' }); forget(id); },
   async telemetry(
     deviceId: number,
     range?: TimeRange,
     afterId?: number,
     allTime = false,
   ): Promise<Telemetry[]> {
-    return request<Telemetry[]>(core, '/telemetry/query', {
-      method: 'POST',
-      body: JSON.stringify({
-        device_id: deviceId,
-        ...(range
-          ? {
-              from: new Date(range.from).toISOString(),
-              to: new Date(range.to).toISOString(),
-            }
-          : {}),
-        ...(afterId === undefined ? {} : { after_id: afterId }),
-        ...(allTime ? { all_time: true } : {}),
-      }),
-    });
+    const query = new URLSearchParams();
+    if (range) {
+      query.set('from', new Date(range.from).toISOString());
+      query.set('to', new Date(range.to).toISOString());
+    }
+    if (afterId !== undefined) query.set('after_id', String(afterId));
+    if (allTime) query.set('all_time', 'true');
+    const suffix = query.toString();
+    return request<Telemetry[]>(
+      core,
+      `/devices/${deviceId}/telemetry${suffix ? `?${suffix}` : ''}`,
+    );
   },
-  async send(deviceId: number, value: number): Promise<void> { await request(core, '/telemetry', { method: 'POST', body: JSON.stringify({ device_id: deviceId, temperature: value }) }); },
-  async clearTelemetry(deviceId: number): Promise<void> { await request(core, '/telemetry', { method: 'DELETE', body: JSON.stringify({ device_id: deviceId }) }); },
-  async deleteUser(userId: number): Promise<void> { await request(core, '/users', { method: 'DELETE', body: JSON.stringify({ user_id: userId }) }); clearSession(); },
-  async sendEmailAlert(email: string): Promise<void> { await request(notifications, '/notifications/email', { method: 'POST', body: JSON.stringify({ email, event_type: 'Тестовый алерт', sensor_name: 'Тестовый датчик', sensor_id: '1', reading_value: '31.5 °C', threshold: '30.0 °C', location: 'Тестовый стенд', severity: 'WARNING', description: 'Тестовое уведомление, отправленное из интерфейса.' }) }); },
+  async send(deviceId: number, value: number): Promise<void> { await request(core, `/devices/${deviceId}/telemetry`, { method: 'POST', body: JSON.stringify({ temperature: value }) }); },
+  async clearTelemetry(deviceId: number): Promise<void> { await request(core, `/devices/${deviceId}/telemetry`, { method: 'DELETE' }); },
+  async deleteUser(userId: number): Promise<void> { await request(core, `/users/${userId}`, { method: 'DELETE' }); clearSession(); },
+  async sendEmailAlert(email: string): Promise<void> { await request(notifications, '/notifications/emails', { method: 'POST', body: JSON.stringify({ email, event_type: 'Тестовый алерт', sensor_name: 'Тестовый датчик', sensor_id: '1', reading_value: '31.5 °C', threshold: '30.0 °C', location: 'Тестовый стенд', severity: 'WARNING', description: 'Тестовое уведомление, отправленное из интерфейса.' }) }); },
   async rules(deviceId?: number): Promise<Rule[]> {
     // Rule Engine returns rules without device_id (it lives in device_to_rule),
     // so attach it from the device whose rules we requested. Otherwise the UI
@@ -166,13 +164,13 @@ export const liveApi = {
   async resetNotificationCooldown(deviceId: number): Promise<void> { await request(rulesBase, '/notification-cooldown/reset', { method: 'POST', body: JSON.stringify({ device_id: deviceId }) }); },
   async updateUser(user: User, patch: Partial<User>): Promise<User> {
     const next = { ...user, ...patch };
-    await request(core, `/users?id=${user.id}`, { method: 'PUT', body: JSON.stringify({ email: next.email, name: next.name, telegram_chat_id: next.telegram_chat_id }) });
+    await request(core, `/users/${user.id}`, { method: 'PUT', body: JSON.stringify({ email: next.email, name: next.name, telegram_chat_id: next.telegram_chat_id }) });
     return next;
   },
-  async testEmail(email: string): Promise<void> { await request(notifications, '/notifications/email/test', { method: 'POST', body: JSON.stringify({ email }) }); },
+  async testEmail(email: string): Promise<void> { await request(notifications, '/notifications/test-emails', { method: 'POST', body: JSON.stringify({ email }) }); },
   async testTelegram(device: Device, user: User, threshold: number, reading: number): Promise<void> {
     // Тест Telegram проверяет только этот канал, email отправляется отдельной кнопкой.
-    await request(notifications, '/notifications/temperature', {
+    await request(notifications, '/notifications/temperature-alerts', {
       method: 'POST',
       body: JSON.stringify({
         device_id: null,
