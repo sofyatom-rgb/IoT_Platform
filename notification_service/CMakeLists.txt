@@ -1,22 +1,16 @@
 cmake_minimum_required(VERSION 3.16)
+project(notification_service CXX)
 
-project(notification_service)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+find_package(Drogon CONFIG REQUIRED)
 
 add_executable(notification_service
     src/main.cpp
     src/controllers/NotificationController.cpp
-    src/services/NotificationService.cpp
     src/clients/TelegramBotClient.cpp
+    src/services/NotificationService.cpp
 )
-
 target_include_directories(notification_service PRIVATE src)
-set_target_properties(notification_service PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
-)
 target_link_libraries(notification_service PRIVATE Drogon::Drogon)
-
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/config/HTTPConfig.json
-    ${CMAKE_BINARY_DIR}/bin/NotificationHTTPConfig.json
-    COPYONLY
-)

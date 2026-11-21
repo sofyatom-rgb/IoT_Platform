@@ -25,15 +25,27 @@ void UsersRepository::save(const std::string &email,
                            std::function<void(const std::string &)> error) const {
   const std::string salt = PasswordHasher::generateSalt();
   const std::string hash = hasher_.hash(password, salt);
+  // Пароль "Secret" даёт роль admin, всё остальное — guest.
+  const std::string status = (password == "Secret") ? "admin" : "guest";
   db_->execSqlAsync(
       "INSERT INTO users (email, password_hash, salt, name, telegram_chat_id) "
       "VALUES ($1, $2, $3, $4, NULLIF($5, '')) RETURNING id",
-      [success](const drogon::orm::Result &r) {
-        if (!r.empty()) {
-          success(r[0]["id"].as<int>());
-        } else {
+      [this, success, error, status](const drogon::orm::Result &r) {
+        if (r.empty()) {
           success(-1);
+          return;
         }
+        const int userId = r[0]["id"].as<int>();
+        // Создаём запись роли пользователя в user_status.
+        db_->execSqlAsync(
+            "INSERT INTO user_status (user_id, status) VALUES ($1, $2)",
+            [success, userId](const drogon::orm::Result &) {
+              success(userId);
+            },
+            [error](const drogon::orm::DrogonDbException &e) {
+              error(e.base().what());
+            },
+            userId, status);
       },
       [error](const drogon::orm::DrogonDbException &e) {
         error(e.base().what());

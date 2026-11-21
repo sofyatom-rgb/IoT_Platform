@@ -10,13 +10,13 @@ class DevicesService {
  public:
   explicit DevicesService(drogon::orm::DbClientPtr db);
 
-  void save(int ownerId,
+  void save(int userId, int ownerId,
             const std::string &name,
             const std::string &type,
             std::function<void(int)> success,
             std::function<void(const std::string &)> error) const;
 
-  void deleteById(int deviceId,
+  void deleteById(int userId, int deviceId,
                   std::function<void()> success,
                   std::function<void(const std::string &)> error) const;
 
@@ -25,14 +25,13 @@ class DevicesService {
       std::function<void(int, const std::string &)> success,
       std::function<void(const std::string &)> error) const;
 
-  void updateById(int deviceId,
-                  int ownerId,
+  void updateById(int userId, int deviceId, int ownerId,
                   const std::string &name,
                   const std::string &type,
                   std::function<void()> success,
                   std::function<void(const std::string &)> error) const;
 
-  void getById(int deviceId,
+  void getById(int userId, int deviceId,
                std::function<void(const std::string &)> success,
                std::function<void(const std::string &)> error) const;
 

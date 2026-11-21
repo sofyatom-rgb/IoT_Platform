@@ -102,3 +102,67 @@ void DevicesRepository::getNotificationInfo(
       },
       deviceId);
 }
+
+void DevicesRepository::checkPermission(int userId, const std::string &method,
+                                         std::function<void(bool)> success,
+                                         std::function<void(const std::string &)> error) const {
+  db_->execSqlAsync(
+      "SELECT us.status FROM user_status us WHERE us.user_id = $1",
+      [this, method, success, error](const drogon::orm::Result &r) {
+        if (r.empty()) {
+          success(false);
+          return;
+        }
+        const std::string status = r[0]["status"].as<std::string>();
+
+        std::string column;
+        if (method == "GET")
+          column = "can_get";
+        else if (method == "POST")
+          column = "can_post";
+        else if (method == "PUT")
+          column = "can_put";
+        else if (method == "DELETE")
+          column = "can_delete";
+        else {
+          success(false);
+          return;
+        }
+
+        db_->execSqlAsync(
+            "SELECT " + column + " FROM permissions WHERE status = $1",
+            [success](const drogon::orm::Result &r) {
+              if (r.empty()) {
+                success(false);
+                return;
+              }
+              success(r[0][0].as<bool>());
+            },
+            [error](const drogon::orm::DrogonDbException &e) {
+              error(e.base().what());
+            },
+            status);
+      },
+      [error](const drogon::orm::DrogonDbException &e) {
+        error(e.base().what());
+      },
+      userId);
+}
+
+void DevicesRepository::checkDeviceOwnership(int deviceId, int userId,
+                                              std::function<void(bool)> success,
+                                              std::function<void(const std::string &)> error) const {
+  db_->execSqlAsync(
+      "SELECT owner_id FROM devices WHERE id = $1",
+      [success, userId](const drogon::orm::Result &r) {
+        if (r.empty()) {
+          success(false);
+          return;
+        }
+        success(r[0]["owner_id"].as<int>() == userId);
+      },
+      [error](const drogon::orm::DrogonDbException &e) {
+        error(e.base().what());
+      },
+      deviceId);
+}

@@ -18,6 +18,40 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_chat_id_unique
     ON users (telegram_chat_id)
     WHERE telegram_chat_id IS NOT NULL;
 
+-- Роль пользователя: admin или guest
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_status_enum') THEN
+        CREATE TYPE user_status_enum AS ENUM ('admin', 'guest');
+    END IF;
+END
+$$;
+
+CREATE TABLE IF NOT EXISTS user_status (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    status user_status_enum NOT NULL DEFAULT 'guest'
+);
+
+-- Права доступа по роли (статусу): может ли выполнять GET/POST/PUT/DELETE
+CREATE TABLE IF NOT EXISTS permissions (
+    status user_status_enum PRIMARY KEY,
+    can_get  BOOLEAN NOT NULL DEFAULT FALSE,
+    can_post BOOLEAN NOT NULL DEFAULT FALSE,
+    can_put  BOOLEAN NOT NULL DEFAULT FALSE,
+    can_delete BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+INSERT INTO permissions (status, can_get, can_post, can_put, can_delete)
+VALUES
+    ('admin', TRUE,  TRUE,  TRUE,  TRUE),
+    ('guest', TRUE,  FALSE, FALSE, FALSE)
+ON CONFLICT (status) DO UPDATE SET
+    can_get  = EXCLUDED.can_get,
+    can_post = EXCLUDED.can_post,
+    can_put  = EXCLUDED.can_put,
+    can_delete = EXCLUDED.can_delete;
+
 CREATE TABLE IF NOT EXISTS devices (
     id SERIAL PRIMARY KEY,
     owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -54,11 +54,23 @@ void DevicesController::create(
     return;
   }
 
+  if (!(*json)["user_id"].isInt() || (*json)["user_id"].asInt() <= 0 ||
+      !(*json)["owner_id"].isInt() || (*json)["owner_id"].asInt() <= 0) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "user_id and owner_id must be positive integers";
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    return;
+  }
+
+  int userId = (*json)["user_id"].asInt();
+  int ownerId = (*json)["owner_id"].asInt();
+  std::string name = (*json)["name"].asString();
+  std::string type = (*json)["type"].asString();
+
   DevicesService service(drogon::app().getDbClient());
   service.save(
-      (*json)["owner_id"].asInt(),
-      (*json)["name"].asString(),
-      (*json)["type"].asString(),
+      userId, ownerId, name, type,
       [callback](int deviceId) {
         Json::Value body;
         body["status"] = "ok";
@@ -77,20 +89,21 @@ void DevicesController::deleteDevice(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
   const auto json = request->getJsonObject();
-  if (!json || !(*json)["device_id"].isInt() ||
-      (*json)["device_id"].asInt() <= 0) {
+  if (!json || !(*json)["user_id"].isInt() || (*json)["user_id"].asInt() <= 0 ||
+      !(*json)["device_id"].isInt() || (*json)["device_id"].asInt() <= 0) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "Expected a positive integer device_id in JSON body";
+    body["message"] = "user_id and device_id must be positive integers in JSON body";
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
     return;
   }
 
+  const int userId = (*json)["user_id"].asInt();
   const int deviceId = (*json)["device_id"].asInt();
 
   DevicesService service(drogon::app().getDbClient());
   service.deleteById(
-      deviceId,
+      userId, deviceId,
       [callback]() {
         Json::Value body;
         body["status"] = "ok";
@@ -108,10 +121,10 @@ void DevicesController::updateDevice(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
   const auto json = request->getJsonObject();
-  if (!json) {
+  if (!json || !(*json)["user_id"].isInt() || (*json)["user_id"].asInt() <= 0) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "Invalid JSON";
+    body["message"] = "user_id must be a positive integer in JSON body";
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
     return;
   }
@@ -125,6 +138,7 @@ void DevicesController::updateDevice(
     return;
   }
 
+  int userId = (*json)["user_id"].asInt();
   int deviceId = std::stoi(deviceIdStr);
   int ownerId = (*json)["owner_id"].asInt();
   std::string name = (*json)["name"].asString();
@@ -132,7 +146,7 @@ void DevicesController::updateDevice(
 
   DevicesService service(drogon::app().getDbClient());
   service.updateById(
-      deviceId, ownerId, name, type,
+      userId, deviceId, ownerId, name, type,
       [callback]() {
         Json::Value body;
         body["status"] = "ok";
@@ -159,11 +173,21 @@ void DevicesController::getDevice(
     return;
   }
 
+  std::string userIdStr = request->getParameter("user_id");
+  if (userIdStr.empty()) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "Missing user_id parameter";
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    return;
+  }
+
   int deviceId = std::stoi(deviceIdStr);
+  int userId = std::stoi(userIdStr);
 
   DevicesService service(drogon::app().getDbClient());
   service.getById(
-      deviceId,
+      userId, deviceId,
       [callback](const std::string &responseBody) {
         Json::Value body;
         Json::CharReaderBuilder builder;
