@@ -20,6 +20,11 @@ public:
   TelegramBotClient(std::string botToken,
                     std::shared_ptr<iot::http::IHttpTransport> transport);
 
+  /// Создаёт реализацию Telegram API поверх внутреннего HTTP-транспорта.
+  static std::shared_ptr<ITelegramApi>
+  createHttpApi(std::string botToken,
+                std::shared_ptr<iot::http::IHttpTransport> transport);
+
   bool isEnabled() const override { return telegramApi_->isEnabled(); }
   void
   sendMessage(const std::string &chatId, const std::string &text,
