@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "codec.h"
@@ -70,10 +71,17 @@ bool connectWifi() {
   }
 
   Serial.println("[wifi] connected");
+  // Адрес нужен, чтобы по серийному логу было видно, в какой сети оказалась плата.
+  Serial.print("[wifi] ip: ");
+  Serial.println(WiFi.localIP());
+  Serial.print("[wifi] gateway: ");
+  Serial.println(WiFi.gatewayIP());
+  Serial.print("[wifi] mask: ");
+  Serial.println(WiFi.subnetMask());
   return true;
 }
 
-void sendTelemetry(const std::string& envelope) {
+bool sendTelemetry(const std::string& envelope) {
   WiFiClient client;
   HTTPClient http;
   http.setConnectTimeout(kHttpConnectTimeoutMs);
@@ -81,7 +89,7 @@ void sendTelemetry(const std::string& envelope) {
 
   if (!http.begin(client, ADAPTER_URL)) {
     Serial.println("[http] begin failed");
-    return;
+    return false;
   }
 
   http.addHeader("Content-Type", "application/json");
@@ -96,6 +104,7 @@ void sendTelemetry(const std::string& envelope) {
     Serial.printf("[http] unexpected status: %d\n", status);
   }
   http.end();
+  return status == 200 || status == 502;
 }
 
 }  // namespace
@@ -125,13 +134,38 @@ void setup() {
 
 void loop() {
   static uint32_t lastMeasurement = 0;
+  static bool firstCycle = true;
+  static std::string pendingEnvelope;
+  static uint8_t failedSends = 0;
   const uint32_t now = millis();
 
-  // Trigger measurement every kMeasurementIntervalMs
-  if (now - lastMeasurement < kMeasurementIntervalMs) {
+  // Первое измерение делаем сразу после подключения к Wi-Fi
+  if (!firstCycle && now - lastMeasurement < kMeasurementIntervalMs) {
     return;
   }
+  firstCycle = false;
   lastMeasurement = now;
+
+  // Неудачную отправку повторяем в следующем цикле, пока сеть не восстановится
+  if (!pendingEnvelope.empty()) {
+    if (WiFi.status() != WL_CONNECTED) {
+      connectWifi();
+    }
+    Serial.println("[http] retry previous reading");
+    if (sendTelemetry(pendingEnvelope)) {
+      pendingEnvelope.clear();
+      failedSends = 0;
+    } else if (++failedSends >= 2) {
+      // Wi-Fi может оставаться "подключённым" без маршрута к адаптеру
+      Serial.println("[wifi] reconnecting after send failures");
+      WiFi.disconnect();
+      connectWifi();
+      failedSends = 0;
+      return;
+    } else {
+      return;
+    }
+  }
 
   float temperature = 0.0f;
   if (!readTemperature(temperature)) {
@@ -170,7 +204,10 @@ void loop() {
     }
   }
 
-  sendTelemetry(envelope);
+  if (!sendTelemetry(envelope)) {
+    pendingEnvelope = std::move(envelope);
+    return;
+  }
 
   // Wi-Fi stays connected; next cycle will use millis() timing
 }
