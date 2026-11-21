@@ -3,13 +3,19 @@ import { CalendarDays, Check, ChevronLeft, ChevronRight, Clock, RotateCcw, X } f
 import type { TimeRange } from '../../lib/types';
 
 export type RangePreset = '1h' | '2h' | '6h' | '24h' | '7d' | '30d' | 'custom';
+export type PresetKey = Exclude<RangePreset, 'custom'>;
+export type RangeMode =
+  | { kind: 'preset'; preset: PresetKey }
+  | { kind: 'all-time' }
+  | { kind: 'custom-fixed'; range: TimeRange }
+  | { kind: 'custom-live'; from: number };
 
 export const RANGE_PRESETS: {
-  key: Exclude<RangePreset, 'custom'>;
+  key: PresetKey;
   label: string;
   ms: number;
 }[] = [
-  { key: '1h', label: 'Последний час', ms: 60 * 60 * 1000 },
+  { key: '1h', label: '1 час', ms: 60 * 60 * 1000 },
   { key: '2h', label: '2 часа', ms: 2 * 60 * 60 * 1000 },
   { key: '6h', label: '6 часов', ms: 6 * 60 * 60 * 1000 },
   { key: '24h', label: 'День', ms: 24 * 60 * 60 * 1000 },
@@ -107,9 +113,20 @@ function buildMonth(year: number, month: number): CalendarCell[] {
   });
 }
 
-export function presetRange(key: Exclude<RangePreset, 'custom'>, now = Date.now()): TimeRange {
+export function presetRange(key: PresetKey, now = Date.now()): TimeRange {
   const preset = RANGE_PRESETS.find((item) => item.key === key) ?? RANGE_PRESETS[3];
   return { from: now - preset.ms, to: now };
+}
+
+export function rangeForMode(
+  mode: RangeMode,
+  now = Date.now(),
+  allTimeFrom = 0,
+): TimeRange {
+  if (mode.kind === 'preset') return presetRange(mode.preset, now);
+  if (mode.kind === 'all-time') return { from: allTimeFrom, to: now };
+  if (mode.kind === 'custom-fixed') return mode.range;
+  return { from: mode.from, to: now };
 }
 
 export function rangeLabel(range: TimeRange): string {
@@ -123,13 +140,21 @@ export function rangeLabel(range: TimeRange): string {
 
 type DateRangePickerProps = {
   value: TimeRange;
-  onApply: (range: TimeRange) => void;
+  liveTo: boolean;
+  onApply: (mode: Extract<RangeMode, { kind: 'custom-fixed' | 'custom-live' }>) => void;
   onClose: () => void;
 };
 
-export function DateRangePicker({ value, onApply, onClose }: DateRangePickerProps) {
+export function DateRangePicker({ value, liveTo, onApply, onClose }: DateRangePickerProps) {
   const initialFrom = startOfMskDay(dayKey(value.from));
   const initialTo = startOfMskDay(dayKey(value.to));
+  const initialDraft = useRef({
+    from: initialFrom,
+    to: initialTo,
+    fromTime: timeValue(value.from),
+    toTime: timeValue(value.to),
+    liveTo,
+  });
   const [view, setView] = useState(() => {
     const parts = mskParts(value.from);
     return { year: parts.year, month: parts.month };
@@ -138,6 +163,7 @@ export function DateRangePicker({ value, onApply, onClose }: DateRangePickerProp
   const [to, setTo] = useState<number | null>(initialTo);
   const [fromTime, setFromTime] = useState(() => timeValue(value.from));
   const [toTime, setToTime] = useState(() => timeValue(value.to));
+  const [toIsLive, setToIsLive] = useState(liveTo);
   const [error, setError] = useState('');
 
   const cells = useMemo(() => buildMonth(view.year, view.month), [view]);
@@ -164,6 +190,7 @@ export function DateRangePicker({ value, onApply, onClose }: DateRangePickerProp
       setTo(null);
       setFromTime('00:00');
       setToTime('23:59');
+      setToIsLive(false);
       return;
     }
     if (start < from) {
@@ -171,34 +198,64 @@ export function DateRangePicker({ value, onApply, onClose }: DateRangePickerProp
       setFrom(start);
       setFromTime('00:00');
       setToTime('23:59');
+      setToIsLive(false);
       return;
     }
     setTo(start);
     setFromTime('00:00');
     setToTime('23:59');
+    setToIsLive(false);
   };
 
   const reset = () => {
-    setFrom(null);
-    setTo(null);
-    setFromTime('00:00');
-    setToTime('23:59');
+    const initial = initialDraft.current;
+    setFrom(initial.from);
+    setTo(initial.to);
+    setFromTime(initial.fromTime);
+    setToTime(initial.toTime);
+    setToIsLive(initial.liveTo);
     setError('');
   };
 
   const apply = () => {
-    if (from === null || to === null) {
+    if (from === null || (to === null && !toIsLive)) {
       setError('Выберите даты начала и конца');
       return;
     }
     const start = from + timeInMs(fromTime);
-    const end = to + timeInMs(toTime);
+    const end = toIsLive ? Date.now() : to! + timeInMs(toTime);
     if (end <= start) {
       setError('Конец должен быть позже начала');
       return;
     }
-    onApply({ from: start, to: end });
+    onApply(
+      toIsLive
+        ? { kind: 'custom-live', from: start }
+        : { kind: 'custom-fixed', range: { from: start, to: end } },
+    );
     onClose();
+  };
+
+  const chooseToNow = () => {
+    const now = Date.now();
+    setTo(startOfMskDay(dayKey(now)));
+    setToTime(timeValue(now));
+    setToIsLive(true);
+    setError('');
+  };
+
+  const setDraftDate = (field: 'from' | 'to', value: string) => {
+    const timestamp = value ? startOfMskDay(value) : null;
+    if (field === 'from') setFrom(timestamp);
+    else {
+      setTo(timestamp);
+      setToIsLive(false);
+    }
+    if (timestamp !== null) {
+      const parts = mskParts(timestamp);
+      setView({ year: parts.year, month: parts.month });
+    }
+    setError('');
   };
 
   return (
@@ -261,6 +318,12 @@ export function DateRangePicker({ value, onApply, onClose }: DateRangePickerProp
             <span>ОТ</span>
             <b>{from === null ? 'Не выбрано' : fullDateFormatter.format(from)}</b>
             <input
+              type="date"
+              value={from === null ? '' : dayKey(from)}
+              onChange={(event) => setDraftDate('from', event.target.value)}
+              aria-label="Дата начала"
+            />
+            <input
               type="time"
               value={fromTime}
               onChange={(event) => {
@@ -272,12 +335,19 @@ export function DateRangePicker({ value, onApply, onClose }: DateRangePickerProp
           </label>
           <label>
             <span>ДО</span>
-            <b>{to === null ? 'Не выбрано' : fullDateFormatter.format(to)}</b>
+            <b>{toIsLive ? 'Сейчас · текущее время' : to === null ? 'Не выбрано' : fullDateFormatter.format(to)}</b>
+            <input
+              type="date"
+              value={to === null ? '' : dayKey(to)}
+              onChange={(event) => setDraftDate('to', event.target.value)}
+              aria-label="Дата окончания"
+            />
             <input
               type="time"
               value={toTime}
               onChange={(event) => {
                 setToTime(event.target.value);
+                setToIsLive(false);
                 setError('');
               }}
               aria-label="Время конца"
@@ -289,6 +359,9 @@ export function DateRangePicker({ value, onApply, onClose }: DateRangePickerProp
           <button type="button" className="btn ghost small" onClick={reset}>
             <RotateCcw size={14} /> Сбросить
           </button>
+          <button type="button" className={`btn ghost small ${toIsLive ? 'active' : ''}`} onClick={chooseToNow}>
+            <Clock size={14} /> Выбрать до текущего времени
+          </button>
           <button type="button" className="btn small" onClick={apply}>
             <Check size={14} /> Применить
           </button>
@@ -299,15 +372,12 @@ export function DateRangePicker({ value, onApply, onClose }: DateRangePickerProp
 }
 
 type RangeControlsProps = {
-  preset: RangePreset;
+  mode: RangeMode;
   range: TimeRange;
-  onPreset: (preset: Exclude<RangePreset, 'custom'>) => void;
-  onCustom: (range: TimeRange) => void;
-  onToNow?: () => void;
-  onAllTime?: () => void;
+  onMode: (mode: RangeMode) => void;
 };
 
-export function RangeControls({ preset, range, onPreset, onCustom, onToNow, onAllTime }: RangeControlsProps) {
+export function RangeControls({ mode, range, onMode }: RangeControlsProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -329,52 +399,43 @@ export function RangeControls({ preset, range, onPreset, onCustom, onToNow, onAl
           <button
             key={item.key}
             type="button"
-            className={`range-preset ${preset === item.key ? 'active' : ''}`}
+            className={`range-preset ${mode.kind === 'preset' && mode.preset === item.key ? 'active' : ''}`}
+            aria-pressed={mode.kind === 'preset' && mode.preset === item.key}
             onClick={() => {
-              onPreset(item.key);
+              onMode({ kind: 'preset', preset: item.key });
               setOpen(false);
             }}
           >
             {item.label}
           </button>
         ))}
+        <button
+          type="button"
+          className={`range-preset range-preset--all-time ${mode.kind === 'all-time' ? 'active' : ''}`}
+          onClick={() => {
+            onMode({ kind: 'all-time' });
+            setOpen(false);
+          }}
+          aria-pressed={mode.kind === 'all-time'}
+        >
+          <Clock size={14} /> За всё время
+        </button>
         <div className="range-custom" ref={rootRef}>
           <button
             type="button"
-            className={`range-preset ${preset === 'custom' ? 'active' : ''}`}
+            className={`range-preset ${mode.kind === 'custom-fixed' || mode.kind === 'custom-live' ? 'active' : ''}`}
             onClick={() => setOpen((value) => !value)}
             aria-expanded={open}
+            aria-pressed={mode.kind === 'custom-fixed' || mode.kind === 'custom-live'}
           >
             <CalendarDays size={14} /> Свой диапазон
           </button>
-          {onToNow && (
-            <button
-              type="button"
-              className={`range-preset ${preset === 'custom' ? 'active' : ''}`}
-              onClick={() => {
-                const now = Date.now();
-                onCustom({ from: range.from, to: now });
-              }}
-              aria-label="Диапазон до текущего времени"
-            >
-              <Clock size={14} /> До текущего времени
-            </button>
-          )}
-          {onAllTime && (
-            <button
-              type="button"
-              className={`range-preset range-preset--all-time ${preset === 'custom' ? 'active' : ''}`}
-              onClick={onAllTime}
-              aria-label="За всё время"
-            >
-              <Clock size={14} /> За всё время
-            </button>
-          )}
           {open && (
             <DateRangePicker
               value={range}
+              liveTo={mode.kind === 'custom-live'}
               onApply={(next) => {
-                onCustom(next);
+                onMode(next);
                 setOpen(false);
               }}
               onClose={() => setOpen(false)}

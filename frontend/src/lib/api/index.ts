@@ -1,4 +1,4 @@
-import { db, id } from './mock-db';
+import { db, id, telemetryId } from './mock-db';
 import type { Device, Rule, Telemetry, TimeRange, User } from '../types';
 import { liveApi } from './live-api';
 
@@ -62,23 +62,25 @@ const mockApi = {
     db.devices = db.devices.filter((item) => item.id !== deviceId);
     db.telemetry = db.telemetry.filter((item) => item.device_id !== deviceId);
   },
-  async telemetry(deviceId: number, range?: TimeRange) {
+  async telemetry(deviceId: number, range?: TimeRange, afterId?: number, allTime = false) {
     await pause();
     const from = range ? new Date(range.from).toISOString().slice(0, 19) : '';
     const to = range ? new Date(range.to).toISOString().slice(0, 19) : '';
-    return db.telemetry
+    const readings = db.telemetry
       .filter(
         (item) =>
           item.device_id === deviceId &&
-          (!range || (item.time >= from && item.time <= to)),
+          (afterId === undefined || item.id > afterId) &&
+          (allTime || !range || (item.time >= from && item.time <= to)),
       )
-      .sort((left, right) => right.time.localeCompare(left.time))
-      .slice(0, range ? 5000 : 10);
+      .sort((left, right) => right.time.localeCompare(left.time));
+    if (afterId !== undefined) return readings.sort((left, right) => left.id - right.id);
+    return readings;
   },
   async send(deviceId: number, temperatureValue: number) {
     await pause();
     const reading: Telemetry = {
-      id: id(),
+      id: telemetryId(),
       device_id: deviceId,
       temperature: temperatureValue,
       time: new Date().toISOString().slice(0, 19),

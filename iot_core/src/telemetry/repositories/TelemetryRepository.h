@@ -21,6 +21,11 @@ class TelemetryRepository : public ITelemetryRepository {
                      std::function<void(const std::string &)> success,
                      std::function<void(const std::string &)> error) const override;
 
+  void queryByDeviceId(
+      int deviceId, const TelemetryQuery &query,
+      std::function<void(const std::string &)> success,
+      std::function<void(const std::string &)> error) const override;
+
   void deleteByDeviceId(int deviceId,
                         std::function<void()> success,
                         std::function<void(const std::string &)> error) const override;

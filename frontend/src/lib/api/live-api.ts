@@ -57,7 +57,27 @@ export const liveApi = {
     const device = { ...data, id: Number(result.device_id), owner_id: ownerId, created_at: '' }; remember(device.id); return device;
   },
   async deleteDevice(id: number): Promise<void> { await request(core, '/devices', { method: 'DELETE', body: JSON.stringify({ device_id: id }) }); forget(id); },
-  async telemetry(deviceId: number, range?: TimeRange): Promise<Telemetry[]> { return request<Telemetry[]>(core, '/telemetry/query', { method: 'POST', body: JSON.stringify({ device_id: deviceId, ...(range ? { from: new Date(range.from).toISOString(), to: new Date(range.to).toISOString() } : {}) }) }); },
+  async telemetry(
+    deviceId: number,
+    range?: TimeRange,
+    afterId?: number,
+    allTime = false,
+  ): Promise<Telemetry[]> {
+    return request<Telemetry[]>(core, '/telemetry/query', {
+      method: 'POST',
+      body: JSON.stringify({
+        device_id: deviceId,
+        ...(range
+          ? {
+              from: new Date(range.from).toISOString(),
+              to: new Date(range.to).toISOString(),
+            }
+          : {}),
+        ...(afterId === undefined ? {} : { after_id: afterId }),
+        ...(allTime ? { all_time: true } : {}),
+      }),
+    });
+  },
   async send(deviceId: number, value: number): Promise<void> { await request(core, '/telemetry', { method: 'POST', body: JSON.stringify({ device_id: deviceId, temperature: value }) }); },
   async clearTelemetry(deviceId: number): Promise<void> { await request(core, '/telemetry', { method: 'DELETE', body: JSON.stringify({ device_id: deviceId }) }); },
   async rules(deviceId?: number): Promise<Rule[]> {

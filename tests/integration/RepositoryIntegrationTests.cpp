@@ -241,6 +241,22 @@ TEST_CASE(telemetry_repository_reads_latest_ten_rows_and_deletes_them) {
   EXPECT_EQ(11.0, rows[0]["temperature"].asDouble());
   EXPECT_EQ(2.0, rows[9]["temperature"].asDouble());
 
+  TelemetryQuery allHistory;
+  allHistory.allTime = true;
+  const Json::Value allRows =
+      parseJson(awaitValue<std::string>([&](auto success, auto error) {
+        telemetry.queryByDeviceId(deviceId, allHistory, success, error);
+      }));
+  EXPECT_EQ(12U, allRows.size());
+
+  TelemetryQuery newReadings;
+  newReadings.afterId = rows[4]["id"].asInt();
+  const Json::Value laterRows =
+      parseJson(awaitValue<std::string>([&](auto success, auto error) {
+        telemetry.queryByDeviceId(deviceId, newReadings, success, error);
+      }));
+  EXPECT_EQ(4U, laterRows.size());
+
   awaitVoid([&](auto success, auto error) {
     telemetry.deleteByDeviceId(deviceId, success, error);
   });

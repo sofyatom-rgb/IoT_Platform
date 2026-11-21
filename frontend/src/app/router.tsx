@@ -31,12 +31,13 @@ import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useAuth } from '../stores/auth-store';
 import { deriveDeviceStatus } from '../lib/device-status';
-import { msk, relative, temperature } from '../lib/format';
-import type { Device, Rule, Status, Telemetry, TimeRange } from '../lib/types';
+import { msk, parseTimestamp, relative, temperature } from '../lib/format';
+import type { Device, Rule, Status, Telemetry } from '../lib/types';
 import { AuthHero } from './components/AuthHero';
 import { DeviceModel, deviceTheme } from './components/DeviceModel';
-import { presetRange, type RangePreset } from './components/DateRangePicker';
+import { rangeForMode, type RangeMode } from './components/DateRangePicker';
 import { HistoryPanel } from './components/HistoryPanel';
+import { useTelemetryHistory } from './components/useTelemetryHistory';
 
 const nav = [
   ['/', 'Обзор'],
@@ -383,7 +384,7 @@ function Dashboard() {
           </div>
           <div className="notice">Данные устройств обновляются автоматически каждые 15 секунд.</div>
         </section>
-        <section className="card">
+        <section className="card dashboard-attention">
           <h2>Требуют внимания</h2>
           <div className="rows">
             {attention.slice(0, 4).map((device) => (
@@ -540,54 +541,62 @@ function Detail() {
   const id = Number(deviceId);
   const navTo = useNavigate();
   const [device, setDevice] = useState<Device>();
-  const [latest, setLatest] = useState<Telemetry>();
-  const [items, setItems] = useState<Telemetry[]>([]);
   const [rules, setRules] = useState<Rule[]>([]);
-  const [preset, setPreset] = useState<RangePreset>('24h');
-  const [customRange, setCustomRange] = useState<TimeRange>(() => presetRange('24h'));
-  const [tick, setTick] = useState(0);
+  const [mode, setMode] = useState<RangeMode>({ kind: 'all-time' });
   const [loadError, setLoadError] = useState('');
   const [showManual, setShowManual] = useState(false);
   const errorToastId = `device-detail-${id}`;
   const theme = deviceTheme(id);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => setTick((value) => value + 1), 15_000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const now = useMemo(() => Date.now(), [tick]);
+  const onHistoryError = useCallback(
+    (error: unknown) =>
+      notifyError(error, 'Не удалось загрузить телеметрию', errorToastId),
+    [errorToastId],
+  );
+  const history = useTelemetryHistory({
+    deviceId: id,
+    mode,
+    onError: onHistoryError,
+  });
+  const oldest = history.items.reduce<number | undefined>((value, item) => {
+    const timestamp = parseTimestamp(item.time).getTime();
+    return Number.isFinite(timestamp) && (value === undefined || timestamp < value)
+      ? timestamp
+      : value;
+  }, undefined);
   const range = useMemo(
-    () => (preset === 'custom' ? customRange : presetRange(preset, now)),
-    [preset, customRange, now],
+    () =>
+      rangeForMode(
+        mode,
+        history.now,
+        mode.kind === 'all-time' ? (oldest ?? history.now) : 0,
+      ),
+    [history.now, mode, oldest],
   );
 
-  const reload = useCallback(() => {
-    void Promise.all([
-      api.device(id),
-      api.telemetry(id),
-      api.telemetry(id, range),
-      api.rules(id),
-    ])
-      .then(([nextDevice, latestItems, rangeItems, nextRules]) => {
+  useEffect(() => {
+    let active = true;
+    setDevice(undefined);
+    setLoadError('');
+    void Promise.all([api.device(id), api.rules(id)])
+      .then(([nextDevice, nextRules]) => {
+        if (!active) return;
         setDevice(nextDevice);
-        setLatest(latestItems[0]);
-        setItems(rangeItems);
         setRules(nextRules);
         setLoadError('');
         toast.dismiss(errorToastId);
       })
       .catch((error) => {
+        if (!active) return;
         setLoadError(
           error instanceof Error ? error.message : 'Не удалось загрузить устройство',
         );
         notifyError(error, 'Не удалось загрузить устройство', errorToastId);
       });
-  }, [errorToastId, id, range, tick]);
-
-  useEffect(() => {
-    reload();
-  }, [reload]);
+    return () => {
+      active = false;
+    };
+  }, [errorToastId, id]);
 
   if (!device) {
     return (
@@ -597,7 +606,7 @@ function Detail() {
     );
   }
 
-  const last = latest ?? items[0];
+  const last = history.latest ?? history.items[0];
 
   const handleManualSend = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -607,7 +616,7 @@ function Detail() {
       await api.send(id, value);
       toast.success('Показание отправлено');
       setShowManual(false);
-      reload();
+      history.reload();
     } catch (error) {
       notifyError(error, 'Не удалось отправить показание');
     }
@@ -637,45 +646,22 @@ function Detail() {
             {device.created_at ? msk(device.created_at) : '—'}
           </p>
         </div>
-        <div className="device-meta">
-          <span>Последнее обновление</span>
-          <b>{last ? msk(last.time) : 'Нет данных'}</b>
-          <strong>{last ? temperature(last.temperature) : '—'}</strong>
-        </div>
       </div>
 
-      <div className="grid two">
-        {showManual && (
-          <form className="card send-card" onSubmit={(event) => void handleManualSend(event)}>
-            <div className="card-head">
-              <div>
-                <h2>Новое показание</h2>
-                <p>Ручная отправка значения в телеметрию.</p>
-              </div>
-              <span className="badge online">
-                <Activity size={12} /> Live
-              </span>
-            </div>
-            <label className="field">
-              <span>Температура, °C</span>
-              <div className="input-icon">
-                <Thermometer size={16} />
-                <input name="temperature" type="number" step="0.1" required placeholder="23.5" />
-              </div>
-            </label>
-            <button className="btn">
-              <Plus size={16} /> Отправить
-            </button>
-          </form>
-        )}
+      <HistoryPanel
+        title="История показаний"
+        subtitle="Выберите промежуток — записи и график обновятся автоматически."
+        values={history.items}
+        range={range}
+        mode={mode}
+        onMode={setMode}
+        accent={theme.accent}
+        rules={rules}
+        current={last ?? null}
+        theme={theme}
+      />
 
-        <button
-          className="btn ghost small"
-          onClick={() => setShowManual((v) => !v)}
-        >
-          <Plus size={12} /> Добавить данные вручную
-        </button>
-
+      <div className={`device-detail-lower ${showManual ? 'with-manual' : ''}`}>
         <section className="card rules-card">
           <div className="card-head">
             <div>
@@ -706,57 +692,46 @@ function Detail() {
             {!rules.length && <p className="muted">Для устройства не настроены пороги.</p>}
           </div>
         </section>
+
+        {showManual && (
+          <form className="card send-card" onSubmit={(event) => void handleManualSend(event)}>
+            <div className="card-head">
+              <div>
+                <h2>Новое показание</h2>
+                <p>Ручная отправка значения в телеметрию.</p>
+              </div>
+              <span className="badge online">
+                <Activity size={12} /> Live
+              </span>
+            </div>
+            <label className="field">
+              <span>Температура, °C</span>
+              <div className="input-icon">
+                <Thermometer size={16} />
+                <input name="temperature" type="number" step="0.1" required placeholder="23.5" />
+              </div>
+            </label>
+            <button className="btn">
+              <Plus size={16} /> Отправить
+            </button>
+          </form>
+        )}
       </div>
 
-      <HistoryPanel
-        title="История показаний"
-        subtitle="Выберите промежуток — записи и график обновятся автоматически."
-        values={items}
-        range={range}
-        preset={preset}
-        onPreset={setPreset}
-        onCustom={(next) => {
-          setCustomRange(next);
-          setPreset('custom');
-        }}
-        accent={theme.accent}
-        rules={rules}
-      />
-
-      <section className="card rules-card">
-        <div className="card-head">
-          <div>
-            <h2>Правила</h2>
-            <p>
-              {rules.length
-                ? `Активных порогов: ${rules.length}`
-                : 'Пороги ещё не настроены.'}
-            </p>
-          </div>
-          <NavLink className="btn ghost small" to={`/rules?device=${device.id}`}>
-            <PencilLine size={14} /> Изменить правила
-          </NavLink>
-        </div>
-        <div className="rules-list">
-          {rules.map((rule) => (
-            <div className="rule-pill" key={rule.rule_id}>
-              <div>
-                <small>RULE #{rule.rule_id}</small>
-                <div className="rule-expression">
-                  <span>{rule.operator}</span>
-                  <b>{temperature(rule.value)}</b>
-                </div>
-              </div>
-              <span className="badge">Температура</span>
-            </div>
-          ))}
-          {!rules.length && <p className="muted">Для устройства не настроены пороги.</p>}
-        </div>
-      </section>
-
-      <button className="btn ghost danger" onClick={() => void remove()}>
-        <Trash2 size={16} /> Удалить устройство
-      </button>
+      <div className="device-actions">
+        <button className="btn ghost danger" onClick={() => void remove()}>
+          <Trash2 size={16} /> Удалить устройство
+        </button>
+        <button
+          type="button"
+          className="btn ghost small manual-toggle"
+          onClick={() => setShowManual((value) => !value)}
+          aria-expanded={showManual}
+        >
+          <Plus size={12} />
+          {showManual ? 'Скрыть форму' : 'Добавить данные вручную'}
+        </button>
+      </div>
     </Shell>
   );
 }
@@ -905,41 +880,32 @@ function Rules() {
 function TelemetryPage() {
   const { devices } = useData();
   const [chosen, setChosen] = useState<number | null>(null);
-  const [preset, setPreset] = useState<RangePreset>('24h');
-  const [customRange, setCustomRange] = useState<TimeRange>(() => presetRange('24h'));
-  const [tick, setTick] = useState(0);
-  const [items, setItems] = useState<Telemetry[]>([]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setTick((value) => value + 1), 15_000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const now = useMemo(() => Date.now(), [tick]);
-  const range = useMemo(
-    () => (preset === 'custom' ? customRange : presetRange(preset, now)),
-    [preset, customRange, now],
+  const [mode, setMode] = useState<RangeMode>({ kind: 'preset', preset: '24h' });
+  const onHistoryError = useCallback(
+    (error: unknown) =>
+      notifyError(error, 'Не удалось загрузить телеметрию', 'telemetry-page-load'),
+    [],
   );
-
-  const reload = useCallback(() => {
-    if (!chosen) {
-      setItems([]);
-      return;
-    }
-    void api
-      .telemetry(chosen, range)
-      .then((nextItems) => {
-        setItems(nextItems);
-        toast.dismiss('telemetry-page-load');
-      })
-      .catch((error) =>
-        notifyError(error, 'Не удалось загрузить телеметрию', 'telemetry-page-load'),
-      );
-  }, [chosen, range, tick]);
-
-  useEffect(() => {
-    reload();
-  }, [reload]);
+  const history = useTelemetryHistory({
+    deviceId: chosen,
+    mode,
+    onError: onHistoryError,
+  });
+  const oldest = history.items.reduce<number | undefined>((value, item) => {
+    const timestamp = parseTimestamp(item.time).getTime();
+    return Number.isFinite(timestamp) && (value === undefined || timestamp < value)
+      ? timestamp
+      : value;
+  }, undefined);
+  const range = useMemo(
+    () =>
+      rangeForMode(
+        mode,
+        history.now,
+        mode.kind === 'all-time' ? (oldest ?? history.now) : 0,
+      ),
+    [history.now, mode, oldest],
+  );
 
   const theme = deviceTheme(chosen ?? 1);
   const chosenDevice = devices.find((device) => device.id === chosen);
@@ -965,14 +931,10 @@ function TelemetryPage() {
         <HistoryPanel
           title={chosenDevice?.name ?? `Устройство #${chosen}`}
           subtitle="Данные обновляются автоматически, диапазон можно менять."
-          values={items}
+          values={history.items}
           range={range}
-          preset={preset}
-          onPreset={setPreset}
-          onCustom={(next) => {
-            setCustomRange(next);
-            setPreset('custom');
-          }}
+          mode={mode}
+          onMode={setMode}
           accent={theme.accent}
         />
       ) : (

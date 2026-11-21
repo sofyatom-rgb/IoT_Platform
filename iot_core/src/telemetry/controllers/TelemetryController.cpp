@@ -2,11 +2,20 @@
 #include "common/validation/RequestValidation.h"
 
 #include <memory>
+#include <regex>
 #include <stdexcept>
 
 #include <sstream>
 #include <string>
 #include <utility>
+
+namespace {
+bool isUtcTimestamp(const Json::Value &value) {
+  static const std::regex pattern(
+      R"(^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$)");
+  return value.isString() && std::regex_match(value.asString(), pattern);
+}
+}  // namespace
 
 TelemetryController::TelemetryController(std::shared_ptr<TelemetryService> service)
     : service_(std::move(service)) {
@@ -36,7 +45,7 @@ void TelemetryController::registerRoutes() {
       },
       {drogon::Get});
 
-  // POST /telemetry/query with JSON {"device_id": X} -> получить последние записи.
+  // POST /telemetry/query supports latest, time-range, all-time, and cursor reads.
   drogon::app().registerHandler(
       "/telemetry/query",
       [this](const drogon::HttpRequestPtr &request,
@@ -118,9 +127,38 @@ void TelemetryController::getTelemetry(
   }
 
   const int deviceId = (*json)["device_id"].asInt();
+  TelemetryQuery query;
+  const bool hasFrom = json->isMember("from");
+  const bool hasTo = json->isMember("to");
+  const bool hasAfterId = json->isMember("after_id");
+  const bool hasAllTime = json->isMember("all_time");
+  if (hasFrom != hasTo ||
+      (hasFrom &&
+       (!isUtcTimestamp((*json)["from"]) || !isUtcTimestamp((*json)["to"]) ||
+        (*json)["from"].asString() > (*json)["to"].asString())) ||
+      (hasAfterId &&
+       (!(*json)["after_id"].isInt() || (*json)["after_id"].asInt() < 0)) ||
+      (hasAllTime && !(*json)["all_time"].isBool()) ||
+      (hasAfterId && hasFrom) ||
+      (hasAllTime && (hasFrom || hasAfterId))) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] =
+        "Expected both valid UTC timestamps, all_time, or a non-negative after_id";
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
+    return;
+  }
+  if (hasFrom) {
+    query.from = (*json)["from"].asString();
+    query.to = (*json)["to"].asString();
+  }
+  if (hasAfterId) query.afterId = (*json)["after_id"].asInt();
+  query.allTime = hasAllTime && (*json)["all_time"].asBool();
 
-  service_->getByDeviceId(
-      deviceId,
+  service_->queryByDeviceId(
+      deviceId, query,
       [callback](const std::string &responseBody) {
         Json::CharReaderBuilder builder;
         std::string errs;

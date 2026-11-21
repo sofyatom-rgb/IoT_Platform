@@ -668,7 +668,12 @@ input:focus {
 }
 
 .two {
-  grid-template-columns: 1.5fr 1fr;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+}
+
+.dashboard-model-card,
+.dashboard-attention {
+  min-width: 0;
 }
 
 .card {
@@ -709,6 +714,15 @@ input:focus {
 
 .row a:hover {
   color: var(--accent-soft);
+}
+
+.dashboard-attention .row {
+  min-width: 0;
+  align-items: flex-start;
+}
+
+.dashboard-attention .row > .badge {
+  flex: 0 0 auto;
 }
 
 .badge {
@@ -1333,7 +1347,6 @@ input:focus {
   justify-content: space-between;
   gap: 10px;
   padding-top: 12px;
-  border-top: 1px solid var(--line);
 }
 
 .device-card-foot .meta {
@@ -1346,14 +1359,23 @@ input:focus {
   font-size: 12px;
 }
 
+.dashboard-model-card {
+  background:
+    radial-gradient(
+      ellipse 78% 90% at 50% 45%,
+      rgba(45, 212, 191, 0.1),
+      transparent 100%
+    ),
+    var(--card);
+}
+
 .dashboard-stage {
   display: grid;
   place-items: center;
   height: 190px;
   margin: 8px 0 14px;
-  overflow: hidden;
+  overflow: visible;
   border-radius: 14px;
-  background: radial-gradient(circle at 50% 50%, rgba(45, 212, 191, 0.08), transparent 66%);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1381,6 +1403,67 @@ input:focus {
 .device-meta strong {
   font: 26px 'JetBrains Mono Variable', monospace;
   color: var(--accent-soft);
+}
+
+.telemetry-current {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 156px;
+  margin: 14px 0;
+  padding: 8px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(8, 13, 23, 0.42);
+}
+
+.telemetry-current .device-model {
+  max-width: 360px;
+}
+
+.device-detail-lower {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  margin: 16px 0 10px;
+  transition: grid-template-columns 0.25s ease;
+}
+
+.device-detail-lower.with-manual {
+  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+}
+
+.device-detail-lower .send-card {
+  margin: 0;
+  animation: detail-form-in 0.22s ease both;
+}
+
+.device-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.manual-toggle {
+  display: flex;
+  width: fit-content;
+  margin: 0 0 0 auto;
+  border-color: rgba(148, 163, 184, 0.2);
+  color: var(--muted);
+}
+
+@keyframes detail-form-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .send-card .btn {
@@ -1697,7 +1780,18 @@ input:focus {
   font: 11px 'JetBrains Mono Variable', monospace;
 }
 
-.range-draft input[type='time']:focus {
+.range-draft input[type='date'] {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-soft);
+  color-scheme: dark;
+  font: 11px 'JetBrains Mono Variable', monospace;
+}
+
+.range-draft input[type='time']:focus,
+.range-draft input[type='date']:focus {
   box-shadow: none;
 }
 
@@ -1708,10 +1802,24 @@ input:focus {
 }
 
 .calendar-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 4px;
   margin-top: 12px;
+}
+
+.calendar-actions > button {
+  min-width: 0;
+  padding: 7px 8px;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.calendar-actions > button:nth-child(2) {
+  justify-content: center;
+  text-align: center;
 }
 
 .history-layout {
@@ -2263,9 +2371,12 @@ input:focus {
 
 @media (max-width: 620px) {
   .stats,
-  .two,
   .history-layout {
     grid-template-columns: 1fr;
+  }
+
+  .grid.two {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .content {
@@ -2317,8 +2428,13 @@ input:focus {
   }
 
   .range-picker {
+    position: fixed;
+    top: 50%;
+    left: 50%;
     right: auto;
-    left: 0;
+    max-height: calc(100vh - 24px);
+    overflow: auto;
+    transform: translate(-50%, -50%);
   }
 
   .range-hint {
@@ -2362,9 +2478,25 @@ input:focus {
   .range-draft {
     grid-template-columns: 1fr;
   }
+
+  .device-detail-lower.with-manual {
+    grid-template-columns: 1fr;
+  }
+
+  .telemetry-current {
+    padding: 8px 6px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .device-detail-lower {
+    transition: none;
+  }
+
+  .device-detail-lower .send-card {
+    animation: none;
+  }
+
   .hero-chip,
   .hero-beam,
   .dm-sensor,

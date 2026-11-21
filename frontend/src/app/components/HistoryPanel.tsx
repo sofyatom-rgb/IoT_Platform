@@ -1,8 +1,10 @@
+import type { CSSProperties } from 'react';
 import { CalendarDays } from 'lucide-react';
-import { msk, parseTimestamp, temperature } from '../../lib/format';
+import { msk, parseTimestamp, relative, temperature } from '../../lib/format';
 import type { Rule, Telemetry, TimeRange } from '../../lib/types';
-import { RangeControls, rangeLabel, type RangePreset } from './DateRangePicker';
+import { RangeControls, rangeLabel, type RangeMode } from './DateRangePicker';
 import { HistoryChart } from './HistoryChart';
+import { DeviceModel, type DeviceTheme } from './DeviceModel';
 
 type HistoryPanelProps = {
   title: string;
@@ -10,12 +12,12 @@ type HistoryPanelProps = {
   subtitle?: string;
   values: Telemetry[];
   range: TimeRange;
-  preset: RangePreset;
-  onPreset: (preset: Exclude<RangePreset, 'custom'>) => void;
-  onCustom: (range: TimeRange) => void;
-  onToNow?: () => void;
+  mode: RangeMode;
+  onMode: (mode: RangeMode) => void;
   accent?: string;
   rules?: Rule[];
+  current?: Telemetry | null;
+  theme?: DeviceTheme;
 };
 
 function violates(rule: Rule, value: number): boolean {
@@ -31,18 +33,13 @@ export function HistoryPanel({
   subtitle,
   values,
   range,
-  preset,
-  onPreset,
-  onCustom,
-  onToNow,
+  mode,
+  onMode,
   accent,
   rules,
+  current,
+  theme,
 }: HistoryPanelProps) {
-  const toNow = () => {
-    onCustom({ from: range.from, to: Date.now() });
-    onToNow?.();
-  };
-
   const visible = values
     .map((item) => ({ item, timestamp: parseTimestamp(item.time).getTime() }))
     .filter(
@@ -50,8 +47,6 @@ export function HistoryPanel({
         Number.isFinite(timestamp) && timestamp >= range.from && timestamp <= range.to,
     )
     .sort((left, right) => right.timestamp - left.timestamp);
-  const list = visible.slice(0, 300);
-
   return (
     <section className="card history-card">
       <div className="history-head">
@@ -62,11 +57,39 @@ export function HistoryPanel({
         </div>
         <div className="history-summary">
           <span className="badge">{visible.length} записей</span>
-          <span className="mono">{rangeLabel(range)}</span>
+          <span className="mono">
+            {mode.kind === 'all-time'
+              ? 'Вся доступная история'
+              : mode.kind === 'custom-live'
+                ? `${rangeLabel(range)} · до сейчас`
+                : rangeLabel(range)}
+          </span>
         </div>
       </div>
 
-      <RangeControls preset={preset} range={range} onPreset={onPreset} onCustom={onCustom} onToNow={toNow} />
+      {current !== undefined && theme && (
+        <div
+          className="telemetry-current"
+          style={{
+            '--dm-soft': theme.soft,
+            '--dm-glow': theme.glow,
+          } as CSSProperties}
+        >
+          <DeviceModel
+            variant="card"
+            theme={theme}
+            value={current ? current.temperature.toFixed(1) : '—'}
+            label="°C"
+          />
+          <div className="device-reading">
+            <span>Текущее значение</span>
+            <div className="gauge">{current ? temperature(current.temperature) : '—'}</div>
+            <p>{current ? relative(current.time) : 'Нет показаний'}</p>
+          </div>
+        </div>
+      )}
+
+      <RangeControls mode={mode} range={range} onMode={onMode} />
 
       <div className="history-layout">
         <div className="history-list">
@@ -74,7 +97,7 @@ export function HistoryPanel({
             <span>Время</span>
             <span>Температура</span>
           </div>
-          {list.map(({ item }) => {
+          {visible.map(({ item }) => {
             const bad = rules?.every((rule) => violates(rule, item.temperature)) ?? false;
             return (
               <div className={`history-item ${bad ? 'alert' : ''}`} key={item.id}>
@@ -92,11 +115,6 @@ export function HistoryPanel({
               <span>В выбранном промежутке нет показаний</span>
               <small>Попробуйте расширить диапазон</small>
             </div>
-          )}
-          {visible.length > list.length && (
-            <p className="history-more">
-              Показаны последние {list.length} из {visible.length}
-            </p>
           )}
         </div>
         <HistoryChart values={visible.map(({ item }) => item)} range={range} accent={accent} />

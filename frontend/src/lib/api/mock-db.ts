@@ -14,3 +14,5 @@ db.devices.forEach((device,index)=>{
   }
 });
 let next=99; export const id=()=>++next;
+let nextTelemetryId = db.telemetry.reduce((max, item) => Math.max(max, item.id), 0);
+export const telemetryId = () => ++nextTelemetryId;

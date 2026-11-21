@@ -22,6 +22,10 @@ class TelemetryService {
   void getByDeviceId(int deviceId,
                      std::function<void(const std::string &)> success,
                      std::function<void(const std::string &)> error) const;
+  void queryByDeviceId(
+      int deviceId, const TelemetryQuery &query,
+      std::function<void(const std::string &)> success,
+      std::function<void(const std::string &)> error) const;
   void deleteByDeviceId(int deviceId, std::function<void()> success,
                         std::function<void(const std::string &)> error) const;
 

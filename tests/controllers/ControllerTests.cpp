@@ -160,6 +160,7 @@ class FakeTelemetryRepository final : public ITelemetryRepository {
   mutable int deviceId{-1};
   mutable double temperature{0.0};
   mutable std::string failure;
+  mutable TelemetryQuery telemetryQuery;
 
   void save(int id, double value, std::function<void()> success,
             std::function<void(const std::string &)> error) const override {
@@ -172,6 +173,16 @@ class FakeTelemetryRepository final : public ITelemetryRepository {
                      std::function<void(const std::string &)> error) const override {
     ++reads;
     deviceId = id;
+    if (failure.empty()) success(R"([{"device_id":5,"temperature":20.5}])");
+    else error(failure);
+  }
+  void queryByDeviceId(
+      int id, const TelemetryQuery &query,
+      std::function<void(const std::string &)> success,
+      std::function<void(const std::string &)> error) const override {
+    ++reads;
+    deviceId = id;
+    telemetryQuery = query;
     if (failure.empty()) success(R"([{"device_id":5,"temperature":20.5}])");
     else error(failure);
   }
@@ -679,6 +690,62 @@ TEST_CASE(telemetry_controller_read_returns_parsed_array) {
   EXPECT_EQ(static_cast<int>(drogon::k200OK), statusCode(response));
   EXPECT_EQ(1, repository->reads);
   EXPECT_EQ(5, repository->deviceId);
+}
+
+TEST_CASE(telemetry_controller_forwards_valid_time_range) {
+  auto repository = std::make_shared<FakeTelemetryRepository>();
+  TelemetryController controller(makeTelemetryService(repository));
+  auto request = jsonRequest(
+      R"({"device_id":5,"from":"2026-11-20T10:00:00.000Z","to":"2026-11-21T10:00:00.000Z"})");
+
+  drogon::HttpResponsePtr response;
+  controller.getTelemetry(request, [&](const auto &value) { response = value; });
+
+  EXPECT_EQ(static_cast<int>(drogon::k200OK), statusCode(response));
+  EXPECT_EQ(std::string("2026-11-20T10:00:00.000Z"),
+            repository->telemetryQuery.from.value_or(""));
+  EXPECT_EQ(std::string("2026-11-21T10:00:00.000Z"),
+            repository->telemetryQuery.to.value_or(""));
+  EXPECT_FALSE(repository->telemetryQuery.afterId.has_value());
+}
+
+TEST_CASE(telemetry_controller_forwards_incremental_cursor) {
+  auto repository = std::make_shared<FakeTelemetryRepository>();
+  TelemetryController controller(makeTelemetryService(repository));
+  auto request = jsonRequest(R"({"device_id":5,"after_id":42})");
+
+  drogon::HttpResponsePtr response;
+  controller.getTelemetry(request, [&](const auto &value) { response = value; });
+
+  EXPECT_EQ(static_cast<int>(drogon::k200OK), statusCode(response));
+  EXPECT_EQ(42, repository->telemetryQuery.afterId.value_or(-1));
+  EXPECT_FALSE(repository->telemetryQuery.from.has_value());
+}
+
+TEST_CASE(telemetry_controller_forwards_all_time_query) {
+  auto repository = std::make_shared<FakeTelemetryRepository>();
+  TelemetryController controller(makeTelemetryService(repository));
+  auto request = jsonRequest(R"({"device_id":5,"all_time":true})");
+
+  drogon::HttpResponsePtr response;
+  controller.getTelemetry(request, [&](const auto &value) { response = value; });
+
+  EXPECT_EQ(static_cast<int>(drogon::k200OK), statusCode(response));
+  EXPECT_TRUE(repository->telemetryQuery.allTime);
+  EXPECT_FALSE(repository->telemetryQuery.afterId.has_value());
+}
+
+TEST_CASE(telemetry_controller_rejects_incomplete_or_invalid_range) {
+  auto repository = std::make_shared<FakeTelemetryRepository>();
+  TelemetryController controller(makeTelemetryService(repository));
+  auto request = jsonRequest(
+      R"({"device_id":5,"from":"2026-11-21T10:00:00.000Z"})");
+
+  drogon::HttpResponsePtr response;
+  controller.getTelemetry(request, [&](const auto &value) { response = value; });
+
+  EXPECT_EQ(static_cast<int>(drogon::k400BadRequest), statusCode(response));
+  EXPECT_EQ(0, repository->reads);
 }
 
 TEST_CASE(telemetry_controller_maps_repository_errors_to_internal_server_error) {

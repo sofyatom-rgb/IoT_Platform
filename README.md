@@ -418,7 +418,7 @@ Content-Type: application/json
 | `POST` | `/devices` | `owner_id`, `name`, `type` | Создать устройство |
 | `DELETE` | `/devices` | `device_id` | Удалить устройство |
 | `POST` | `/telemetry` | `device_id`, `temperature` | Сохранить показание и передать его Rule Engine |
-| `POST` | `/telemetry/query` | `device_id` | Получить до 10 последних показаний |
+| `POST` | `/telemetry/query` | `device_id`; необязательно `from` + `to`, `all_time` или `after_id` | Последние 10 записей, диапазон целиком, вся история или новые записи после курсора |
 | `DELETE` | `/telemetry` | `device_id` | Удалить все показания устройства |
 
 #### HTTP Adapter (`http://localhost:8081`)
@@ -651,6 +651,30 @@ Core возвращает JSON-массив максимум из 10 после�
 ```
 
 Если записей нет, результатом будет пустой массив `[]`.
+
+Для диапазона передайте обе границы в UTC ISO 8601. Запрос возвращает все записи устройства внутри интервала:
+
+```sh
+curl -i -X POST http://localhost:8080/telemetry/query \
+  -H 'Content-Type: application/json' \
+  -d '{"device_id":1,"from":"2026-11-20T00:00:00.000Z","to":"2026-11-21T00:00:00.000Z"}'
+```
+
+Для инкрементального обновления передайте `after_id`; Core вернёт следующие записи с `id` больше курсора (пакет до 5000 строк):
+
+```sh
+curl -i -X POST http://localhost:8080/telemetry/query \
+  -H 'Content-Type: application/json' \
+  -d '{"device_id":1,"after_id":42}'
+```
+
+Чтобы прочитать всю доступную историю без временного нижнего ограничения, передайте `all_time: true`:
+
+```sh
+curl -i -X POST http://localhost:8080/telemetry/query \
+  -H 'Content-Type: application/json' \
+  -d '{"device_id":1,"all_time":true}'
+```
 
 ### Получить телеметрию через Adapter — `POST /telemetry/query`
 
