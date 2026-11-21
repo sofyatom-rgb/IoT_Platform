@@ -22,6 +22,7 @@ constexpr uint8_t kOneWirePin = 4;
 constexpr uint32_t kWifiTimeoutMs = 15000;
 constexpr uint32_t kHttpConnectTimeoutMs = 5000;
 constexpr uint32_t kHttpTimeoutMs = 10000;
+constexpr uint32_t kMeasurementIntervalMs = 60000;
 constexpr uint8_t kSensorAttempts = 3;
 
 OneWire oneWire(kOneWirePin);
@@ -72,12 +73,6 @@ bool connectWifi() {
   return true;
 }
 
-void disconnectWifi() {
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
-  Serial.println("[wifi] disconnected");
-}
-
 void sendTelemetry(const std::string& envelope) {
   WiFiClient client;
   HTTPClient http;
@@ -97,6 +92,8 @@ void sendTelemetry(const std::string& envelope) {
   Serial.printf("[http] status=%d\n", status);
   if (status < 0) {
     Serial.printf("[http] error: %s\n", http.errorToString(status).c_str());
+  } else if (status != 200 && status != 400 && status != 502) {
+    Serial.printf("[http] unexpected status: %d\n", status);
   }
   http.end();
 }
@@ -108,7 +105,7 @@ void setup() {
   delay(200);
 
   Serial.println();
-  Serial.println("[boot] ESP32 DS18B20 telemetry client");
+  Serial.println("[boot] ESP32 DS18B20 telemetry client (periodic mode)");
 
   sensors.begin();
   sensors.setResolution(12);
@@ -120,19 +117,41 @@ void setup() {
     return;
   }
 
+  // Wi-Fi connect once at startup
+  if (!connectWifi()) {
+    Serial.println("[wifi] failed to connect at startup, retry in loop");
+  }
+}
+
+void loop() {
+  static uint32_t lastMeasurement = 0;
+  const uint32_t now = millis();
+
+  // Trigger measurement every kMeasurementIntervalMs
+  if (now - lastMeasurement < kMeasurementIntervalMs) {
+    return;
+  }
+  lastMeasurement = now;
+
   float temperature = 0.0f;
   if (!readTemperature(temperature)) {
-    Serial.println("[sensor] no valid temperature, stop");
+    Serial.println("[sensor] no valid temperature this cycle");
+    // Still report Wi-Fi status so user can see connectivity
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("[wifi] disconnected");
+    }
     return;
   }
   Serial.printf("[sensor] temperature: %.2f C\n", temperature);
 
+  // Build JSON payload: {"device_id":N,"temperature":T}
   char payload[96];
   std::snprintf(payload, sizeof(payload),
                 "{\"device_id\":%d,\"temperature\":%.4f}", DEVICE_ID,
                 static_cast<double>(temperature));
   Serial.printf("[payload] %s\n", payload);
 
+  // Envelope: {"checksum":"...","ciphertext":"..."}
   std::string envelope;
   std::string error;
   const auto* key = reinterpret_cast<const uint8_t*>(CODEC_KEY);
@@ -143,20 +162,15 @@ void setup() {
   Serial.printf("[codec] envelope (%u bytes): %s\n",
                 static_cast<unsigned>(envelope.size()), envelope.c_str());
 
-  if (!connectWifi()) {
-    return;
+  // Send if Wi-Fi connected, otherwise try to connect
+  if (WiFi.status() != WL_CONNECTED) {
+    if (!connectWifi()) {
+      Serial.println("[wifi] not connected, skip send this cycle");
+      return;
+    }
   }
 
-#if TELEMETRY_WRITE_ENABLED
   sendTelemetry(envelope);
-#else
-  Serial.println("[http] TELEMETRY_WRITE_ENABLED=0, POST skipped");
-#endif
 
-  disconnectWifi();
-  Serial.println("[boot] cycle complete, reset the board to repeat");
-}
-
-void loop() {
-  delay(1000);
+  // Wi-Fi stays connected; next cycle will use millis() timing
 }
