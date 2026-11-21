@@ -216,4 +216,22 @@ void RuleController::registerRoutes() {
             });
       },
       {drogon::Post});
+
+  // POST /notification-cooldown/reset -> сбросить 5-минутный тайм-аут уведомлений устройства.
+  drogon::app().registerHandler(
+      "/notification-cooldown/reset",
+      [makeService](const drogon::HttpRequestPtr &req, Callback &&cb) {
+        auto json = req->getJsonObject();
+        if (!json || !(*json)["device_id"].isInt() ||
+            (*json)["device_id"].asInt() <= 0) {
+          reply(cb, drogon::k400BadRequest,
+                errorJson("device_id is required"));
+          return;
+        }
+        RuleService::resetNotificationCooldown((*json)["device_id"].asInt());
+        Json::Value ok;
+        ok["status"] = "ok";
+        reply(cb, drogon::k200OK, ok);
+      },
+      {drogon::Post});
 }

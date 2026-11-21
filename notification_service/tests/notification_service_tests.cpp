@@ -166,9 +166,9 @@ void testSeverityStylesAndOptionalPlatformLink() {
   alert.threshold = "30";
   alert.severity = "INFO";
   const std::string info = emailTemplate.renderHtml(alert, {});
-  require(info.find("#e6f4ef") != std::string::npos &&
+  require(info.find("#0f2a26") != std::string::npos &&
               info.find("'Trebuchet MS'") != std::string::npos,
-          "Pastel palette or rounded sans-serif font is missing");
+          "Dark palette or rounded sans-serif font is missing");
   require(info.find("ТЕКУЩЕЕ ПОКАЗАНИЕ") != std::string::npos &&
               info.find("СРАВНЕНИЕ С НОРМОЙ") != std::string::npos &&
               info.find("ДАТА И ВРЕМЯ") != std::string::npos,
@@ -181,13 +181,13 @@ void testSeverityStylesAndOptionalPlatformLink() {
 
   alert.severity = "WARNING";
   const std::string warning = emailTemplate.renderHtml(alert, {});
-  require(warning.find("#fff0e8") != std::string::npos &&
+  require(warning.find("#2a1f0f") != std::string::npos &&
               warning.find("ВНИМАНИЕ") != std::string::npos,
           "WARNING severity style is missing");
 
   alert.severity = "CRITICAL";
   const std::string critical = emailTemplate.renderHtml(alert, {});
-  require(critical.find("#fbeaf0") != std::string::npos &&
+  require(critical.find("#2a1218") != std::string::npos &&
               critical.find("КРИТИЧНО") != std::string::npos,
           "CRITICAL severity style is missing");
 

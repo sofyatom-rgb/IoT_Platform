@@ -159,6 +159,7 @@ std::string makeMessage(const EmailConfig &config, const std::string &recipient,
   const std::string boundary = makeMultipartBoundary();
   std::ostringstream message;
   message << "Date: " << makeDateHeader() << "\r\n"
+          << "Message-ID: <" << makeMultipartBoundary() << "@" << config.fromEmail.substr(config.fromEmail.find('@') + 1) << ">\r\n"
           << "From: " << formatMailbox(config.senderName, config.fromEmail)
           << "\r\n"
           << "To: " << formatMailbox(recipientName, recipient) << "\r\n"
@@ -206,6 +207,38 @@ struct UploadContext {
   const std::string *message;
   std::size_t offset = 0;
 };
+
+struct DebugContext {
+  std::string buffer;
+  std::string lastSmtpReply;
+};
+
+int debugCallback(CURL *, curl_infotype type, char *data, size_t size, void *userData) {
+  auto *context = static_cast<DebugContext *>(userData);
+  if (context == nullptr || data == nullptr) {
+    return 0;
+  }
+  if (type != CURLINFO_DATA_IN && type != CURLINFO_HEADER_IN &&
+      type != CURLINFO_TEXT) {
+    return 0;
+  }
+  context->buffer.append(data, size);
+  std::size_t position = 0;
+  while ((position = context->buffer.find('\n')) != std::string::npos) {
+    std::string line = context->buffer.substr(0, position);
+    if (!line.empty() && line.back() == '\r') {
+      line.pop_back();
+    }
+    if (line.size() >= 4 && std::isdigit(static_cast<unsigned char>(line[0])) &&
+        std::isdigit(static_cast<unsigned char>(line[1])) &&
+        std::isdigit(static_cast<unsigned char>(line[2])) &&
+        (line[3] == ' ' || line[3] == '-')) {
+      context->lastSmtpReply = line;
+    }
+    context->buffer.erase(0, position + 1);
+  }
+  return 0;
+}
 
 std::size_t readMessage(char *buffer, std::size_t size, std::size_t count,
                         void *userData) {
@@ -307,6 +340,7 @@ EmailService::sendRendered(const std::string &recipient,
     const std::string message =
         makeMessage(config_, recipient, recipientName, email);
     UploadContext upload{&message};
+    DebugContext debug{};
     std::array<char, CURL_ERROR_SIZE> errorBuffer{};
     const std::string url = makeSmtpUrl(config_);
     const std::string sender = "<" + config_.fromEmail + ">";
@@ -326,6 +360,9 @@ EmailService::sendRendered(const std::string &recipient,
     setOption(curl.get(), CURLOPT_CONNECTTIMEOUT,
               static_cast<long>(config_.timeoutSeconds));
     setOption(curl.get(), CURLOPT_NOSIGNAL, 1L);
+    setOption(curl.get(), CURLOPT_VERBOSE, 1L);
+    setOption(curl.get(), CURLOPT_DEBUGFUNCTION, &debugCallback);
+    setOption(curl.get(), CURLOPT_DEBUGDATA, &debug);
     setOption(curl.get(), CURLOPT_SSL_VERIFYPEER, 1L);
     setOption(curl.get(), CURLOPT_SSL_VERIFYHOST, 2L);
 
@@ -346,7 +383,11 @@ EmailService::sendRendered(const std::string &recipient,
       const std::string detail = errorBuffer.front() == '\0'
                                      ? curl_easy_strerror(result)
                                      : errorBuffer.data();
-      throw std::runtime_error("SMTP send failed: " + detail);
+      std::string message = "SMTP send failed: " + detail;
+      if (!debug.lastSmtpReply.empty()) {
+        message += "\nServer reply: " + hidePassword(debug.lastSmtpReply, config_.password);
+      }
+      throw std::runtime_error(message);
     }
     return {true, {}};
   } catch (const std::exception &exception) {

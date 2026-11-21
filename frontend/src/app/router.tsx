@@ -719,8 +719,19 @@ function Detail() {
       </div>
 
       <div className="device-actions">
-        <button className="btn ghost danger" onClick={() => void remove()}>
-          <Trash2 size={16} /> Удалить устройство
+        <button
+          type="button"
+          className="btn ghost small"
+          onClick={async () => {
+            try {
+              await api.resetNotificationCooldown(id);
+              toast.success('Тайм-аут уведомления сброшен');
+            } catch (error) {
+              notifyError(error, 'Не удалось сбросить тайм-аут уведомления');
+            }
+          }}
+        >
+          Сбросить тайм-аут уведомления
         </button>
         <button
           type="button"
@@ -730,6 +741,9 @@ function Detail() {
         >
           <Plus size={12} />
           {showManual ? 'Скрыть форму' : 'Добавить данные вручную'}
+        </button>
+        <button className="btn ghost danger" onClick={() => void remove()}>
+          <Trash2 size={16} /> Удалить устройство
         </button>
       </div>
     </Shell>
@@ -947,23 +961,10 @@ function TelemetryPage() {
 function Notifications() {
   const { user } = useAuth();
   const [events, setEvents] = useState<string[]>([]);
-  const [devices, setDevices] = useState<Device[]>([]);
   const add = (label: string) => {
     setEvents((items) => [`${new Date().toLocaleTimeString('ru-RU')} — ${label}`, ...items]);
     toast.success(label);
   };
-
-  useEffect(() => {
-    void api
-      .devices()
-      .then((nextDevices) => {
-        setDevices(nextDevices);
-        toast.dismiss('notification-devices-load');
-      })
-      .catch((error) =>
-        notifyError(error, 'Не удалось загрузить список устройств', 'notification-devices-load'),
-      );
-  }, []);
 
   const sendEmail = async () => {
     if (!user) return;
@@ -979,19 +980,29 @@ function Notifications() {
   const sendTelegram = async () => {
     if (!user?.telegram_chat_id) return;
     try {
-      const device =
-        devices[0] ??
-        {
-          id: 1,
-          name: 'Тестовый датчик',
-          owner_id: user.id,
-          type: 'temperature',
-          created_at: '',
-        };
-      await api.testTelegram(device, user, 30, 31.5);
+      const device = {
+        id: 1,
+        name: 'Тестовый датчик',
+        owner_id: user.id,
+        type: 'temperature',
+        created_at: '',
+      };
+      await api.testTelegram(device, user, 30, 99.9);
       add('Запрос на Telegram-алерт отправлен сервису');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не удалось отправить Telegram-алерт';
+      setEvents((items) => [`${new Date().toLocaleTimeString('ru-RU')} — ошибка: ${message}`, ...items]);
+      toast.error(message);
+    }
+  };
+
+  const sendEmailAlert = async () => {
+    if (!user) return;
+    try {
+      await api.sendEmailAlert(user.email);
+      add('Тестовый email-алерт отправлен сервису');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось отправить email-алерт';
       setEvents((items) => [`${new Date().toLocaleTimeString('ru-RU')} — ошибка: ${message}`, ...items]);
       toast.error(message);
     }
@@ -1018,6 +1029,9 @@ function Notifications() {
           <p>{user?.email}</p>
           <button className="btn" onClick={() => void sendEmail()}>
             Отправить тестовое письмо
+          </button>
+          <button className="btn ghost" style={{ marginTop: 8 }} onClick={() => void sendEmailAlert()}>
+            Отправить тестовый email-алерт
           </button>
         </section>
       </div>
@@ -1052,6 +1066,17 @@ function Settings() {
       toast.success('Профиль сохранён');
     } catch (error) {
       notifyError(error, 'Не удалось сохранить профиль');
+    }
+  };
+
+  const removeAccount = async () => {
+    if (!confirm('Удалить аккаунт и все связанные данные? Это действие нельзя отменить.')) return;
+    try {
+      await api.deleteUser(user.id);
+      toast.success('Аккаунт удалён');
+      logout();
+    } catch (error) {
+      notifyError(error, 'Не удалось удалить аккаунт');
     }
   };
 
@@ -1090,6 +1115,13 @@ function Settings() {
         </p>
         <button className="btn ghost" onClick={logout}>
           Выйти из аккаунта
+        </button>
+      </section>
+      <section className="card" style={{ marginTop: 16 }}>
+        <h2>Опасная зона</h2>
+        <p>Удаление аккаунта необратимо.</p>
+        <button className="btn ghost danger" onClick={() => void removeAccount()}>
+          <Trash2 size={16} /> Удалить аккаунт
         </button>
       </section>
     </Shell>

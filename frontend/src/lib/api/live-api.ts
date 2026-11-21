@@ -80,6 +80,8 @@ export const liveApi = {
   },
   async send(deviceId: number, value: number): Promise<void> { await request(core, '/telemetry', { method: 'POST', body: JSON.stringify({ device_id: deviceId, temperature: value }) }); },
   async clearTelemetry(deviceId: number): Promise<void> { await request(core, '/telemetry', { method: 'DELETE', body: JSON.stringify({ device_id: deviceId }) }); },
+  async deleteUser(userId: number): Promise<void> { await request(core, '/users', { method: 'DELETE', body: JSON.stringify({ user_id: userId }) }); },
+  async sendEmailAlert(email: string): Promise<void> { await request(notifications, '/notifications/email', { method: 'POST', body: JSON.stringify({ email, event_type: 'Тестовый алерт', sensor_name: 'Тестовый датчик', sensor_id: '1', reading_value: '31.5 °C', threshold: '30.0 °C', location: 'Тестовый стенд', severity: 'WARNING', description: 'Тестовое уведомление, отправленное из интерфейса.' }) }); },
   async rules(deviceId?: number): Promise<Rule[]> {
     if (deviceId) return request<Rule[]>(rulesBase, `/rules?device_id=${deviceId}`);
     // Rule Engine exposes rules per device. Fetch every device visible to the
@@ -90,11 +92,12 @@ export const liveApi = {
   },
   async saveRule(data: Omit<Rule, 'rule_id'>, existing?: Rule): Promise<Rule> { if (existing) { await request(rulesBase, `/rules/${existing.rule_id}`, { method: 'PUT', body: JSON.stringify(data) }); return { ...existing, ...data }; } const result = await request<Record<string, unknown>>(rulesBase, '/rules', { method: 'POST', body: JSON.stringify(data) }); return { ...data, rule_id: Number(result.rule_id) }; },
   async deleteRule(id: number): Promise<void> { await request(rulesBase, `/rules/${id}`, { method: 'DELETE' }); },
+  async resetNotificationCooldown(deviceId: number): Promise<void> { await request(rulesBase, '/notification-cooldown/reset', { method: 'POST', body: JSON.stringify({ device_id: deviceId }) }); },
   async updateUser(user: User, patch: Partial<User>): Promise<User> {
     const next = { ...user, ...patch };
     await request(core, `/users?id=${user.id}`, { method: 'PUT', body: JSON.stringify({ email: next.email, name: next.name, telegram_chat_id: next.telegram_chat_id }) });
     return next;
   },
   async testEmail(email: string): Promise<void> { await request(notifications, '/notifications/email/test', { method: 'POST', body: JSON.stringify({ email }) }); },
-  async testTelegram(device: Device, user: User, threshold: number, reading: number): Promise<void> { await request(notifications, '/notifications/temperature', { method: 'POST', body: JSON.stringify({ device_id: device.id, chat_id: user.telegram_chat_id, email: user.email, device_name: device.name, temperature: reading, threshold }) }); },
+  async testTelegram(device: Device, user: User, threshold: number, reading: number): Promise<void> { await request(notifications, '/notifications/temperature', { method: 'POST', body: JSON.stringify({ device_id: null, chat_id: user.telegram_chat_id, email: user.email, device_name: device.name, temperature: reading, threshold }) }); },
 };

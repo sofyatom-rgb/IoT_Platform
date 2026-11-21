@@ -69,13 +69,13 @@ struct SeverityStyle {
 
 SeverityStyle severityStyle(const std::string &severity) {
   if (severity == "INFO") {
-    return {"ИНФОРМАЦИЯ", "●", "#367d78", "#e6f4ef"};
+    return {"ИНФОРМАЦИЯ", "●", "#5eead4", "#0f2a26"};
   }
   if (severity == "WARNING") {
-    return {"ВНИМАНИЕ", "▲", "#a85c42", "#fff0e8"};
+    return {"ВНИМАНИЕ", "▲", "#fde68a", "#2a1f0f"};
   }
   if (severity == "CRITICAL") {
-    return {"КРИТИЧНО", "◆", "#a84d63", "#fbeaf0"};
+    return {"КРИТИЧНО", "◆", "#fda4af", "#2a1218"};
   }
   throw std::invalid_argument("severity must be INFO, WARNING, or CRITICAL");
 }
@@ -121,33 +121,33 @@ std::string comparisonChart(const EmailAlertData &data) {
   return "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" "
          "cellpadding=\"0\" border=\"0\" "
          "style=\"font-family:'Trebuchet MS',Arial,sans-serif;\">"
-         "<tr><td style=\"padding:0 0 8px;color:#65706d;font-size:12px;\">"
+         "<tr><td style=\"padding:0 0 8px;color:#8a9bb4;font-size:12px;\">"
          "Норма&nbsp; · &nbsp;" +
          EmailTemplate::escapeHtml(valueOrDash(data.threshold)) + " " +
          EmailTemplate::escapeHtml(valueOrDash(data.unit)) +
          "</td></tr><tr><td style=\"padding:0 0 15px;\">"
          "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" "
          "cellpadding=\"0\" border=\"0\" style=\"height:10px;"
-         "background-color:#edf0eb;border-radius:8px;\">"
+         "background-color:#1e293b;border-radius:8px;\">"
          "<tr><td width=\"" +
          normalWidth +
-         "%\" style=\"height:10px;background-color:#a9d8c8;"
+         "%\" style=\"height:10px;background-color:#2dd4bf;"
          "border-radius:8px 0 0 8px;font-size:0;line-height:0;\">&nbsp;"
          "</td><td width=\"" +
          normalRemainder +
          "%\" style=\"height:10px;font-size:0;line-height:0;\">&nbsp;"
          "</td></tr></table></td></tr>"
-         "<tr><td style=\"padding:0 0 8px;color:#65706d;font-size:12px;\">"
+         "<tr><td style=\"padding:0 0 8px;color:#8a9bb4;font-size:12px;\">"
          "Показатель&nbsp; · &nbsp;" +
          EmailTemplate::escapeHtml(valueOrDash(data.readingValue)) + " " +
          EmailTemplate::escapeHtml(valueOrDash(data.unit)) +
          "</td></tr><tr><td>"
          "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" "
          "cellpadding=\"0\" border=\"0\" style=\"height:10px;"
-         "background-color:#edf0eb;border-radius:8px;\">"
+         "background-color:#1e293b;border-radius:8px;\">"
          "<tr><td width=\"" +
          readingWidth +
-         "%\" style=\"height:10px;background-color:#e9a98e;"
+         "%\" style=\"height:10px;background-color:#fb7185;"
          "border-radius:8px 0 0 8px;font-size:0;line-height:0;\">&nbsp;"
          "</td><td width=\"" +
          readingRemainder +

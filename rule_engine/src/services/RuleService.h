@@ -2,8 +2,11 @@
 
 #include <drogon/drogon.h>
 
+#include <chrono>
 #include <functional>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "clients/NotificationClient.h"
@@ -54,7 +57,18 @@ class RuleService {
       std::function<void(const std::string&)> success,
       std::function<void(const std::string&)> error) const;
 
+  // Сбросить 15-минутный тайм-аут уведомлений для устройства.
+  static void resetNotificationCooldown(int deviceId);
+
+  // Проверить, активен ли тайм-аут уведомлений для устройства.
+  static bool isNotificationOnCooldown(int deviceId);
+
+  // Отметить, что уведомление для устройства было отправлено.
+  static void markNotificationSent(int deviceId);
+
  private:
+  static std::mutex &cooldownMutex();
+  static std::unordered_map<int, std::chrono::steady_clock::time_point> &cooldownMap();
   drogon::orm::DbClientPtr db_;
   std::shared_ptr<NotificationClient> notificationClient_;
 };

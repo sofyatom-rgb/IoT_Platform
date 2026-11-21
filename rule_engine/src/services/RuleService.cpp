@@ -96,6 +96,11 @@ void RuleService::checkAndNotify(
           return;
         }
 
+        if (isNotificationOnCooldown(deviceId)) {
+          success("cooldown");
+          return;
+        }
+
         const double threshold = triggeredRule->value;
         repo->getNotificationTargetsForDevice(
             deviceId,
@@ -109,9 +114,50 @@ void RuleService::checkAndNotify(
               }
               notificationClient->sendTemperatureAlert(
                   deviceId, targets.chatId, targets.email, targets.deviceName,
-                  temperature, threshold, success, error);
+                  temperature, threshold,
+                  [deviceId, success](const std::string &status) {
+                    markNotificationSent(deviceId);
+                    success(status);
+                  },
+                  error);
             },
             error);
       },
       error);
+}
+
+std::mutex &RuleService::cooldownMutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+std::unordered_map<int, std::chrono::steady_clock::time_point> &
+RuleService::cooldownMap() {
+  static std::unordered_map<int, std::chrono::steady_clock::time_point> map;
+  return map;
+}
+
+void RuleService::resetNotificationCooldown(int deviceId) {
+  std::lock_guard<std::mutex> lock(cooldownMutex());
+  cooldownMap().erase(deviceId);
+}
+
+bool RuleService::isNotificationOnCooldown(int deviceId) {
+  std::lock_guard<std::mutex> lock(cooldownMutex());
+  const auto it = cooldownMap().find(deviceId);
+  if (it == cooldownMap().end()) {
+    return false;
+  }
+  const auto elapsed =
+      std::chrono::steady_clock::now() - it->second;
+  if (elapsed >= std::chrono::minutes(15)) {
+    cooldownMap().erase(it);
+    return false;
+  }
+  return true;
+}
+
+void RuleService::markNotificationSent(int deviceId) {
+  std::lock_guard<std::mutex> lock(cooldownMutex());
+  cooldownMap()[deviceId] = std::chrono::steady_clock::now();
 }

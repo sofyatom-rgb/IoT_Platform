@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="light">
-  <meta name="supported-color-schemes" content="light">
+  <meta name="color-scheme" content="dark">
+  <meta name="supported-color-schemes" content="dark">
   <title>{{event_type}}</title>
   <style>
     @media only screen and (max-width: 620px) {
@@ -16,21 +16,21 @@
     }
   </style>
 </head>
-<body style="margin:0;padding:0;background-color:#f5f1ec;color:#33413e;font-family:'Trebuchet MS',Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%;">
-  <div style="display:none;font-size:1px;color:#f5f1ec;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">{{event_type}} — {{sensor_name}}, {{reading_value}} {{unit}}. Дата и время: {{occurred_at}}.</div>
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#f5f1ec;font-family:'Trebuchet MS',Arial,Helvetica,sans-serif;">
+<body style="margin:0;padding:0;background-color:#05080f;color:#e6edf7;font-family:'Inter','Trebuchet MS',Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%;">
+  <div style="display:none;font-size:1px;color:#05080f;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">{{event_type}} — {{sensor_name}}, {{reading_value}} {{unit}}. Дата и время: {{occurred_at}}.</div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#05080f;font-family:'Inter','Trebuchet MS',Arial,Helvetica,sans-serif;">
     <tr>
       <td align="center" style="padding:30px 12px;">
-        <table class="email-shell" role="presentation" width="620" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:620px;background-color:#fffdf9;border:1px solid #e8e2d9;border-radius:22px;overflow:hidden;">
+        <table class="email-shell" role="presentation" width="620" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:620px;background-color:#0a101b;border:1px solid rgba(45,212,191,0.22);border-radius:22px;overflow:hidden;">
           <tr>
-            <td class="email-gutter" style="padding:24px 32px 20px;background-color:#eaf3ef;">
+            <td class="email-gutter" style="padding:24px 32px 20px;background-color:#080d17;border-bottom:1px solid rgba(148,163,184,0.14);">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
                   <td valign="middle">
-                    <div style="color:#42645b;font-size:15px;font-weight:bold;letter-spacing:0.4px;">{{platform_name}}</div>
-                    <div style="padding-top:4px;color:#718780;font-size:11px;">Заботливый мониторинг устройств</div>
+                    <div style="color:#5eead4;font-size:17px;font-weight:bold;letter-spacing:0.4px;">◈ {{platform_name}}</div>
+                    <div style="padding-top:4px;color:#8a9bb4;font-size:11px;">Промышленная сеть мониторинга</div>
                   </td>
-                  <td align="right" valign="middle" style="color:#718780;font-size:11px;">Уведомление&nbsp; ✿</td>
+                  <td align="right" valign="middle" style="color:#64748b;font-size:11px;">Уведомление</td>
                 </tr>
               </table>
             </td>
@@ -42,19 +42,19 @@
                   <td style="padding:7px 12px;border-radius:14px;background-color:{{severity_background}};color:{{severity_foreground}};font-size:12px;font-weight:bold;">{{severity_icon}}&nbsp;&nbsp;{{severity}}</td>
                 </tr>
               </table>
-              <h1 style="margin:14px 0 7px;color:#344640;font-size:25px;font-weight:bold;line-height:1.3;">{{event_type}}</h1>
-              <div style="color:#7b8984;font-size:13px;line-height:1.6;">{{recipient_greeting}} Зафиксировано новое показание — собрали всё важное в карточках ниже.</div>
+              <h1 style="margin:14px 0 7px;color:#e6edf7;font-size:25px;font-weight:bold;line-height:1.3;">{{event_type}}</h1>
+              <div style="color:#8a9bb4;font-size:13px;line-height:1.6;">{{recipient_greeting}} Зафиксировано новое показание — собрали всё важное в карточках ниже.</div>
             </td>
           </tr>
           <tr>
             <td class="email-gutter" style="padding:0 32px 12px;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f8e9df;border:1px solid #f1dbce;border-radius:18px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#0f1726;border:1px solid rgba(251,113,133,0.28);border-radius:18px;">
                 <tr>
-                  <td style="padding:18px 22px 4px;color:#9b7564;font-size:12px;font-weight:bold;letter-spacing:0.5px;">🌡️&nbsp; ТЕКУЩЕЕ ПОКАЗАНИЕ</td>
-                  <td align="right" style="padding:18px 22px 4px;color:#9b7564;font-size:11px;">{{occurred_at}}</td>
+                  <td style="padding:18px 22px 4px;color:#fda4af;font-size:12px;font-weight:bold;letter-spacing:0.5px;">🌡️&nbsp; ТЕКУЩЕЕ ПОКАЗАНИЕ</td>
+                  <td align="right" style="padding:18px 22px 4px;color:#64748b;font-size:11px;">{{occurred_at}}</td>
                 </tr>
                 <tr>
-                  <td colspan="2" class="main-reading" style="padding:0 22px 19px;color:#8e5c4d;font-size:46px;font-weight:bold;line-height:1.2;word-break:break-word;">{{reading_value}} <span style="font-size:22px;font-weight:normal;">{{unit}}</span></td>
+                  <td colspan="2" class="main-reading" style="padding:0 22px 19px;color:#fda4af;font-size:46px;font-weight:bold;line-height:1.2;word-break:break-word;">{{reading_value}} <span style="font-size:22px;font-weight:normal;color:#8a9bb4;">{{unit}}</span></td>
                 </tr>
               </table>
             </td>
@@ -63,16 +63,16 @@
             <td class="email-gutter" style="padding:0 32px 12px;">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
-                  <td class="metric-cell" width="49%" valign="top" style="width:49%;padding:16px 18px;background-color:#e7f1eb;border:1px solid #d5e7db;border-radius:16px;">
-                    <div style="color:#71877a;font-size:11px;font-weight:bold;">НОРМА</div>
-                    <div style="padding-top:7px;color:#426b58;font-size:23px;font-weight:bold;">{{threshold}} <span style="font-size:14px;font-weight:normal;">{{unit}}</span></div>
-                    <div style="padding-top:3px;color:#82948a;font-size:11px;">предельное значение</div>
+                  <td class="metric-cell" width="49%" valign="top" style="width:49%;padding:16px 18px;background-color:#0f1726;border:1px solid rgba(45,212,191,0.18);border-radius:16px;">
+                    <div style="color:#5eead4;font-size:11px;font-weight:bold;">НОРМА</div>
+                    <div style="padding-top:7px;color:#e6edf7;font-size:23px;font-weight:bold;">{{threshold}} <span style="font-size:14px;font-weight:normal;color:#8a9bb4;">{{unit}}</span></div>
+                    <div style="padding-top:3px;color:#64748b;font-size:11px;">предельное значение</div>
                   </td>
                   <td class="metric-gap" width="12" style="width:12px;font-size:0;line-height:0;">&nbsp;</td>
-                  <td class="metric-cell" width="49%" valign="top" style="width:49%;padding:16px 18px;background-color:#eeeafa;border:1px solid #e1daf2;border-radius:16px;">
-                    <div style="color:#81749c;font-size:11px;font-weight:bold;">УСТРОЙСТВО</div>
-                    <div style="padding-top:7px;color:#61547b;font-size:16px;font-weight:bold;line-height:1.35;">{{sensor_name}}</div>
-                    <div style="padding-top:3px;color:#8b81a0;font-size:11px;">ID: {{sensor_id}}</div>
+                  <td class="metric-cell" width="49%" valign="top" style="width:49%;padding:16px 18px;background-color:#0f1726;border:1px solid rgba(167,139,250,0.22);border-radius:16px;">
+                    <div style="color:#c4b5fd;font-size:11px;font-weight:bold;">УСТРОЙСТВО</div>
+                    <div style="padding-top:7px;color:#e6edf7;font-size:16px;font-weight:bold;line-height:1.35;">{{sensor_name}}</div>
+                    <div style="padding-top:3px;color:#64748b;font-size:11px;">ID: {{sensor_id}}</div>
                   </td>
                 </tr>
               </table>
@@ -80,10 +80,10 @@
           </tr>
           <tr>
             <td class="email-gutter" style="padding:0 32px 12px;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#fff8df;border:1px solid #f0e7c7;border-radius:16px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#0f1726;border:1px solid rgba(251,191,36,0.22);border-radius:16px;">
                 <tr>
                   <td style="padding:17px 19px 14px;">
-                    <div style="color:#887b50;font-size:12px;font-weight:bold;">СРАВНЕНИЕ С НОРМОЙ</div>
+                    <div style="color:#fde68a;font-size:12px;font-weight:bold;">СРАВНЕНИЕ С НОРМОЙ</div>
                     <div style="padding-top:13px;">{{comparison_chart}}</div>
                   </td>
                 </tr>
@@ -94,14 +94,14 @@
             <td class="email-gutter" style="padding:0 32px 12px;">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
-                  <td class="metric-cell" width="49%" valign="top" style="width:49%;padding:15px 18px;background-color:#e5f1f3;border:1px solid #d2e6e8;border-radius:16px;">
-                    <div style="color:#6e8990;font-size:11px;font-weight:bold;">ГДЕ</div>
-                    <div style="padding-top:7px;color:#476a70;font-size:14px;font-weight:bold;">{{location}}</div>
+                  <td class="metric-cell" width="49%" valign="top" style="width:49%;padding:15px 18px;background-color:#0f1726;border:1px solid rgba(45,212,191,0.18);border-radius:16px;">
+                    <div style="color:#5eead4;font-size:11px;font-weight:bold;">ГДЕ</div>
+                    <div style="padding-top:7px;color:#e6edf7;font-size:14px;font-weight:bold;">{{location}}</div>
                   </td>
                   <td class="metric-gap" width="12" style="width:12px;font-size:0;line-height:0;">&nbsp;</td>
-                  <td class="metric-cell" width="49%" valign="top" style="width:49%;padding:15px 18px;background-color:#f0edf0;border:1px solid #e4dfe5;border-radius:16px;">
-                    <div style="color:#857b87;font-size:11px;font-weight:bold;">ДАТА И ВРЕМЯ</div>
-                    <div style="padding-top:7px;color:#625b66;font-size:12px;font-weight:bold;line-height:1.5;">{{occurred_at}}</div>
+                  <td class="metric-cell" width="49%" valign="top" style="width:49%;padding:15px 18px;background-color:#0f1726;border:1px solid rgba(148,163,184,0.18);border-radius:16px;">
+                    <div style="color:#8a9bb4;font-size:11px;font-weight:bold;">ДАТА И ВРЕМЯ</div>
+                    <div style="padding-top:7px;color:#e6edf7;font-size:12px;font-weight:bold;line-height:1.5;">{{occurred_at}}</div>
                   </td>
                 </tr>
               </table>
@@ -109,11 +109,11 @@
           </tr>
           <tr>
             <td class="email-gutter" style="padding:0 32px 24px;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#edf3f7;border-radius:16px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#0f1726;border-radius:16px;border:1px solid rgba(148,163,184,0.18);">
                 <tr>
                   <td style="padding:16px 19px;">
-                    <div style="color:#738596;font-size:11px;font-weight:bold;">КОРОТКОЕ ОПИСАНИЕ</div>
-                    <div style="padding-top:7px;color:#536879;font-size:13px;line-height:1.6;">{{description}}</div>
+                    <div style="color:#5eead4;font-size:11px;font-weight:bold;">КОРОТКОЕ ОПИСАНИЕ</div>
+                    <div style="padding-top:7px;color:#8a9bb4;font-size:13px;line-height:1.6;">{{description}}</div>
                   </td>
                 </tr>
               </table>
@@ -121,7 +121,7 @@
           </tr>
           {{platform_button}}
           <tr>
-            <td class="email-gutter" style="padding:17px 32px;background-color:#eaf3ef;color:#718780;font-size:11px;line-height:1.6;">
+            <td class="email-gutter" style="padding:17px 32px;background-color:#080d17;color:#64748b;font-size:11px;line-height:1.6;border-top:1px solid rgba(148,163,184,0.14);">
               Автоматическое уведомление {{platform_name}}. Пожалуйста, не отвечайте на это письмо.
             </td>
           </tr>

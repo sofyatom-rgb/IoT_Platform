@@ -110,10 +110,19 @@ const mockApi = {
     await pause();
     db.rules = db.rules.filter((rule) => rule.rule_id !== ruleId);
   },
+  async resetNotificationCooldown(_deviceId: number) {
+    await pause();
+  },
   async updateUser(user: User, patch: Partial<User>) {
     await pause();
     Object.assign(user, patch);
     return clean(user);
+  },
+  async deleteUser(_userId: number) {
+    await pause();
+  },
+  async sendEmailAlert(_email: string) {
+    await pause();
   },
   async testEmail(_email: string) {
     await pause();
