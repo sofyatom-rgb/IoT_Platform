@@ -113,3 +113,15 @@ CREATE TABLE IF NOT EXISTS telemetry (
 ALTER TABLE telemetry
     ALTER COLUMN time
     SET DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC');
+
+-- Синхронизируем sequence с данными, чтобы ручные INSERT не ломали автоинкремент.
+SELECT setval(pg_get_serial_sequence('users', 'id'),
+              GREATEST(COALESCE((SELECT MAX(id) FROM users), 1), 1));
+SELECT setval(pg_get_serial_sequence('user_status', 'id'),
+              GREATEST(COALESCE((SELECT MAX(id) FROM user_status), 1), 1));
+SELECT setval(pg_get_serial_sequence('devices', 'id'),
+              GREATEST(COALESCE((SELECT MAX(id) FROM devices), 1), 1));
+SELECT setval(pg_get_serial_sequence('rules', 'rule_id'),
+              GREATEST(COALESCE((SELECT MAX(rule_id) FROM rules), 1), 1));
+SELECT setval(pg_get_serial_sequence('telemetry', 'id'),
+              GREATEST(COALESCE((SELECT MAX(id) FROM telemetry), 1), 1));
