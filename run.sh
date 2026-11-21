@@ -18,6 +18,9 @@ until docker compose exec -T postgres pg_isready -U postgres -d iot_platform >/d
 done
 sleep 3
 
+# Гарантируем, что схема создана даже если БД была очищена вручную.
+docker compose run --rm db-init
+
 # Переменные окружения нужны всем сервисам, поэтому грузим их до запуска.
 if [ -f .env ]; then
   set -a
