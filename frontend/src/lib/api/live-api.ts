@@ -139,11 +139,26 @@ export const liveApi = {
   async deleteUser(userId: number): Promise<void> { await request(core, '/users', { method: 'DELETE', body: JSON.stringify({ user_id: userId }) }); clearSession(); },
   async sendEmailAlert(email: string): Promise<void> { await request(notifications, '/notifications/email', { method: 'POST', body: JSON.stringify({ email, event_type: 'Тестовый алерт', sensor_name: 'Тестовый датчик', sensor_id: '1', reading_value: '31.5 °C', threshold: '30.0 °C', location: 'Тестовый стенд', severity: 'WARNING', description: 'Тестовое уведомление, отправленное из интерфейса.' }) }); },
   async rules(deviceId?: number): Promise<Rule[]> {
-    if (deviceId) return request<Rule[]>(rulesBase, `/rules?device_id=${deviceId}`);
-    // Rule Engine exposes rules per device. Fetch every device visible to the
-    // current owner so the rules screen and dashboard stay complete.
+    // Rule Engine returns rules without device_id (it lives in device_to_rule),
+    // so attach it from the device whose rules we requested. Otherwise the UI
+    // filters/color themes get `undefined` and the page crashes.
+    const normalize = (rows: Record<string, unknown>[], ownerId: number): Rule[] =>
+      rows.map(row => ({
+        rule_id: Number(row.rule_id),
+        device_id: ownerId,
+        operator: String(row.operator) as Rule['operator'],
+        value: Number(row.value),
+      })).filter(rule => Number.isInteger(rule.rule_id) && Number.isFinite(rule.value));
+
+    if (deviceId) {
+      const rows = await request<Record<string, unknown>[]>(rulesBase, `/rules?device_id=${deviceId}`);
+      return normalize(rows, deviceId);
+    }
     const devices = await this.devices();
-    const groups = await Promise.all(devices.map(device => request<Rule[]>(rulesBase, `/rules?device_id=${device.id}`)));
+    const groups = await Promise.all(devices.map(async device => {
+      const rows = await request<Record<string, unknown>[]>(rulesBase, `/rules?device_id=${device.id}`);
+      return normalize(rows, device.id);
+    }));
     return groups.flat();
   },
   async saveRule(data: Omit<Rule, 'rule_id'>, existing?: Rule): Promise<Rule> { if (existing) { await request(rulesBase, `/rules/${existing.rule_id}`, { method: 'PUT', body: JSON.stringify(data) }); return { ...existing, ...data }; } const result = await request<Record<string, unknown>>(rulesBase, '/rules', { method: 'POST', body: JSON.stringify(data) }); return { ...data, rule_id: Number(result.rule_id) }; },

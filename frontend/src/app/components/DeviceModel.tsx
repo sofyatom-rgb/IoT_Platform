@@ -24,6 +24,7 @@ const themes: DeviceTheme[] = [
  * получают разные, но всегда сочетающиеся с тёмной темой оттенки.
  */
 export function deviceTheme(id: number): DeviceTheme {
+  if (!Number.isInteger(id) || !Number.isFinite(id)) return themes[0];
   return themes[Math.abs(id - 1) % themes.length];
 }
 

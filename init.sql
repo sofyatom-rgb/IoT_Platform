@@ -117,13 +117,14 @@ ALTER TABLE telemetry
     SET DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC');
 
 -- Синхронизируем sequence с данными, чтобы ручные INSERT не ломали автоинкремент.
+-- Для пустой таблицы следующий id должен быть 1 (is_called = false).
 SELECT setval(pg_get_serial_sequence('users', 'id'),
-              GREATEST(COALESCE((SELECT MAX(id) FROM users), 1), 1));
+              COALESCE((SELECT MAX(id) FROM users), 1), EXISTS(SELECT 1 FROM users));
 SELECT setval(pg_get_serial_sequence('user_status', 'id'),
-              GREATEST(COALESCE((SELECT MAX(id) FROM user_status), 1), 1));
+              COALESCE((SELECT MAX(id) FROM user_status), 1), EXISTS(SELECT 1 FROM user_status));
 SELECT setval(pg_get_serial_sequence('devices', 'id'),
-              GREATEST(COALESCE((SELECT MAX(id) FROM devices), 1), 1));
+              COALESCE((SELECT MAX(id) FROM devices), 1), EXISTS(SELECT 1 FROM devices));
 SELECT setval(pg_get_serial_sequence('rules', 'rule_id'),
-              GREATEST(COALESCE((SELECT MAX(rule_id) FROM rules), 1), 1));
+              COALESCE((SELECT MAX(rule_id) FROM rules), 1), EXISTS(SELECT 1 FROM rules));
 SELECT setval(pg_get_serial_sequence('telemetry', 'id'),
-              GREATEST(COALESCE((SELECT MAX(id) FROM telemetry), 1), 1));
+              COALESCE((SELECT MAX(id) FROM telemetry), 1), EXISTS(SELECT 1 FROM telemetry));
