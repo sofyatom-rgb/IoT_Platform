@@ -22,6 +22,30 @@
 #include "users/services/UsersService.h"
 
 namespace {
+void loadDotEnv(const std::filesystem::path &path) {
+  std::ifstream input(path);
+  if (!input) return;
+  std::string line;
+  while (std::getline(input, line)) {
+    if (line.rfind("export ", 0) == 0) line.erase(0, 7);
+    if (line.empty() || line[0] == '#') continue;
+    const auto equal = line.find('=');
+    if (equal == std::string::npos) continue;
+    std::string key = line.substr(0, equal);
+    std::string value = line.substr(equal + 1);
+    while (!key.empty() && (key.front() == ' ' || key.front() == '\t')) key.erase(0, 1);
+    while (!key.empty() && (key.back() == ' ' || key.back() == '\t')) key.pop_back();
+    if (!value.empty() && (value.front() == '\'' || value.front() == '"')) {
+      const char quote = value.front();
+      value.erase(0, 1);
+      if (!value.empty() && value.back() == quote) value.pop_back();
+    }
+    if (!key.empty() && std::getenv(key.c_str()) == nullptr) {
+      setenv(key.c_str(), value.c_str(), 1);
+    }
+  }
+}
+
 Json::Value readConfig(const std::filesystem::path &path) {
   std::ifstream input(path);
   if (!input) {
@@ -51,6 +75,10 @@ std::string quoteConnectionValue(const std::string &value) {
 }  // namespace
 
 int main(int, char *argv[]) {
+  loadDotEnv(".env");
+  loadDotEnv(
+      std::filesystem::absolute(argv[0]).parent_path().parent_path().parent_path() / ".env");
+
   const char *pepper = std::getenv("PASSWORD_PEPPER");
   if (!pepper || std::string(pepper).empty()) {
     std::cerr << "PASSWORD_PEPPER is not set\n";
