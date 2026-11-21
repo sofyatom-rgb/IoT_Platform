@@ -2,11 +2,12 @@
 
 IoT Platform — учебный backend для регистрации пользователей и устройств, приёма температурных показаний, чтения телеметрии и отправки уведомлений в Telegram. Сервисы написаны на C++ с Drogon, данные хранятся в PostgreSQL.
 
-В проекте есть три HTTP-сервиса:
+В проекте есть четыре компонента с HTTP API:
 
 1. **IoT Core** — основной сервис и единственный компонент, который работает с PostgreSQL. Адрес по умолчанию: `http://localhost:8080`.
 2. **HTTP Adapter** — дополнительный HTTP-вход для интеграций и IoT-клиентов. Адрес по умолчанию: `http://localhost:8081`. Он принимает телеметрию и проксирует запросы к IoT Core.
 3. **Notification Service** — внутренний HTTP-сервис, принимающий события от Core и отправляющий сообщения через Telegram Bot API. Адрес по умолчанию: `http://localhost:8082`.
+4. **Rule Engine** — сервис управления температурными правилами и отправки уведомлений при их нарушении. Адрес по умолчанию: `http://localhost:8083`.
 
 ## Содержание
 
@@ -14,6 +15,7 @@ IoT Platform — учебный backend для регистрации польз
 - [Поток данных](#поток-данных)
 - [Требования](#требования)
 - [Сборка](#сборка)
+- [Unit-тесты](#unit-тесты)
 - [Запуск и автоматическая инициализация базы](#запуск-и-автоматическая-инициализация-базы)
 - [Общий сценарий использования](#общий-сценарий-использования)
 - [HTTP API](#http-api)
@@ -62,6 +64,15 @@ IoT_Platform/
 │           └── repositories/
 │               └── DevicesRepository.cpp # SQL для таблицы devices
 │
+├── rule_engine/                     # Сервис температурных правил
+│   ├── CMakeLists.txt
+│   ├── config/config.json           # Порт и адрес Notification Service
+│   └── src/
+│       ├── controllers/             # HTTP-маршруты правил
+│       ├── services/                # Проверка показаний по правилам
+│       ├── repositories/            # SQL для rules и device_to_rule
+│       └── clients/                 # Вызовы Notification Service
+│
 ├── http_adapter/                     # HTTP-шлюз к IoT Core
 │   ├── CMakeLists.txt                # Цель сборки http_adapter и копирование конфига
 │   └── src/
@@ -100,6 +111,7 @@ IoT_Platform/
 - **Repository** выполняет SQL-запросы через Drogon ORM.
 - В Adapter контроллер вызывает сервис, сервис использует HTTP-клиент, а HTTP-клиент обращается к Core.
 - Core вызывает Notification Service через `NotificationServiceClient`; его контроллер вызывает сервис уведомлений, а тот — Telegram Bot API через `TelegramBotClient`.
+- `NotificationService` зависит только от `ITelegramBotClient`. Реальный `TelegramBotClient` создаётся в `main.cpp`, а в тестах зависимость подменяется моками FakeIt.
 
 В Core данные из SQL привязываются параметрами (`$1`, `$2`, …), а не подставляются конкатенацией в SQL-строку.
 
@@ -156,6 +168,9 @@ IoT-устройство / curl / клиентское приложение
 - CMake версии 3.16 или новее;
 - C++-компилятор с поддержкой C++26;
 - установленный Drogon и его зависимости;
+- OpenSSL и JsonCpp development-пакеты для шифрования и JSON;
+- PostgreSQL для запуска приложения и отдельных integration-тестов;
+- переменная окружения `PASSWORD_PEPPER` для запуска IoT Core;
 - Docker и Docker Compose plugin;
 - `curl` для примеров ниже (необязательно, можно использовать любой HTTP-клиент).
 
@@ -163,30 +178,207 @@ IoT-устройство / curl / клиентское приложение
 
 ## Сборка
 
-Команды выполняются из корня репозитория:
+Команды выполняются из корня репозитория. Для сборки только приложений, без тестовых
+целей:
 
 ```sh
-cmake -S . -B build
-cmake --build build
+cmake -S . -B build -DBUILD_APPLICATION=ON -DBUILD_TESTING=OFF
+cmake --build build -j"$(nproc)"
 ```
 
-CMake собирает две цели:
+CMake собирает четыре приложения: `iot_core`, `http_adapter`,
+`notification_service` и `rule_engine`. Бинарники и копии конфигурационных файлов
+создаются в `build/bin/`.
 
-- `iot_core`;
-- `http_adapter`.
-
-Бинарники и копии конфигурационных файлов создаются в `build/bin/`. После изменения исходников пересоберите проект:
+Для пересборки после изменения исходников достаточно выполнить:
 
 ```sh
-cmake --build build
+cmake --build build -j"$(nproc)"
 ```
 
-Для чистой генерации файлов CMake можно указать другой пустой каталог, например `build-clean`:
+Для полной чистой пересборки удалите каталог сборки и создайте его заново:
 
 ```sh
-cmake -S . -B build-clean
-cmake --build build-clean
+rm -rf build
+cmake -S . -B build -DBUILD_APPLICATION=ON -DBUILD_TESTING=OFF
+cmake --build build -j"$(nproc)"
 ```
+
+### Сборка только тестов без Drogon
+
+Этот режим подходит для быстрой проверки сервисов, клиентов, валидации и связок
+компонентов. В нём не собираются приложения, контроллеры Drogon, настоящий HTTP-транспорт
+и тесты PostgreSQL:
+
+```sh
+cmake -S . -B build-tests \
+  -DBUILD_APPLICATION=OFF \
+  -DBUILD_TESTING=ON \
+  -DBUILD_CODEC_TESTING=OFF \
+  -DBUILD_CONTROLLER_TESTING=OFF \
+  -DBUILD_POSTGRES_INTEGRATION_TESTING=OFF \
+  -DBUILD_TRANSPORT_INTEGRATION_TESTING=OFF
+cmake --build build-tests -j"$(nproc)"
+ctest --test-dir build-tests --output-on-failure
+```
+
+В этой конфигурации запускаются 53 сценария. Если установлены OpenSSL и JsonCpp,
+можно включить ещё четыре проверки кодирования и декодирования, установив
+`-DBUILD_CODEC_TESTING=ON`.
+
+### Сборка приложения и тестов без отдельной тестовой БД
+
+На машине с Drogon, OpenSSL и JsonCpp можно собрать приложения, модульные тесты
+контроллеров и тесты настоящего HTTP-транспорта:
+
+```sh
+cmake -S . -B build-all \
+  -DBUILD_APPLICATION=ON \
+  -DBUILD_TESTING=ON \
+  -DBUILD_CODEC_TESTING=ON \
+  -DBUILD_CONTROLLER_TESTING=ON \
+  -DBUILD_TRANSPORT_INTEGRATION_TESTING=ON \
+  -DBUILD_POSTGRES_INTEGRATION_TESTING=OFF
+cmake --build build-all -j"$(nproc)"
+ctest --test-dir build-all --output-on-failure
+```
+
+Эта конфигурация содержит 105 сценариев. 40 тестов контроллеров создают запросы Drogon
+напрямую и подменяют сервисы через FakeIt; отдельный сервер и PostgreSQL им не нужны.
+Восемь тестов `drogon_transport_integration_tests` проверяют реальный HTTP-транспорт
+через локальный TCP-сервер.
+
+### Полный набор, включая PostgreSQL
+
+Ещё восемь сценариев проверяют реальные SQL-репозитории. Они намеренно работают с
+PostgreSQL, а не с FakeIt: иначе это были бы unit-тесты репозиториев, а не проверка SQL,
+ограничений и внешних ключей. Для них нужна отдельная тестовая база.
+
+Сначала запустите PostgreSQL из Compose:
+
+```sh
+docker compose up -d postgres
+```
+
+Создайте отдельную БД и примените к ней схему:
+
+```sh
+docker compose exec postgres psql -U postgres -d postgres \
+  -c "CREATE DATABASE iot_platform_test;"
+docker compose exec -T postgres psql -U postgres -d iot_platform_test \
+  -v ON_ERROR_STOP=1 < init.sql
+```
+
+Соберите набор с PostgreSQL-тестами:
+
+```sh
+cmake -S . -B build-all \
+  -DBUILD_APPLICATION=ON \
+  -DBUILD_TESTING=ON \
+  -DBUILD_CODEC_TESTING=ON \
+  -DBUILD_CONTROLLER_TESTING=ON \
+  -DBUILD_TRANSPORT_INTEGRATION_TESTING=ON \
+  -DBUILD_POSTGRES_INTEGRATION_TESTING=ON
+cmake --build build-all -j"$(nproc)"
+```
+
+Запустите весь набор, передав строку подключения к тестовой БД:
+
+```sh
+IOT_TEST_DATABASE_URL='host=127.0.0.1 port=5433 dbname=iot_platform_test user=postgres password=postgres' \
+  ctest --test-dir build-all --output-on-failure
+```
+
+При успешном выполнении все 113 тестовых сценариев должны пройти. Тесты БД используют
+уникальные email и удаляют созданные записи после проверки.
+
+### Запуск отдельных наборов
+
+CTest регистрирует не каждый `TEST_CASE`, а исполняемые файлы. Поэтому строка
+`100% tests passed, 0 tests failed out of N` считает наборы, а не сценарии внутри них.
+Внутри каждого набора `TestFramework` печатает отдельный `[PASS]` и итог `Test summary`.
+Успешные сценарии окрашиваются зелёным, ошибки — красным. Чтобы видеть вывод каждого
+сценария, используй `ctest --verbose`: обычный `ctest --output-on-failure` скрывает вывод
+успешных наборов. Для CTest цвета принудительно включаются через `FORCE_COLOR=1`.
+
+Полезные команды:
+
+```sh
+# Показать зарегистрированные CTest-наборы
+ctest --test-dir build-all -N
+
+# Показать каждый сценарий: [PASS] будет зелёным, [FAIL] — красным
+ctest --test-dir build-all --verbose
+
+# Запустить один набор напрямую — цвет определяется по терминалу
+./build-all/tests/service_unit_tests
+
+# Принудительно включить цвета, например при перенаправлении вывода
+FORCE_COLOR=1 ./build-all/tests/service_unit_tests
+
+# Отключить цвета
+NO_COLOR=1 ctest --test-dir build-all --verbose
+
+# Повторить только клиентские тесты
+ctest --test-dir build-all -R client_unit_tests --output-on-failure
+
+# Повторить только тесты контроллеров
+ctest --test-dir build-all -R controller_unit_tests --output-on-failure
+
+# Собрать только один исполняемый файл
+cmake --build build-all --target client_unit_tests -j"$(nproc)"
+
+# Запустить его напрямую — он выведет каждый TEST_CASE
+./build-all/tests/client_unit_tests
+```
+
+### Какие сценарии входят в полный набор
+
+| Набор | Сценарии | Что проверяется |
+|---|---:|---|
+| `service_unit_tests` | 22 | Сервисы пользователей, устройств, телеметрии, адаптера и уведомлений |
+| `client_unit_tests` | 14 | IoT Core, Notification Service и Telegram HTTP-клиенты с FakeIt-транспортом |
+| `controller_unit_tests` | 40 | HTTP-обработчики и ответы контроллеров с FakeIt-моками сервисов |
+| `controller_validation_tests` | 9 | Проверка ID и входных полей без Drogon |
+| `adapter_pipeline_tests` | 2 | Настоящий AdapterService и IoTClient с FakeIt HTTP-транспортом |
+| `telemetry_notification_pipeline_tests` | 2 | Цепочка сохранения телеметрии и отправки уведомления с FakeIt-зависимостями |
+| `codec_primitive_tests` | 4 | Base64 и CRC32 без сторонних библиотек |
+| `codec_unit_tests` | 4 | Шифрование, дешифрование, IV, checksum и некорректные конверты |
+| `drogon_transport_integration_tests` | 8 | Настоящие HTTP-запросы через Drogon и локальный TCP-сервер |
+| `repository_integration_tests` | 8 | Настоящие запросы PostgreSQL, CRUD, ограничения и каскадное удаление |
+| **Всего** | **113** | |
+
+### Как применяется FakeIt
+
+FakeIt уже находится в `tests/third_party/fakeit` — отдельно устанавливать его не нужно.
+В unit- и component-тестах нет самописных классов, которые вручную реализуют
+`IUsersRepository`, `IDevicesRepository`, `ITelemetryRepository`, сервисы или HTTP-порты.
+Для подмены используются объекты `fakeit::Mock<Интерфейс>`:
+
+```cpp
+auto repositoryMock = std::make_shared<fakeit::Mock<IUsersRepository>>();
+auto repository = test::sharedMock(repositoryMock);
+
+fakeit::When(Method(*repositoryMock, save))
+    .Do([](const std::string &, const std::string &, const std::string &,
+           const std::string &, std::function<void(int)> success,
+           std::function<void(const std::string &)>) {
+      success(42);
+    });
+
+// После вызова сервиса проверяем, что репозиторий вызван один раз.
+fakeit::Verify(Method(*repositoryMock, save)).Once();
+```
+
+`test::sharedMock` из `tests/TestSupport.h` только передаёт FakeIt-мок через
+`shared_ptr`, сохраняя время его жизни. Для HTTP-клиентов есть `HttpTransportMock`:
+это небольшая обёртка **над FakeIt**, которая запоминает запросы и возвращает
+настраиваемый ответ. Сам мок `IHttpTransport` создаётся внутри неё через
+`fakeit::Mock<IHttpTransport>`; отдельной ручной реализации транспорта нет.
+
+Настоящие PostgreSQL и Drogon transport tests остаются интеграционными: в них проверяется
+поведение с реальной БД и реальным сокетом. Подменять эти части FakeIt означало бы
+потерять смысл таких проверок.
 
 ## Запуск и автоматическая инициализация базы
 
@@ -601,10 +793,11 @@ docker compose exec -T postgres psql -U postgres -d iot_platform \
 
 ```text
 users
-  id          SERIAL, первичный ключ
-  email       TEXT, уникальный и обязательный
-  password    TEXT, обязательный
-  name        TEXT
+  id            SERIAL, первичный ключ
+  email         TEXT, уникальный и обязательный
+  password_hash TEXT, хеш пароля
+  salt          TEXT, соль для хеширования
+  name          TEXT
       │
       │ users.id ← devices.owner_id (ON DELETE CASCADE)
       ▼
@@ -704,7 +897,7 @@ docker compose exec -T postgres psql -U postgres -d iot_platform \
 - Notification Service не использует внутренний токен и слушает только `127.0.0.1`. Если сервисы будут размещены на разных машинах или endpoint станет доступен из сети, добавьте аутентификацию и защищённый канал связи до публикации.
 - Telegram-уведомления отправляются только если пользователь заранее начал диалог с ботом и у него задан `telegram_chat_id`.
 - Отправка выполняется синхронным по смыслу HTTP-вызовом после записи телеметрии; устойчивой очереди и автоматических повторов пока нет.
-- Пароль пользователя сохраняется в PostgreSQL как обычный текст. Не отправляйте реальные пароли и не используйте эту схему в production без безопасного хеширования.
+- Пароль перед сохранением хешируется через PBKDF2-HMAC-SHA256 с уникальной солью и секретным `PASSWORD_PEPPER`. Для развёртывания задайте сильный pepper через переменную окружения и не храните его в репозитории.
 - Настройки PostgreSQL в Compose (`postgres` / `postgres`) — локальные демонстрационные значения.
 - Список пользователей и устройств через HTTP не выдаётся; для просмотра используйте PostgreSQL.
 - Чтение телеметрии возвращает не более 10 последних записей.

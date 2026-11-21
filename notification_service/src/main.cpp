@@ -3,12 +3,14 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <utility>
 
 #include "clients/TelegramBotClient.h"
 #include "controllers/NotificationController.h"
 
+/// Запускает сервис Telegram-уведомлений.
 int main(int, char *argv[]) {
   const char *telegramBotToken = std::getenv("TELEGRAM_BOT_TOKEN");
   if (!telegramBotToken || std::string(telegramBotToken).empty()) {
@@ -19,7 +21,8 @@ int main(int, char *argv[]) {
   const auto configPath = std::filesystem::absolute(argv[0]).parent_path() /
                           "NotificationHTTPConfig.json";
   drogon::app().loadConfigFile(configPath.string());
-  NotificationService notificationService{TelegramBotClient{telegramBotToken}};
+  NotificationService notificationService{
+      std::make_shared<TelegramBotClient>(telegramBotToken)};
   NotificationController controller(std::move(notificationService));
   controller.registerRoutes();
 

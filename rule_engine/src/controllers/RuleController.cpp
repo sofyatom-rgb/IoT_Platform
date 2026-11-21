@@ -6,7 +6,7 @@ namespace {
 
 using Callback = std::function<void(const drogon::HttpResponsePtr &)>;
 
-// Собирает JSON-ответ с нужным HTTP-статусом
+// Отправляет JSON-ответ с указанным HTTP-статусом.
 void reply(const Callback &cb, drogon::HttpStatusCode code,
            const Json::Value &body) {
   auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
@@ -14,6 +14,7 @@ void reply(const Callback &cb, drogon::HttpStatusCode code,
   cb(resp);
 }
 
+// Формирует JSON с описанием ошибки.
 Json::Value errorJson(const std::string &msg) {
   Json::Value j;
   j["status"] = "error";
@@ -21,12 +22,13 @@ Json::Value errorJson(const std::string &msg) {
   return j;
 }
 
-// Ошибки БД логируем у себя, клиенту отдаём общий текст
+// Записывает ошибку БД в лог и возвращает клиенту общий ответ.
 void replyDbError(const Callback &cb, const std::string &msg) {
   LOG_ERROR << "DB error: " << msg;
   reply(cb, drogon::k500InternalServerError, errorJson("internal error"));
 }
 
+// Преобразует правило в JSON для HTTP-ответа.
 Json::Value ruleToJson(const Rule &r) {
   Json::Value j;
   j["rule_id"] = r.rule_id;
@@ -35,14 +37,12 @@ Json::Value ruleToJson(const Rule &r) {
   return j;
 }
 
+/// Проверяет, поддерживается ли оператор сравнения.
 bool validOperator(const std::string &op) {
   return op == ">" || op == "<" || op == "=" || op == "!=";
 }
 
 }  // namespace
-
-// RuleController::RuleController(std::string notificationUrl)
-//     : notificationUrl_(std::move(notificationUrl)) {}
 
 void RuleController::registerRoutes() {
   auto makeService = []() {

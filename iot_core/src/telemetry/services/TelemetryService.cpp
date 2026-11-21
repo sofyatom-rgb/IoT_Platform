@@ -1,95 +1,85 @@
 #include "telemetry/services/TelemetryService.h"
 
-#include <drogon/drogon.h>
-
-#include <memory>
+#include <stdexcept>
 #include <utility>
 
-#include "devices/services/DevicesService.h"
-#include "users/services/UsersService.h"
-
-namespace {
-void logNotificationError(const std::string &error) {
-  LOG_ERROR << "Could not send temperature notification: " << error;
+TelemetryService::TelemetryService(
+    std::shared_ptr<ITelemetryRepository> repository)
+    : repository_(std::move(repository)), temperatureThreshold_(0.0) {
+  if (!repository_) {
+    throw std::invalid_argument("TelemetryService requires a repository");
+  }
 }
-}  // namespace
-
-TelemetryService::TelemetryService(drogon::orm::DbClientPtr db)
-    : db_(db),
-      repository_(std::move(db)),
-      temperatureThreshold_(0.0),
-      notificationClient_("") {}
 
 TelemetryService::TelemetryService(
-    drogon::orm::DbClientPtr db,
-    double temperatureThreshold,
-    NotificationServiceClient notificationClient)
-    : db_(db),
-      repository_(std::move(db)),
-      temperatureThreshold_(temperatureThreshold),
-      notificationClient_(std::move(notificationClient)) {}
+    std::shared_ptr<ITelemetryRepository> repository,
+    std::shared_ptr<IDevicesService> devicesService,
+    std::shared_ptr<IUsersService> usersService,
+    std::shared_ptr<INotificationServiceClient> notificationClient,
+    double temperatureThreshold)
+    : repository_(std::move(repository)),
+      devicesService_(std::move(devicesService)),
+      usersService_(std::move(usersService)),
+      notificationClient_(std::move(notificationClient)),
+      temperatureThreshold_(temperatureThreshold) {
+  if (!repository_ || !devicesService_ || !usersService_ || !notificationClient_) {
+    throw std::invalid_argument("TelemetryService requires all dependencies");
+  }
+}
 
 void TelemetryService::save(
-    int deviceId,
-    double temperature,
+    int deviceId, double temperature,
     std::function<void(const std::string &)> success,
     std::function<void(const std::string &)> error) const {
-  const auto db = db_;
+  if (!devicesService_ || !usersService_ || !notificationClient_) {
+    if (error) error("TelemetryService notification dependencies are not configured");
+    return;
+  }
+
   const auto threshold = temperatureThreshold_;
+  const auto devicesService = devicesService_;
+  const auto usersService = usersService_;
   const auto notificationClient = notificationClient_;
   auto finishSuccess =
       std::make_shared<std::function<void(const std::string &)>>(std::move(success));
-  repository_.save(
+
+  repository_->save(
       deviceId, temperature,
-      [db, deviceId, temperature, threshold, notificationClient,
-       finishSuccess]() {
-        LOG_INFO << "Saved telemetry for device " << deviceId
-                 << " with temperature " << temperature
-                 << " (notification threshold " << threshold << ")";
+      [deviceId, temperature, threshold, devicesService, usersService,
+       notificationClient, finishSuccess]() {
         if (temperature <= threshold) {
           (*finishSuccess)("not_required");
           return;
         }
 
-        DevicesService devices(db);
-        devices.getNotificationInfo(
-            deviceId, [db, temperature, threshold, notificationClient,
-                       finishSuccess](
-                int ownerId, const std::string &deviceName) {
-              LOG_INFO << "Temperature threshold exceeded for device; "
-                          "resolved owner";
-              UsersService users(db);
-              users.getTelegramChatId(
-                  ownerId, [temperature, threshold, notificationClient,
-                            deviceName, finishSuccess](
-                      const std::string &chatId) {
+        devicesService->getNotificationInfo(
+            deviceId,
+            [temperature, threshold, usersService, notificationClient,
+             finishSuccess](int ownerId, const std::string &deviceName) {
+              usersService->getTelegramChatId(
+                  ownerId,
+                  [temperature, threshold, notificationClient, deviceName,
+                   finishSuccess](const std::string &chatId) {
                     if (chatId.empty()) {
-                      LOG_WARN << "Temperature threshold exceeded, but user "
-                                  "has no Telegram chat ID";
                       (*finishSuccess)("no_chat_id");
                       return;
                     }
 
-                    notificationClient.sendTemperatureAlert(
+                    notificationClient->sendTemperatureAlert(
                         chatId, deviceName, temperature, threshold,
                         [finishSuccess]() {
-                          LOG_INFO << "Temperature notification accepted by "
-                                      "notification service";
                           (*finishSuccess)("sent");
                         },
                         [finishSuccess](const std::string &notificationError) {
-                          logNotificationError(notificationError);
                           (*finishSuccess)("delivery_failed: " +
                                            notificationError);
                         });
                   },
                   [finishSuccess](const std::string &lookupError) {
-                    logNotificationError(lookupError);
                     (*finishSuccess)("user_lookup_failed: " + lookupError);
                   });
             },
             [finishSuccess](const std::string &lookupError) {
-              logNotificationError(lookupError);
               (*finishSuccess)("device_lookup_failed: " + lookupError);
             });
       },
@@ -97,15 +87,13 @@ void TelemetryService::save(
 }
 
 void TelemetryService::getByDeviceId(
-    int deviceId,
-    std::function<void(const std::string &)> success,
+    int deviceId, std::function<void(const std::string &)> success,
     std::function<void(const std::string &)> error) const {
-  repository_.getByDeviceId(deviceId, std::move(success), std::move(error));
+  repository_->getByDeviceId(deviceId, std::move(success), std::move(error));
 }
 
 void TelemetryService::deleteByDeviceId(
-    int deviceId,
-    std::function<void()> success,
+    int deviceId, std::function<void()> success,
     std::function<void(const std::string &)> error) const {
-  repository_.deleteByDeviceId(deviceId, std::move(success), std::move(error));
+  repository_->deleteByDeviceId(deviceId, std::move(success), std::move(error));
 }

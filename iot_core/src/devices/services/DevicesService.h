@@ -1,41 +1,46 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <string>
 
-#include "devices/repositories/DevicesRepository.h"
+#include "devices/repositories/IDevicesRepository.h"
+#include "devices/services/IDevicesService.h"
 
-// Сервисный слой устройств.
-class DevicesService {
+namespace drogon::orm { class DbClient; }
+
+/// Сервис операций с устройствами; SQL выполняет репозиторий.
+class DevicesService : public IDevicesService {
  public:
-  explicit DevicesService(drogon::orm::DbClientPtr db);
+  /// Создаёт сервис с PostgreSQL-репозиторием.
+  explicit DevicesService(std::shared_ptr<drogon::orm::DbClient> db);
 
-  void save(int ownerId,
-            const std::string &name,
-            const std::string &type,
+  /// Создаёт сервис с переданным репозиторием.
+  explicit DevicesService(std::shared_ptr<IDevicesRepository> repository);
+
+  /// Регистрирует устройство и возвращает ID новой записи.
+  void save(int ownerId, const std::string &name, const std::string &type,
             std::function<void(int)> success,
             std::function<void(const std::string &)> error) const;
 
-  void deleteById(int deviceId,
-                  std::function<void()> success,
+  /// Удаляет устройство.
+  void deleteById(int deviceId, std::function<void()> success,
                   std::function<void(const std::string &)> error) const;
 
+  /// Возвращает владельца и имя устройства для уведомления.
   void getNotificationInfo(
-      int deviceId,
-      std::function<void(int, const std::string &)> success,
-      std::function<void(const std::string &)> error) const;
+      int deviceId, std::function<void(int, const std::string &)> success,
+      std::function<void(const std::string &)> error) const override;
 
-  void updateById(int deviceId,
-                  int ownerId,
-                  const std::string &name,
-                  const std::string &type,
-                  std::function<void()> success,
+  /// Изменяет владельца и параметры устройства.
+  void updateById(int deviceId, int ownerId, const std::string &name,
+                  const std::string &type, std::function<void()> success,
                   std::function<void(const std::string &)> error) const;
 
-  void getById(int deviceId,
-               std::function<void(const std::string &)> success,
+  /// Возвращает данные устройства в JSON.
+  void getById(int deviceId, std::function<void(const std::string &)> success,
                std::function<void(const std::string &)> error) const;
 
  private:
-  DevicesRepository repository_;
+  std::shared_ptr<IDevicesRepository> repository_;
 };

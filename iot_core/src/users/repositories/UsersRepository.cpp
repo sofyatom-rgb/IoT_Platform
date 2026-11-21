@@ -1,5 +1,7 @@
 #include "users/repositories/UsersRepository.h"
 
+#include <drogon/drogon.h>
+
 #include <cstdlib>
 #include <stdexcept>
 #include <utility>

@@ -4,14 +4,14 @@
 
 namespace codec {
 
+/// Проверяет контрольную сумму и расшифровывает конверт AES-CBC.
 class Decoder {
  public:
+  /// Создаёт декодер с ключом AES-256.
   explicit Decoder(std::string key);
 
-  // Проверяет checksum и расшифровывает конверт.
-  // Возвращает true и заполняет plaintext, либо false и заполняет error.
-  bool decode(const std::string &envelopeJson,
-              std::string &plaintext,
+  /// Расшифровывает JSON-конверт; ошибку возвращает через error.
+  bool decode(const std::string &envelopeJson, std::string &plaintext,
               std::string &error) const;
 
  private:

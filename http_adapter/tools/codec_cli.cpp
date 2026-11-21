@@ -4,6 +4,7 @@
 #include "codec/Decoder.h"
 #include "codec/Encoder.h"
 
+/// Кодирует текст в JSON-конверт или расшифровывает такой конверт.
 int main(int argc, char *argv[]) {
   if (argc < 4) {
     std::cerr << "Usage:\n"

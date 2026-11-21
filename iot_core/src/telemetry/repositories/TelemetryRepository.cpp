@@ -1,5 +1,7 @@
 #include "telemetry/repositories/TelemetryRepository.h"
 
+#include <drogon/drogon.h>
+
 #include <utility>
 
 TelemetryRepository::TelemetryRepository(drogon::orm::DbClientPtr db)

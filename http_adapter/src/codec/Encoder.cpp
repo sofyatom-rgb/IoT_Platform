@@ -13,6 +13,7 @@
 namespace codec {
 namespace {
 
+/// Приводит ключ к длине, требуемой AES-256.
 std::string normalizeKey(const std::string &key) {
   std::string k = key;
   if (k.size() < 32) k.resize(32, '\0');

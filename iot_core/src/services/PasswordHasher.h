@@ -2,18 +2,19 @@
 
 #include <string>
 
-// Хеширование паролей: PBKDF2-HMAC-SHA256 с солью и перцем.
+/// Хеширует пароли алгоритмом PBKDF2-HMAC-SHA256 с солью и pepper.
 class PasswordHasher {
  public:
+  /// Создаёт хешер с секретным pepper.
   explicit PasswordHasher(std::string pepper);
 
-  // Случайная соль (hex-строка), уникальная для каждого пользователя.
+  /// Генерирует случайную соль в шестнадцатеричном виде.
   static std::string generateSalt();
 
-  // Хеш (hex) от пароля, соли и перца.
+  /// Вычисляет хеш пароля с солью и секретным pepper.
   std::string hash(const std::string& password, const std::string& salt) const;
 
-  // Сравнивает пароль с сохранённым хешем за постоянное время.
+  /// Сравнивает пароль с сохранённым хешем за постоянное время.
   bool verify(const std::string& password, const std::string& salt,
               const std::string& expectedHash) const;
 

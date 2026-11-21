@@ -13,6 +13,7 @@ constexpr int kIterations = 600000;  // чем больше, тем медлен
 constexpr int kSaltBytes = 16;
 constexpr int kHashBytes = 32;
 
+/// Переводит байтовый массив в строчную шестнадцатеричную строку.
 std::string toHex(const unsigned char* data, size_t len) {
   static const char* digits = "0123456789abcdef";
   std::string out;

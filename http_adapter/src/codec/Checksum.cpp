@@ -5,6 +5,7 @@
 namespace codec {
 namespace {
 
+/// Готовит таблицу CRC32 для всех возможных байтов.
 std::array<std::uint32_t, 256> makeTable() {
   std::array<std::uint32_t, 256> t{};
   for (std::uint32_t i = 0; i < 256; ++i) {

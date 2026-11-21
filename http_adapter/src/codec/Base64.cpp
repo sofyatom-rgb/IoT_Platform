@@ -9,6 +9,7 @@ namespace {
 const char kAlphabet[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+// Создаёт таблицу преобразования символов Base64 в шестибитные значения.
 std::array<int8_t, 256> makeDecodeTable() {
   std::array<int8_t, 256> t{};
   t.fill(-1);
@@ -60,27 +61,54 @@ bool base64Decode(const std::string &text, std::string &out) {
   if (text.size() % 4 != 0) return false;
   out.reserve((text.size() / 4) * 3);
 
+  const auto invalid = [&out]() {
+    out.clear();
+    return false;
+  };
+
   for (std::size_t i = 0; i < text.size(); i += 4) {
-    int vals[4];
-    int pad = 0;
-    for (int j = 0; j < 4; ++j) {
-      const char c = text[i + j];
-      if (c == '=') {
-        vals[j] = 0;
-        ++pad;
-        if (j < 2) return false;  // '=' не может стоять в первых двух позициях
-      } else {
-        if (pad > 0) return false;  // символ после '='
-        const int8_t v = kDecodeTable[static_cast<unsigned char>(c)];
-        if (v < 0) return false;
-        vals[j] = v;
-      }
+    const bool isLastBlock = i + 4 == text.size();
+    const bool padThird = text[i + 2] == '=';
+    const bool padFourth = text[i + 3] == '=';
+
+    if (text[i] == '=' || text[i + 1] == '=' ||
+        (!isLastBlock && (padThird || padFourth)) ||
+        (padThird && !padFourth)) {
+      return invalid();
     }
-    const std::uint32_t v = (vals[0] << 18) | (vals[1] << 12) |
-                            (vals[2] << 6) | vals[3];
-    out.push_back(static_cast<char>((v >> 16) & 0xFF));
-    if (pad < 2) out.push_back(static_cast<char>((v >> 8) & 0xFF));
-    if (pad < 1) out.push_back(static_cast<char>(v & 0xFF));
+
+    const int8_t first = kDecodeTable[static_cast<unsigned char>(text[i])];
+    const int8_t second = kDecodeTable[static_cast<unsigned char>(text[i + 1])];
+    if (first < 0 || second < 0) return invalid();
+
+    int third = 0;
+    int fourth = 0;
+    if (!padThird) {
+      third = kDecodeTable[static_cast<unsigned char>(text[i + 2])];
+      if (third < 0) return invalid();
+    }
+    if (!padFourth) {
+      fourth = kDecodeTable[static_cast<unsigned char>(text[i + 3])];
+      if (fourth < 0) return invalid();
+    }
+
+    // Отбрасываем блоки с ненулевыми битами, скрытыми padding-символами.
+    if ((padThird && (second & 0x0F) != 0) ||
+        (padFourth && !padThird && (third & 0x03) != 0)) {
+      return invalid();
+    }
+
+    const std::uint32_t value =
+        (static_cast<std::uint32_t>(first) << 18) |
+        (static_cast<std::uint32_t>(second) << 12) |
+        (static_cast<std::uint32_t>(third) << 6) |
+        static_cast<std::uint32_t>(fourth);
+
+    out.push_back(static_cast<char>((value >> 16) & 0xFF));
+    if (!(padThird && padFourth)) {
+      out.push_back(static_cast<char>((value >> 8) & 0xFF));
+    }
+    if (!padThird && !padFourth) out.push_back(static_cast<char>(value & 0xFF));
   }
   return true;
 }

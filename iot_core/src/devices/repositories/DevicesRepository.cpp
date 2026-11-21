@@ -1,5 +1,7 @@
 #include "devices/repositories/DevicesRepository.h"
 
+#include <drogon/drogon.h>
+
 #include <utility>
 
 DevicesRepository::DevicesRepository(drogon::orm::DbClientPtr db)

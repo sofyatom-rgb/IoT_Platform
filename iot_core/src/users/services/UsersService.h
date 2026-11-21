@@ -1,43 +1,49 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <string>
 
-#include "users/repositories/UsersRepository.h"
+#include "users/repositories/IUsersRepository.h"
+#include "users/services/IUsersService.h"
 
-// Сервисный слой пользователей.
-class UsersService {
+namespace drogon::orm { class DbClient; }
+
+/// Сервис пользовательских операций; SQL выполняет репозиторий.
+class UsersService : public IUsersService {
  public:
-  explicit UsersService(drogon::orm::DbClientPtr db);
+  /// Создаёт сервис с PostgreSQL-репозиторием.
+  explicit UsersService(std::shared_ptr<drogon::orm::DbClient> db);
 
-  void save(const std::string &email,
-            const std::string &password,
-            const std::string &name,
-            const std::string &telegramChatId,
+  /// Создаёт сервис с переданным репозиторием.
+  explicit UsersService(std::shared_ptr<IUsersRepository> repository);
+
+  /// Регистрирует пользователя и возвращает ID новой записи.
+  void save(const std::string &email, const std::string &password,
+            const std::string &name, const std::string &telegramChatId,
             std::function<void(int)> success,
             std::function<void(const std::string &)> error) const;
 
-  void deleteById(int userId,
-                  std::function<void()> success,
+  /// Удаляет пользователя.
+  void deleteById(int userId, std::function<void()> success,
                   std::function<void(const std::string &)> error) const;
 
+  /// Возвращает Telegram chat ID пользователя.
   void getTelegramChatId(
-      int userId,
-      std::function<void(const std::string &)> success,
-      std::function<void(const std::string &)> error) const;
+      int userId, std::function<void(const std::string &)> success,
+      std::function<void(const std::string &)> error) const override;
 
-  void updateById(int userId,
-                  const std::string &email,
-                  const std::string &password,
-                  const std::string &name,
+  /// Обновляет данные пользователя.
+  void updateById(int userId, const std::string &email,
+                  const std::string &password, const std::string &name,
                   const std::string &telegramChatId,
                   std::function<void()> success,
                   std::function<void(const std::string &)> error) const;
 
-  void getById(int userId,
-               std::function<void(const std::string &)> success,
+  /// Возвращает данные пользователя в JSON.
+  void getById(int userId, std::function<void(const std::string &)> success,
                std::function<void(const std::string &)> error) const;
 
  private:
-  UsersRepository repository_;
+  std::shared_ptr<IUsersRepository> repository_;
 };
