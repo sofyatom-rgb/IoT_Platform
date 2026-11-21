@@ -1,10 +1,30 @@
 #include "users/controllers/UsersController.h"
 
 #include <cctype>
+#include <sstream>
 #include <string>
 #include <utility>
 
 namespace {
+using Callback = std::function<void(const drogon::HttpResponsePtr &)>;
+
+// Отправляет JSON-ошибку с нужным HTTP-статусом.
+void replyError(const Callback &cb, drogon::HttpStatusCode code,
+                const std::string &msg) {
+  Json::Value b;
+  b["status"] = "error";
+  b["message"] = msg;
+  auto r = drogon::HttpResponse::newHttpJsonResponse(b);
+  r->setStatusCode(code);
+  cb(r);
+}
+
+// Ошибку БД логируем, клиенту отдаём общий текст.
+void replyDbError(const Callback &cb, const std::string &error) {
+  LOG_ERROR << "DB error: " << error;
+  replyError(cb, drogon::k500InternalServerError, "internal error");
+}
+
 bool getTelegramChatId(const Json::Value &json, std::string &chatId) {
   if (!json.isMember("telegram_chat_id") || json["telegram_chat_id"].isNull()) {
     return true;
@@ -34,10 +54,21 @@ bool getTelegramChatId(const Json::Value &json, std::string &chatId) {
   }
   return true;
 }
+
+// Разбирает id из query-параметра; false, если это не число.
+bool parseId(const std::string &s, int &out) {
+  try {
+    std::size_t pos = 0;
+    out = std::stoi(s, &pos);
+    return pos == s.size();
+  } catch (...) {
+    return false;
+  }
+}
 }  // namespace
 
 void UsersController::registerRoutes() {
-  // POST /users -> создать пользователя.
+  // POST /users -> создать пользователя (без авторизации: это регистрация).
   drogon::app().registerHandler(
       "/users",
       [this](const drogon::HttpRequestPtr &request,
@@ -46,55 +77,55 @@ void UsersController::registerRoutes() {
       },
       {drogon::Post});
 
-  // DELETE /users with JSON {"user_id": X} -> удалить пользователя.
+  // DELETE /users -> удалить себя (id берётся из токена).
   drogon::app().registerHandler(
       "/users",
       [this](const drogon::HttpRequestPtr &request,
              std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
         deleteUser(request, std::move(callback));
       },
-      {drogon::Delete});
+      {drogon::Delete, "AuthFilter"});
 
-  // PUT /users?id=X -> обновить пользователя.
+  // PUT /users?id=X -> обновить себя.
   drogon::app().registerHandler(
       "/users",
       [this](const drogon::HttpRequestPtr &request,
              std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
         updateUser(request, std::move(callback));
       },
-      {drogon::Put});
+      {drogon::Put, "AuthFilter"});
 
-  // GET /users?id=X -> получить пользователя.
+  // GET /users?id=X -> получить себя.
   drogon::app().registerHandler(
       "/users",
       [this](const drogon::HttpRequestPtr &request,
              std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
         getUser(request, std::move(callback));
       },
-      {drogon::Get});
+      {drogon::Get, "AuthFilter"});
 }
 
 void UsersController::create(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
   const auto json = request->getJsonObject();
-
   if (!json) {
-    Json::Value body;
-    body["status"] = "error";
-    body["message"] = "Invalid JSON";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    replyError(callback, drogon::k400BadRequest, "Invalid JSON");
+    return;
+  }
+
+  if (!(*json)["email"].isString() || (*json)["email"].asString().empty() ||
+      !(*json)["password"].isString() ||
+      (*json)["password"].asString().size() < 8) {
+    replyError(callback, drogon::k400BadRequest,
+               "email and password (min 8 chars) are required");
     return;
   }
 
   std::string telegramChatId;
   if (!getTelegramChatId(*json, telegramChatId)) {
-    Json::Value body;
-    body["status"] = "error";
-    body["message"] = "telegram_chat_id must be an integer or numeric string";
-    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-    response->setStatusCode(drogon::k400BadRequest);
-    callback(response);
+    replyError(callback, drogon::k400BadRequest,
+               "telegram_chat_id must be an integer or numeric string");
     return;
   }
 
@@ -108,29 +139,27 @@ void UsersController::create(
         Json::Value body;
         body["status"] = "ok";
         body["user_id"] = userId;
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        auto r = drogon::HttpResponse::newHttpJsonResponse(body);
+        r->setStatusCode(drogon::k201Created);
+        callback(r);
       },
       [callback](const std::string &error) {
-        Json::Value body;
-        body["status"] = "error";
-        body["message"] = error;
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        // Повторный email нарушает UNIQUE -> 409
+        if (error.find("unique") != std::string::npos ||
+            error.find("duplicate") != std::string::npos) {
+          replyError(callback, drogon::k409Conflict,
+                     "user with this email or telegram_chat_id already exists");
+          return;
+        }
+        replyDbError(callback, error);
       });
 }
 
 void UsersController::deleteUser(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
-  const auto json = request->getJsonObject();
-  if (!json || !(*json)["user_id"].isInt() || (*json)["user_id"].asInt() <= 0) {
-    Json::Value body;
-    body["status"] = "error";
-    body["message"] = "Expected a positive integer user_id in JSON body";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
-    return;
-  }
-
-  const int userId = (*json)["user_id"].asInt();
+  // id берём из токена: удалить можно только себя.
+  const int userId = request->attributes()->get<int>("user_id");
 
   UsersService service(drogon::app().getDbClient());
   service.deleteById(
@@ -141,12 +170,7 @@ void UsersController::deleteUser(
         body["message"] = "User deleted";
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
       },
-      [callback](const std::string &error) {
-        Json::Value body;
-        body["status"] = "error";
-        body["message"] = error;
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
-      });
+      [callback](const std::string &error) { replyDbError(callback, error); });
 }
 
 void UsersController::updateUser(
@@ -154,29 +178,43 @@ void UsersController::updateUser(
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
   const auto json = request->getJsonObject();
   if (!json) {
-    Json::Value body;
-    body["status"] = "error";
-    body["message"] = "Invalid JSON";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    replyError(callback, drogon::k400BadRequest, "Invalid JSON");
     return;
   }
 
-  std::string userIdStr = request->getParameter("id");
+  if (!(*json)["password"].isString() ||
+      (*json)["password"].asString().size() < 8) {
+    replyError(callback, drogon::k400BadRequest,
+               "password (min 8 chars) is required");
+    return;
+  }
+
+  const std::string userIdStr = request->getParameter("id");
   if (userIdStr.empty()) {
-    Json::Value body;
-    body["status"] = "error";
-    body["message"] = "Missing id parameter";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    replyError(callback, drogon::k400BadRequest, "Missing id parameter");
     return;
   }
 
-  int userId = std::stoi(userIdStr);
+  int userId = 0;
+  if (!parseId(userIdStr, userId)) {
+    replyError(callback, drogon::k400BadRequest, "id must be an integer");
+    return;
+  }
+
+  const int me = request->attributes()->get<int>("user_id");
+  if (userId != me) {
+    replyError(callback, drogon::k403Forbidden, "forbidden");
+    return;
+  }
+
   std::string email = (*json)["email"].asString();
   std::string password = (*json)["password"].asString();
   std::string name = (*json)["name"].asString();
   std::string telegramChatId;
-  if ((*json).isMember("telegram_chat_id") && !(*json)["telegram_chat_id"].isNull()) {
-    telegramChatId = (*json)["telegram_chat_id"].asString();
+  if (!getTelegramChatId(*json, telegramChatId)) {
+    replyError(callback, drogon::k400BadRequest,
+               "telegram_chat_id must be an integer or numeric string");
+    return;
   }
 
   UsersService service(drogon::app().getDbClient());
@@ -189,26 +227,36 @@ void UsersController::updateUser(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
       },
       [callback](const std::string &error) {
-        Json::Value body;
-        body["status"] = "error";
-        body["message"] = error;
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        if (error.find("unique") != std::string::npos ||
+            error.find("duplicate") != std::string::npos) {
+          replyError(callback, drogon::k409Conflict,
+                     "user with this email or telegram_chat_id already exists");
+          return;
+        }
+        replyDbError(callback, error);
       });
 }
 
 void UsersController::getUser(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
-  std::string userIdStr = request->getParameter("id");
+  const std::string userIdStr = request->getParameter("id");
   if (userIdStr.empty()) {
-    Json::Value body;
-    body["status"] = "error";
-    body["message"] = "Missing id parameter";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    replyError(callback, drogon::k400BadRequest, "Missing id parameter");
     return;
   }
 
-  int userId = std::stoi(userIdStr);
+  int userId = 0;
+  if (!parseId(userIdStr, userId)) {
+    replyError(callback, drogon::k400BadRequest, "id must be an integer");
+    return;
+  }
+
+  const int me = request->attributes()->get<int>("user_id");
+  if (userId != me) {
+    replyError(callback, drogon::k403Forbidden, "forbidden");
+    return;
+  }
 
   UsersService service(drogon::app().getDbClient());
   service.getById(
@@ -218,19 +266,17 @@ void UsersController::getUser(
         Json::CharReaderBuilder builder;
         std::string errs;
         std::istringstream iss(responseBody);
-        if (Json::parseFromStream(builder, iss, &body, &errs)) {
-          callback(drogon::HttpResponse::newHttpJsonResponse(body));
-        } else {
-          Json::Value errorBody;
-          errorBody["status"] = "error";
-          errorBody["message"] = "Failed to parse user data";
-          callback(drogon::HttpResponse::newHttpJsonResponse(errorBody));
+        if (!Json::parseFromStream(builder, iss, &body, &errs)) {
+          replyError(callback, drogon::k500InternalServerError,
+                     "Failed to parse user data");
+          return;
         }
-      },
-      [callback](const std::string &error) {
-        Json::Value body;
-        body["status"] = "error";
-        body["message"] = error;
+        // Репозиторий сообщает «не найден» через status=error
+        if (body.isMember("status") && body["status"] == "error") {
+          replyError(callback, drogon::k404NotFound, "User not found");
+          return;
+        }
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
-      });
+      },
+      [callback](const std::string &error) { replyDbError(callback, error); });
 }

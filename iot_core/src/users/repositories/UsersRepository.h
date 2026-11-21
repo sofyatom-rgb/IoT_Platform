@@ -38,6 +38,18 @@ class UsersRepository {
   void getById(int userId,
                std::function<void(const std::string &)> success,
                std::function<void(const std::string &)> error) const;
+    struct Credentials {
+        int id;
+        std::string passwordHash;
+        std::string salt;
+    };
+
+    void findCredentials(const std::string &email,
+                     std::function<void(std::optional<Credentials>)> success,
+                     std::function<void(const std::string &)> error) const;
+    bool verifyPassword(const std::string &password, const Credentials &c) const {
+        return hasher_.verify(password, c.salt, c.passwordHash);
+    }
 
  private:
   static std::string readPepper();

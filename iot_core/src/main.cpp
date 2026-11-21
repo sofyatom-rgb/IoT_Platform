@@ -1,18 +1,29 @@
 #include <drogon/drogon.h>
 
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <string>
 
+#include "auth/controllers/AuthController.h"
+#include "devices/controllers/DevicesController.h"
 #include "telemetry/controllers/TelemetryController.h"
 #include "users/controllers/UsersController.h"
-#include "devices/controllers/DevicesController.h"
 
 int main(int, char *argv[]) {
-  const char* pepper = std::getenv("PASSWORD_PEPPER");
-if (!pepper || std::string(pepper).empty()) {
-  LOG_FATAL << "PASSWORD_PEPPER is not set";
-  return 1;
-}
+  // Обязательные секреты берём из окружения, не из конфига и не из кода
+  const char *pepper = std::getenv("PASSWORD_PEPPER");
+  if (!pepper || std::string(pepper).empty()) {
+    std::cerr << "PASSWORD_PEPPER is not set\n";
+    return 1;
+  }
+
+  const char *jwtSecret = std::getenv("JWT_SECRET");
+  if (!jwtSecret || std::string(jwtSecret).size() < 32) {
+    std::cerr << "JWT_SECRET is not set or shorter than 32 characters\n";
+    return 1;
+  }
+
   const auto configDirectory =
       std::filesystem::absolute(argv[0]).parent_path();
   drogon::app()
@@ -28,7 +39,6 @@ if (!pepper || std::string(pepper).empty()) {
     return 1;
   }
 
-  // Контроллеры регистрируют HTTP-маршруты.
   TelemetryController telemetryController;
   telemetryController.registerRoutes();
 
@@ -38,7 +48,9 @@ if (!pepper || std::string(pepper).empty()) {
   DevicesController devicesController;
   devicesController.registerRoutes();
 
-  // Адрес и порт сервера берутся из config/HTTPConfig.json.
+  AuthController authController;
+  authController.registerRoutes();
+
   drogon::app().run();
   return 0;
 }

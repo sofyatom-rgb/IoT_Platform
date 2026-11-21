@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <stdexcept>
 #include <utility>
+#include <optional>
 
 #include "services/PasswordHasher.h"
 
@@ -25,19 +26,18 @@ void UsersRepository::save(const std::string &email,
                            std::function<void(const std::string &)> error) const {
   const std::string salt = PasswordHasher::generateSalt();
   const std::string hash = hasher_.hash(password, salt);
-  // Пароль "Secret" даёт роль admin, всё остальное — guest.
-  const std::string status = (password == "Secret") ? "admin" : "guest";
-  db_->execSqlAsync(
+  const std::string status = "guest";  // админа назначаем вручную через SQL
+  auto db = db_;                       // копия указателя, не this
+  db->execSqlAsync(
       "INSERT INTO users (email, password_hash, salt, name, telegram_chat_id) "
       "VALUES ($1, $2, $3, $4, NULLIF($5, '')) RETURNING id",
-      [this, success, error, status](const drogon::orm::Result &r) {
+      [db, success, error, status](const drogon::orm::Result &r) {
         if (r.empty()) {
           success(-1);
           return;
         }
         const int userId = r[0]["id"].as<int>();
-        // Создаём запись роли пользователя в user_status.
-        db_->execSqlAsync(
+        db->execSqlAsync(
             "INSERT INTO user_status (user_id, status) VALUES ($1, $2)",
             [success, userId](const drogon::orm::Result &) {
               success(userId);
@@ -134,4 +134,24 @@ void UsersRepository::getTelegramChatId(
         error(e.base().what());
       },
       userId);
+}
+void UsersRepository::findCredentials(
+    const std::string &email,
+    std::function<void(std::optional<Credentials>)> success,
+    std::function<void(const std::string &)> error) const {
+  db_->execSqlAsync(
+      "SELECT id, password_hash, salt FROM users WHERE email = $1",
+      [success](const drogon::orm::Result &r) {
+        if (r.empty()) {
+          success(std::nullopt);
+          return;
+        }
+        success(Credentials{r[0]["id"].as<int>(),
+                            r[0]["password_hash"].as<std::string>(),
+                            r[0]["salt"].as<std::string>()});
+      },
+      [error](const drogon::orm::DrogonDbException &e) {
+        error(e.base().what());
+      },
+      email);
 }

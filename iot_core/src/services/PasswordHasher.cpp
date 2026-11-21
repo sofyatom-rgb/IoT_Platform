@@ -1,4 +1,4 @@
-#include "PasswordHasher.h"
+#include "services/PasswordHasher.h"
 
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
@@ -9,7 +9,7 @@
 
 namespace {
 
-constexpr int kIterations = 600000;  // чем больше, тем медленнее перебор
+constexpr int kIterations = 600000;
 constexpr int kSaltBytes = 16;
 constexpr int kHashBytes = 32;
 
@@ -57,6 +57,5 @@ bool PasswordHasher::verify(const std::string& password,
                             const std::string& expectedHash) const {
   const std::string actual = hash(password, salt);
   if (actual.size() != expectedHash.size()) return false;
-  // Постоянное время: нельзя выдавать, на каком символе хеши разошлись
   return CRYPTO_memcmp(actual.data(), expectedHash.data(), actual.size()) == 0;
 }

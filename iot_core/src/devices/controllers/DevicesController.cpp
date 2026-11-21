@@ -11,7 +11,7 @@ void DevicesController::registerRoutes() {
              std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
         create(request, std::move(callback));
       },
-      {drogon::Post});
+      {drogon::Post, "AuthFilter"});
 
   // DELETE /devices with JSON {"device_id": X} -> удалить устройство.
   drogon::app().registerHandler(
@@ -20,7 +20,7 @@ void DevicesController::registerRoutes() {
              std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
         deleteDevice(request, std::move(callback));
       },
-      {drogon::Delete});
+      {drogon::Delete, "AuthFilter"});
 
   // PUT /devices?id=X -> обновить устройство.
   drogon::app().registerHandler(
@@ -29,7 +29,7 @@ void DevicesController::registerRoutes() {
              std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
         updateDevice(request, std::move(callback));
       },
-      {drogon::Put});
+      {drogon::Put, "AuthFilter"});
 
   // GET /devices?id=X -> получить устройство.
   drogon::app().registerHandler(
@@ -38,7 +38,7 @@ void DevicesController::registerRoutes() {
              std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
         getDevice(request, std::move(callback));
       },
-      {drogon::Get});
+      {drogon::Get, "AuthFilter"});
 }
 
 void DevicesController::create(
@@ -54,17 +54,24 @@ void DevicesController::create(
     return;
   }
 
-  if (!(*json)["user_id"].isInt() || (*json)["user_id"].asInt() <= 0 ||
-      !(*json)["owner_id"].isInt() || (*json)["owner_id"].asInt() <= 0) {
+  const int userId = request->attributes()->get<int>("user_id");
+  if (userId <= 0) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "user_id and owner_id must be positive integers";
+    body["message"] = "Unauthorized";
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
     return;
   }
 
-  int userId = (*json)["user_id"].asInt();
-  int ownerId = (*json)["owner_id"].asInt();
+  if (!(*json)["owner_id"].isInt() || (*json)["owner_id"].asInt() <= 0) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "owner_id must be a positive integer";
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    return;
+  }
+
+  const int ownerId = (*json)["owner_id"].asInt();
   std::string name = (*json)["name"].asString();
   std::string type = (*json)["type"].asString();
 
@@ -89,16 +96,24 @@ void DevicesController::deleteDevice(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
   const auto json = request->getJsonObject();
-  if (!json || !(*json)["user_id"].isInt() || (*json)["user_id"].asInt() <= 0 ||
-      !(*json)["device_id"].isInt() || (*json)["device_id"].asInt() <= 0) {
+  const int userId = request->attributes()->get<int>("user_id");
+  if (userId <= 0) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "user_id and device_id must be positive integers in JSON body";
+    body["message"] = "Unauthorized";
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
     return;
   }
 
-  const int userId = (*json)["user_id"].asInt();
+  if (!json || !(*json)["device_id"].isInt() ||
+      (*json)["device_id"].asInt() <= 0) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "device_id must be a positive integer in JSON body";
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    return;
+  }
+
   const int deviceId = (*json)["device_id"].asInt();
 
   DevicesService service(drogon::app().getDbClient());
@@ -121,10 +136,19 @@ void DevicesController::updateDevice(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
   const auto json = request->getJsonObject();
-  if (!json || !(*json)["user_id"].isInt() || (*json)["user_id"].asInt() <= 0) {
+  const int userId = request->attributes()->get<int>("user_id");
+  if (userId <= 0) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "user_id must be a positive integer in JSON body";
+    body["message"] = "Unauthorized";
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    return;
+  }
+
+  if (!json) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "Invalid JSON";
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
     return;
   }
@@ -138,7 +162,6 @@ void DevicesController::updateDevice(
     return;
   }
 
-  int userId = (*json)["user_id"].asInt();
   int deviceId = std::stoi(deviceIdStr);
   int ownerId = (*json)["owner_id"].asInt();
   std::string name = (*json)["name"].asString();
@@ -164,6 +187,15 @@ void DevicesController::updateDevice(
 void DevicesController::getDevice(
     const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
+  const int userId = request->attributes()->get<int>("user_id");
+  if (userId <= 0) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "Unauthorized";
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    return;
+  }
+
   std::string deviceIdStr = request->getParameter("id");
   if (deviceIdStr.empty()) {
     Json::Value body;
@@ -173,17 +205,7 @@ void DevicesController::getDevice(
     return;
   }
 
-  std::string userIdStr = request->getParameter("user_id");
-  if (userIdStr.empty()) {
-    Json::Value body;
-    body["status"] = "error";
-    body["message"] = "Missing user_id parameter";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
-    return;
-  }
-
   int deviceId = std::stoi(deviceIdStr);
-  int userId = std::stoi(userIdStr);
 
   DevicesService service(drogon::app().getDbClient());
   service.getById(
