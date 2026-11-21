@@ -1,3 +1,4 @@
+#include "common/db/DbClientProvider.h"
 #include "users/controllers/UsersController.h"
 
 #include <cctype>
@@ -129,7 +130,7 @@ void UsersController::create(
     return;
   }
 
-  UsersService service(drogon::app().getDbClient());
+  UsersService service(DbClientProvider::get());
   service.save(
       (*json)["email"].asString(),
       (*json)["password"].asString(),
@@ -161,7 +162,7 @@ void UsersController::deleteUser(
   // id берём из токена: удалить можно только себя.
   const int userId = request->attributes()->get<int>("user_id");
 
-  UsersService service(drogon::app().getDbClient());
+  UsersService service(DbClientProvider::get());
   service.deleteById(
       userId,
       [callback]() {
@@ -217,7 +218,7 @@ void UsersController::updateUser(
     return;
   }
 
-  UsersService service(drogon::app().getDbClient());
+  UsersService service(DbClientProvider::get());
   service.updateById(
       userId, email, password, name, telegramChatId,
       [callback]() {
@@ -258,7 +259,7 @@ void UsersController::getUser(
     return;
   }
 
-  UsersService service(drogon::app().getDbClient());
+  UsersService service(DbClientProvider::get());
   service.getById(
       userId,
       [callback](const std::string &responseBody) {

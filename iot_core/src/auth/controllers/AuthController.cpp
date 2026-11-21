@@ -1,3 +1,4 @@
+#include "common/db/DbClientProvider.h"
 // AuthController.cpp
 #include "auth/controllers/AuthController.h"
 #include "auth/services/AuthService.h"
@@ -24,7 +25,7 @@ void AuthController::registerRoutes() {
           replyError(cb, drogon::k400BadRequest, "email and password required");
           return;
         }
-        auto service = std::make_shared<AuthService>(drogon::app().getDbClient());
+        auto service = std::make_shared<AuthService>(DbClientProvider::get());
         service->login(
             (*json)["email"].asString(), (*json)["password"].asString(),
             [cb, service](const std::string &token, int userId) {

@@ -1,3 +1,4 @@
+#include "common/db/DbClientProvider.h"
 #include "devices/controllers/DevicesController.h"
 
 #include <sstream>
@@ -80,7 +81,7 @@ void DevicesController::create(
   std::string name = (*json)["name"].asString();
   std::string type = (*json)["type"].asString();
 
-  DevicesService service(drogon::app().getDbClient());
+  DevicesService service(DbClientProvider::get());
   service.save(
       userId, ownerId, name, type,
       [callback](int deviceId) {
@@ -121,7 +122,7 @@ void DevicesController::deleteDevice(
 
   const int deviceId = (*json)["device_id"].asInt();
 
-  DevicesService service(drogon::app().getDbClient());
+  DevicesService service(DbClientProvider::get());
   service.deleteById(
       userId, deviceId,
       [callback]() {
@@ -172,7 +173,7 @@ void DevicesController::updateDevice(
   std::string name = (*json)["name"].asString();
   std::string type = (*json)["type"].asString();
 
-  DevicesService service(drogon::app().getDbClient());
+  DevicesService service(DbClientProvider::get());
   service.updateById(
       userId, deviceId, ownerId, name, type,
       [callback]() {
@@ -212,7 +213,7 @@ void DevicesController::getDevice(
 
   int deviceId = std::stoi(deviceIdStr);
 
-  DevicesService service(drogon::app().getDbClient());
+  DevicesService service(DbClientProvider::get());
   service.getById(
       userId, deviceId,
       [callback](const std::string &responseBody) {
@@ -248,7 +249,7 @@ void DevicesController::listDevices(
     return;
   }
 
-  DevicesService service(drogon::app().getDbClient());
+  DevicesService service(DbClientProvider::get());
   service.listByOwner(
       userId,
       [callback](const std::string &responseBody) {

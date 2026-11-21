@@ -8,6 +8,7 @@
 #include <string>
 
 #include "auth/controllers/AuthController.h"
+#include "common/db/DbClientProvider.h"
 #include "common/http/DrogonHttpTransport.h"
 #include "devices/controllers/DevicesController.h"
 #include "devices/repositories/DevicesRepository.h"
@@ -83,14 +84,8 @@ int main(int, char *argv[]) {
     return 1;
   }
 
-  std::ostringstream connectionInfo;
-  connectionInfo << "host=" << quoteConnectionValue(database["host"].asString())
-                 << " port=" << database["port"].asUInt()
-                 << " dbname=" << quoteConnectionValue(database["dbname"].asString())
-                 << " user=" << quoteConnectionValue(database["user"].asString())
-                 << " password=" << quoteConnectionValue(database["passwd"].asString());
-  drogon::app().loadConfigJson(config);
-  drogon::app().loadConfigJson(databaseConfig);
+  // db_clients уже включён в HTTPConfig.json.
+  drogon::app().loadConfigFile((configDirectory / "HTTPConfig.json").string());
 
   const auto &customConfig = config["custom_config"];
   if (!customConfig["rule_engine_url"].isString() ||
@@ -100,17 +95,20 @@ int main(int, char *argv[]) {
     return 1;
   }
 
+  std::ostringstream connectionInfo;
+  connectionInfo << "host=" << quoteConnectionValue(database["host"].asString())
+                 << " port=" << database["port"].asUInt()
+                 << " dbname=" << quoteConnectionValue(database["dbname"].asString())
+                 << " user=" << quoteConnectionValue(database["user"].asString())
+                 << " password=" << quoteConnectionValue(database["passwd"].asString());
   const auto connectionCount =
       database.get("number_of_connections", 1).asUInt();
-  if (connectionCount == 0) {
-    std::cerr << "PostgreSQL connection count must be greater than zero\n";
-    return 1;
-  }
-  const auto db =
-      drogon::orm::DbClient::newPgClient(connectionInfo.str(), connectionCount);
+  auto db = drogon::orm::DbClient::newPgClient(connectionInfo.str(), connectionCount);
   if (database["timeout"].isNumeric()) {
     db->setTimeout(database["timeout"].asDouble());
   }
+  DbClientProvider::set(db);
+
   auto ruleEngineClient = std::make_shared<RuleEngineClient>(
       customConfig["rule_engine_url"].asString(),
       std::make_shared<iot::http::DrogonHttpTransport>(
