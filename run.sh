@@ -16,7 +16,19 @@ docker compose up -d
 until docker compose exec -T postgres pg_isready -U postgres -d iot_platform >/dev/null 2>&1; do
   sleep 1
 done
-sleep 3
+
+# Core connects to the host-mapped PostgreSQL port, so also wait for that
+# endpoint before starting services that immediately query the database.
+for attempt in {1..60}; do
+  if (echo > /dev/tcp/127.0.0.1/5433) >/dev/null 2>&1; then
+    break
+  fi
+  if [ "$attempt" -eq 60 ]; then
+    echo "PostgreSQL is ready in Compose but 127.0.0.1:5433 is not reachable" >&2
+    exit 1
+  fi
+  sleep 1
+done
 
 # Гарантируем, что БД и схема созданы даже если база была удалена вручную.
 if ! docker compose exec -T postgres psql -U postgres -d postgres -tAc \

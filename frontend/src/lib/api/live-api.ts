@@ -11,6 +11,7 @@ type Json = Record<string, unknown> | unknown[];
 
 async function request<T extends Json>(base: string, path: string, init: RequestInit = {}): Promise<T> {
   const token = sessionStorage.getItem(tokenKey);
+  if (token) syncOwnerFromToken();
   const response = await fetch(`${base}${path}`, {
     ...init,
     headers: {
@@ -27,6 +28,20 @@ async function request<T extends Json>(base: string, path: string, init: Request
     throw new Error(message);
   }
   return body as T;
+}
+
+function syncOwnerFromToken(): void {
+  const token = sessionStorage.getItem(tokenKey);
+  if (!token || sessionStorage.getItem(ownerKey)) return;
+  try {
+    const payload = JSON.parse(
+      atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')),
+    ) as Record<string, unknown>;
+    const id = Number(payload.sub);
+    if (Number.isInteger(id) && id > 0) sessionStorage.setItem(ownerKey, String(id));
+  } catch {
+    // Токен не JWT — оставляем owner_id из .env.
+  }
 }
 
 function ids(): number[] { try { return JSON.parse(sessionStorage.getItem(deviceKey) ?? '[]') as number[]; } catch { return []; } }
