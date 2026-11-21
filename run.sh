@@ -49,10 +49,27 @@ fi
 PIDS=()
 
 free_port() {
-  local port="$1"
-  if fuser "${port}/tcp" >/dev/null 2>&1; then
-    fuser -k "${port}/tcp" >/dev/null 2>&1 || true
+  local port="$1" attempt
+  for attempt in {1..10}; do
+    if ! fuser "${port}/tcp" >/dev/null 2>&1; then
+      return 0
+    fi
+    fuser -k -TERM "${port}/tcp" >/dev/null 2>&1 || true
     sleep 1
+  done
+  fuser -k -KILL "${port}/tcp" >/dev/null 2>&1 || true
+  sleep 1
+}
+
+start_service() {
+  local name="$1"; shift
+  "$@" &
+  local pid=$!
+  PIDS+=("$pid")
+  sleep 1
+  if ! kill -0 "$pid" 2>/dev/null; then
+    echo "${name} завершился сразу после запуска" >&2
+    return 1
   fi
 }
 
@@ -74,24 +91,11 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
-# 3. IoT Core.
-./build/bin/iot_core &
-PIDS+=($!)
-sleep 1
-
-# 4. HTTP Adapter.
-./build/bin/http_adapter &
-PIDS+=($!)
-sleep 1
-
-# 5. Rule Engine.
-./build/bin/rule_engine &
-PIDS+=($!)
-sleep 1
-
-# 6. Notification Service.
-./build/bin/notification_service &
-PIDS+=($!)
+# 3-6. Сервисы.
+start_service "iot_core" ./build/bin/iot_core
+start_service "http_adapter" ./build/bin/http_adapter
+start_service "rule_engine" ./build/bin/rule_engine
+start_service "notification_service" ./build/bin/notification_service
 
 # Ждём, пока все сервисы реально начнут слушать порты.
 for port in 8080 8081 8082 8083; do
