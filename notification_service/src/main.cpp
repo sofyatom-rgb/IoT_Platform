@@ -17,8 +17,11 @@
 #include "notifications/TelegramMessageTemplates.h"
 
 int main(int, char *argv[]) {
-  const auto configDirectory =
-      std::filesystem::absolute(argv[0]).parent_path().parent_path() / "config";
+  const auto binaryDirectory =
+      std::filesystem::absolute(argv[0]).parent_path().parent_path();
+  const auto configDirectory = binaryDirectory / "config";
+  // Шаблоны писем находятся рядом с конфигурацией, а не в рабочей директории.
+  const auto emailTemplateDirectory = binaryDirectory / "resources" / "email";
   drogon::app().loadConfigFile(
       (configDirectory / "NotificationHTTPConfig.json").string());
   iot::logging::configureDrogonLogging(configDirectory / "logs",
@@ -47,7 +50,7 @@ int main(int, char *argv[]) {
     if (!configError.empty() && emailConfig.configurationError.empty()) {
       LOG_ERROR << "SMTP configuration error: " << configError;
     }
-    emailService.emplace(std::move(emailConfig));
+    emailService.emplace(std::move(emailConfig), emailTemplateDirectory.string());
   }
 
   auto threadPool = std::make_shared<WorkerThreadPool>(4);

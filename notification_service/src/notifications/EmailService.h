@@ -12,7 +12,8 @@ struct EmailSendResult {
 
 class EmailService {
  public:
-  explicit EmailService(EmailConfig config);
+  explicit EmailService(EmailConfig config,
+                        std::string templateDirectory = {});
 
   const EmailConfig &config() const { return config_; }
   bool isEnabled() const { return config_.enabled; }

@@ -274,7 +274,8 @@ std::string makeSmtpUrl(const EmailConfig &config) {
 }
 } // namespace
 
-EmailService::EmailService(EmailConfig config) : config_(std::move(config)) {}
+EmailService::EmailService(EmailConfig config, std::string templateDirectory)
+    : config_(std::move(config)), templates_(std::move(templateDirectory)) {}
 
 EmailSendResult EmailService::send(const std::string &recipient,
                                    const EmailAlertData &alert) const {

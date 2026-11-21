@@ -38,3 +38,16 @@ configure_file(
     ${CMAKE_BINARY_DIR}/config/TelegramTemplates.json
     COPYONLY
 )
+
+# Шаблоны писем копируются рядом с конфигурацией, чтобы сервис не зависел от CWD.
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/resources/email")
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/resources/email/alert.html
+    ${CMAKE_BINARY_DIR}/resources/email/alert.html
+    COPYONLY
+)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/resources/email/alert.txt
+    ${CMAKE_BINARY_DIR}/resources/email/alert.txt
+    COPYONLY
+)
