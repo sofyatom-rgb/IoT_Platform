@@ -10,6 +10,7 @@ add_executable(iot_core
     src/devices/controllers/DevicesController.cpp
     src/devices/services/DevicesService.cpp
     src/devices/repositories/DevicesRepository.cpp
+    src/services/PasswordHasher.cpp
 )
 target_include_directories(iot_core PRIVATE src /usr/include/jsoncpp)
 set_target_properties(iot_core PROPERTIES

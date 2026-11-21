@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <string>
+#include "services/PasswordHasher.h"
 
 // Репозиторий пользователей: единственное место, где выполняется SQL для users.
 class UsersRepository {
@@ -39,5 +40,7 @@ class UsersRepository {
                std::function<void(const std::string &)> error) const;
 
  private:
+  static std::string readPepper();
+  PasswordHasher hasher_;
   drogon::orm::DbClientPtr db_;
 };

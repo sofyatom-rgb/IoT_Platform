@@ -8,6 +8,11 @@
 #include "devices/controllers/DevicesController.h"
 
 int main(int, char *argv[]) {
+  const char* pepper = std::getenv("PASSWORD_PEPPER");
+if (!pepper || std::string(pepper).empty()) {
+  LOG_FATAL << "PASSWORD_PEPPER is not set";
+  return 1;
+}
   const auto configDirectory =
       std::filesystem::absolute(argv[0]).parent_path();
   drogon::app()
