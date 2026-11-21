@@ -1,20 +1,22 @@
 #pragma once
 
 #include <functional>
-#include <memory>
 #include <string>
 
-#include "clients/ITelegramBotClient.h"
+#include "clients/TelegramBotClient.h"
 
 class NotificationService {
  public:
-  explicit NotificationService(std::shared_ptr<ITelegramBotClient> telegramBotClient);
+  explicit NotificationService(TelegramBotClient telegramBotClient);
 
   void sendTemperatureAlert(
-      const std::string &chatId, const std::string &deviceName,
-      double temperature, double threshold, std::function<void()> success,
+      const std::string &chatId,
+      const std::string &deviceName,
+      double temperature,
+      double threshold,
+      std::function<void()> success,
       std::function<void(const std::string &)> error) const;
 
  private:
-  std::shared_ptr<ITelegramBotClient> telegramBotClient_;
+  TelegramBotClient telegramBotClient_;
 };

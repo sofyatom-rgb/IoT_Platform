@@ -64,7 +64,6 @@ vcpkg_installed/
 # debug information files
 *.dwo
 
-
 # test output & cache
 Testing/
 .cache/
@@ -76,3 +75,5 @@ Testing/
 # External submodules / nested repos
 drogon/
 commands.txt
+.postman/
+postman/

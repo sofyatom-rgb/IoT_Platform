@@ -1,19 +1,9 @@
 #include "telemetry/controllers/TelemetryController.h"
-#include "common/validation/RequestValidation.h"
 
-#include <memory>
-#include <stdexcept>
-
+#include <cmath>
 #include <sstream>
 #include <string>
 #include <utility>
-
-TelemetryController::TelemetryController(std::shared_ptr<TelemetryService> service)
-    : service_(std::move(service)) {
-  if (!service_) {
-    throw std::invalid_argument("TelemetryController requires a telemetry service");
-  }
-}
 
 void TelemetryController::registerRoutes() {
   // POST /telemetry -> сохранить показание.
@@ -64,16 +54,13 @@ void TelemetryController::create(
     Json::Value body;
     body["status"] = "error";
     body["message"] = "Invalid JSON";
-    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-    response->setStatusCode(drogon::k400BadRequest);
-    callback(response);
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
     return;
   }
 
-  if (!(*json)["device_id"].isInt() ||
+  if (!(*json)["device_id"].isInt() || (*json)["device_id"].asInt() <= 0 ||
       !(*json)["temperature"].isNumeric() ||
-      !iot::validation::isValidTelemetryInput(
-          (*json)["device_id"].asInt(), (*json)["temperature"].asDouble())) {
+      !std::isfinite((*json)["temperature"].asDouble())) {
     Json::Value body;
     body["status"] = "error";
     body["message"] =
@@ -84,7 +71,14 @@ void TelemetryController::create(
     return;
   }
 
-  service_->save(
+  const auto config = drogon::app().getCustomConfig();
+  NotificationServiceClient notificationClient(
+      config["notification_service_url"].asString());
+  TelemetryService service(
+      drogon::app().getDbClient(),
+      config["temperature_threshold"].asDouble(),
+      std::move(notificationClient));
+  service.save(
       (*json)["device_id"].asInt(), (*json)["temperature"].asDouble(),
       [callback](const std::string &notificationStatus) {
         Json::Value body;
@@ -96,9 +90,7 @@ void TelemetryController::create(
         Json::Value body;
         body["status"] = "error";
         body["message"] = error;
-        auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-        response->setStatusCode(drogon::k500InternalServerError);
-        callback(response);
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
       });
 }
 
@@ -107,19 +99,18 @@ void TelemetryController::getTelemetry(
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
   const auto json = request->getJsonObject();
   if (!json || !(*json)["device_id"].isInt() ||
-      !iot::validation::isPositiveId((*json)["device_id"].asInt())) {
+      (*json)["device_id"].asInt() <= 0) {
     Json::Value body;
     body["status"] = "error";
     body["message"] = "Expected a positive integer device_id in JSON body";
-    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-    response->setStatusCode(drogon::k400BadRequest);
-    callback(response);
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
     return;
   }
 
   const int deviceId = (*json)["device_id"].asInt();
 
-  service_->getByDeviceId(
+  TelemetryService service(drogon::app().getDbClient());
+  service.getByDeviceId(
       deviceId,
       [callback](const std::string &responseBody) {
         Json::CharReaderBuilder builder;
@@ -133,18 +124,14 @@ void TelemetryController::getTelemetry(
           Json::Value body;
           body["status"] = "error";
           body["message"] = "Failed to parse telemetry data";
-          auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-          response->setStatusCode(drogon::k500InternalServerError);
-          callback(response);
+          callback(drogon::HttpResponse::newHttpJsonResponse(body));
         }
       },
       [callback](const std::string &error) {
         Json::Value body;
         body["status"] = "error";
         body["message"] = error;
-        auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-        response->setStatusCode(drogon::k500InternalServerError);
-        callback(response);
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
       });
 }
 
@@ -153,19 +140,18 @@ void TelemetryController::deleteTelemetry(
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
   const auto json = request->getJsonObject();
   if (!json || !(*json)["device_id"].isInt() ||
-      !iot::validation::isPositiveId((*json)["device_id"].asInt())) {
+      (*json)["device_id"].asInt() <= 0) {
     Json::Value body;
     body["status"] = "error";
     body["message"] = "Expected a positive integer device_id in JSON body";
-    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-    response->setStatusCode(drogon::k400BadRequest);
-    callback(response);
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
     return;
   }
 
   const int deviceId = (*json)["device_id"].asInt();
 
-  service_->deleteByDeviceId(
+  TelemetryService service(drogon::app().getDbClient());
+  service.deleteByDeviceId(
       deviceId,
       [callback]() {
         Json::Value body;
@@ -177,8 +163,6 @@ void TelemetryController::deleteTelemetry(
         Json::Value body;
         body["status"] = "error";
         body["message"] = error;
-        auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-        response->setStatusCode(drogon::k500InternalServerError);
-        callback(response);
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
       });
 }

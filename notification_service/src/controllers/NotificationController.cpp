@@ -1,5 +1,4 @@
 #include "controllers/NotificationController.h"
-#include "common/validation/RequestValidation.h"
 
 #include <utility>
 
@@ -24,10 +23,7 @@ void NotificationController::sendTemperatureAlert(
       (*json)["chat_id"].asString().empty() ||
       !(*json)["device_name"].isString() ||
       !(*json)["temperature"].isNumeric() ||
-      !(*json)["threshold"].isNumeric() ||
-      !iot::validation::isValidNotificationFields(
-          (*json)["chat_id"].asString(), (*json)["device_name"].asString(),
-          (*json)["temperature"].asDouble(), (*json)["threshold"].asDouble())) {
+      !(*json)["threshold"].isNumeric()) {
     Json::Value body;
     body["status"] = "error";
     body["message"] = "Invalid notification payload";

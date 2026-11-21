@@ -10,11 +10,15 @@ add_executable(http_adapter
     src/codec/Encoder.cpp
     src/codec/Decoder.cpp
 )
-target_include_directories(http_adapter PRIVATE src ${PROJECT_SOURCE_DIR} ${JSONCPP_INCLUDE_DIR})
+target_include_directories(http_adapter PRIVATE src)
 set_target_properties(http_adapter PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
-target_link_libraries(http_adapter PRIVATE Drogon::Drogon OpenSSL::Crypto ${JSONCPP_LIBRARY} iot_drogon_http_transport)
+target_link_libraries(http_adapter PRIVATE Drogon::Drogon OpenSSL::Crypto)
+# Ищем библиотеку jsoncpp и её заголовки
+find_library(JSONCPP_LIBRARY NAMES jsoncpp)
+find_path(JSONCPP_INCLUDE_DIR NAMES json/json.h PATH_SUFFIXES jsoncpp)
+
 # Тестовая утилита
 add_executable(codec_cli
     tools/codec_cli.cpp
@@ -23,7 +27,10 @@ add_executable(codec_cli
     src/codec/Encoder.cpp
     src/codec/Decoder.cpp
 )
-target_include_directories(codec_cli PRIVATE src ${JSONCPP_INCLUDE_DIR})
+target_include_directories(codec_cli PRIVATE 
+    src
+    ${JSONCPP_INCLUDE_DIR} # <-- Добавляем путь к jsoncpp
+)
 set_target_properties(codec_cli PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )

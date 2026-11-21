@@ -1,3 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+
+project(notification_service)
+
 add_executable(notification_service
     src/main.cpp
     src/controllers/NotificationController.cpp
@@ -5,11 +9,11 @@ add_executable(notification_service
     src/clients/TelegramBotClient.cpp
 )
 
-target_include_directories(notification_service PRIVATE src ${PROJECT_SOURCE_DIR} ${JSONCPP_INCLUDE_DIR})
+target_include_directories(notification_service PRIVATE src)
 set_target_properties(notification_service PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
-target_link_libraries(notification_service PRIVATE Drogon::Drogon ${JSONCPP_LIBRARY} iot_drogon_http_transport)
+target_link_libraries(notification_service PRIVATE Drogon::Drogon)
 
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/config/HTTPConfig.json

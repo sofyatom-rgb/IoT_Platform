@@ -5,7 +5,8 @@
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     email TEXT NOT NULL UNIQUE,
-    password TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    salt TEXT NOT NULL,
     name TEXT,
     telegram_chat_id TEXT
 );
@@ -22,6 +23,33 @@ CREATE TABLE IF NOT EXISTS devices (
     owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     type TEXT NOT NULL
+);
+-- Создать тип enum для операторов > < = !=
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'rule_operator') THEN
+        CREATE TYPE rule_operator AS ENUM ('>', '<', '=', '!=');
+    END IF;
+END
+$$;
+-- Таблица правил (rule engine).
+-- Правило — это само условие: оператор и пороговое значение.
+-- Оно больше не привязано к конкретному устройству в этой таблице.
+CREATE TABLE IF NOT EXISTS rules (
+    rule_id SERIAL PRIMARY KEY,
+    operator rule_operator NOT NULL,
+    value DOUBLE PRECISION NOT NULL
+);
+
+-- Связующая таблица многие-ко-многим:
+--   одному правилу может быть assigned(назначено) много устройств,
+--   одному устройству может быть assigned(назначено) много правил.
+--   device_to_rule.device_id -> devices.id
+--   device_to_rule.rule_id  -> rules.rule_id
+CREATE TABLE IF NOT EXISTS device_to_rule (
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    rule_id INTEGER NOT NULL REFERENCES rules(rule_id) ON DELETE CASCADE,
+    PRIMARY KEY (device_id, rule_id)
 );
 
 CREATE TABLE IF NOT EXISTS telemetry (

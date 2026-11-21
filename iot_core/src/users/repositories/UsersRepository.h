@@ -4,11 +4,10 @@
 
 #include <functional>
 #include <string>
-
-#include "users/repositories/IUsersRepository.h"
+#include "services/PasswordHasher.h"
 
 // Репозиторий пользователей: единственное место, где выполняется SQL для users.
-class UsersRepository : public IUsersRepository {
+class UsersRepository {
  public:
   explicit UsersRepository(drogon::orm::DbClientPtr db);
 
@@ -17,16 +16,16 @@ class UsersRepository : public IUsersRepository {
             const std::string &name,
             const std::string &telegramChatId,
             std::function<void(int)> success,
-            std::function<void(const std::string &)> error) const override;
+            std::function<void(const std::string &)> error) const;
 
   void deleteById(int userId,
                   std::function<void()> success,
-                  std::function<void(const std::string &)> error) const override;
+                  std::function<void(const std::string &)> error) const;
 
   void getTelegramChatId(
       int userId,
       std::function<void(const std::string &)> success,
-      std::function<void(const std::string &)> error) const override;
+      std::function<void(const std::string &)> error) const;
 
   void updateById(int userId,
                   const std::string &email,
@@ -34,12 +33,14 @@ class UsersRepository : public IUsersRepository {
                   const std::string &name,
                   const std::string &telegramChatId,
                   std::function<void()> success,
-                  std::function<void(const std::string &)> error) const override;
+                  std::function<void(const std::string &)> error) const;
 
   void getById(int userId,
                std::function<void(const std::string &)> success,
-               std::function<void(const std::string &)> error) const override;
+               std::function<void(const std::string &)> error) const;
 
  private:
+  static std::string readPepper();
+  PasswordHasher hasher_;
   drogon::orm::DbClientPtr db_;
 };

@@ -1,26 +1,28 @@
 #pragma once
 
 #include <functional>
-#include <memory>
 #include <string>
 
-#include "ingest/clients/IIoTClient.h"
+#include "ingest/clients/IoTClient.h"
 
-// Сервисный слой адаптера. Клиент IoT Core внедряется через интерфейс,
-// чтобы бизнес-сценарий можно было проверить без HTTP и запущенного Core.
+// Сервисный слой адаптера: валидирует данные и передает их клиенту.
 class AdapterService {
  public:
-  explicit AdapterService(std::shared_ptr<IIoTClient> client);
+  explicit AdapterService(const std::string &iotCoreUrl);
 
-  void processTelemetry(int deviceId, double temperature,
+  void processTelemetry(int deviceId,
+                        double temperature,
                         std::function<void()> success,
                         std::function<void(const std::string &)> error) const;
+
   void getTelemetry(int deviceId,
                     std::function<void(const std::string &)> success,
                     std::function<void(const std::string &)> error) const;
-  void deleteTelemetry(int deviceId, std::function<void()> success,
+
+  void deleteTelemetry(int deviceId,
+                       std::function<void()> success,
                        std::function<void(const std::string &)> error) const;
 
  private:
-  std::shared_ptr<IIoTClient> client_;
+  IoTClient client_;
 };

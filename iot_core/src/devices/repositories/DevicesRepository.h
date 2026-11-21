@@ -5,10 +5,8 @@
 #include <functional>
 #include <string>
 
-#include "devices/repositories/IDevicesRepository.h"
-
 // Репозиторий устройств: единственное место, где выполняется SQL для devices.
-class DevicesRepository : public IDevicesRepository {
+class DevicesRepository {
  public:
   explicit DevicesRepository(drogon::orm::DbClientPtr db);
 
@@ -16,27 +14,27 @@ class DevicesRepository : public IDevicesRepository {
             const std::string &name,
             const std::string &type,
             std::function<void(int)> success,
-            std::function<void(const std::string &)> error) const override;
+            std::function<void(const std::string &)> error) const;
 
   void deleteById(int deviceId,
                   std::function<void()> success,
-                  std::function<void(const std::string &)> error) const override;
+                  std::function<void(const std::string &)> error) const;
 
   void getNotificationInfo(
       int deviceId,
       std::function<void(int, const std::string &)> success,
-      std::function<void(const std::string &)> error) const override;
+      std::function<void(const std::string &)> error) const;
 
   void updateById(int deviceId,
                   int ownerId,
                   const std::string &name,
                   const std::string &type,
                   std::function<void()> success,
-                  std::function<void(const std::string &)> error) const override;
+                  std::function<void(const std::string &)> error) const;
 
   void getById(int deviceId,
                std::function<void(const std::string &)> success,
-               std::function<void(const std::string &)> error) const override;
+               std::function<void(const std::string &)> error) const;
 
  private:
   drogon::orm::DbClientPtr db_;

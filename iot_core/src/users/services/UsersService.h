@@ -1,34 +1,43 @@
 #pragma once
 
 #include <functional>
-#include <memory>
 #include <string>
 
-#include "users/repositories/IUsersRepository.h"
-#include "users/services/IUsersService.h"
+#include "users/repositories/UsersRepository.h"
 
-// Сервисный слой пользователей. Репозиторий внедряется через интерфейс,
-// поэтому бизнес-логику/делегирование можно тестировать без PostgreSQL.
-class UsersService : public IUsersService {
+// Сервисный слой пользователей.
+class UsersService {
  public:
-  explicit UsersService(std::shared_ptr<IUsersRepository> repository);
+  explicit UsersService(drogon::orm::DbClientPtr db);
 
-  void save(const std::string &email, const std::string &password,
-            const std::string &name, const std::string &telegramChatId,
+  void save(const std::string &email,
+            const std::string &password,
+            const std::string &name,
+            const std::string &telegramChatId,
             std::function<void(int)> success,
-            std::function<void(const std::string &)> error) const override;
-  void deleteById(int userId, std::function<void()> success,
-                  std::function<void(const std::string &)> error) const override;
-  void getTelegramChatId(int userId,
-                         std::function<void(const std::string &)> success,
-                         std::function<void(const std::string &)> error) const override;
-  void updateById(int userId, const std::string &email,
-                  const std::string &password, const std::string &name,
-                  const std::string &telegramChatId, std::function<void()> success,
-                  std::function<void(const std::string &)> error) const override;
-  void getById(int userId, std::function<void(const std::string &)> success,
-               std::function<void(const std::string &)> error) const override;
+            std::function<void(const std::string &)> error) const;
+
+  void deleteById(int userId,
+                  std::function<void()> success,
+                  std::function<void(const std::string &)> error) const;
+
+  void getTelegramChatId(
+      int userId,
+      std::function<void(const std::string &)> success,
+      std::function<void(const std::string &)> error) const;
+
+  void updateById(int userId,
+                  const std::string &email,
+                  const std::string &password,
+                  const std::string &name,
+                  const std::string &telegramChatId,
+                  std::function<void()> success,
+                  std::function<void(const std::string &)> error) const;
+
+  void getById(int userId,
+               std::function<void(const std::string &)> success,
+               std::function<void(const std::string &)> error) const;
 
  private:
-  std::shared_ptr<IUsersRepository> repository_;
+  UsersRepository repository_;
 };

@@ -3,13 +3,10 @@
 #include <drogon/drogon.h>
 
 #include <functional>
-#include <memory>
-#include <string>
 
 #include "codec/Decoder.h"
 #include "codec/Encoder.h"
 #include "ingest/services/AdapterService.h"
-#include "ingest/clients/IIoTClient.h"
 
 // HTTP-слой адаптера.
 // Вход от датчиков — зашифрованный конверт {checksum, ciphertext}.
@@ -18,8 +15,6 @@
 class IngestController {
  public:
   IngestController();
-  IngestController(bool codecEnabled, std::string codecKey,
-                   std::shared_ptr<IIoTClient> iotClient);
 
   void registerRoutes();
 
@@ -44,5 +39,4 @@ class IngestController {
   bool codecEnabled_;
   codec::Encoder encoder_;
   codec::Decoder decoder_;
-  std::shared_ptr<IIoTClient> iotClient_;
 };

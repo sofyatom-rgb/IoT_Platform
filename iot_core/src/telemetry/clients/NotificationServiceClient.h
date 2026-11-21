@@ -1,17 +1,13 @@
 #pragma once
 
+#include <drogon/drogon.h>
+
 #include <functional>
-#include <memory>
 #include <string>
 
-#include "common/http/HttpTransport.h"
-#include "telemetry/clients/INotificationServiceClient.h"
-
-class NotificationServiceClient : public INotificationServiceClient {
+class NotificationServiceClient {
  public:
-  NotificationServiceClient(
-      std::string baseUrl,
-      std::shared_ptr<iot::http::IHttpTransport> transport);
+  explicit NotificationServiceClient(std::string baseUrl);
 
   void sendTemperatureAlert(
       const std::string &chatId,
@@ -19,9 +15,8 @@ class NotificationServiceClient : public INotificationServiceClient {
       double temperature,
       double threshold,
       std::function<void()> success,
-      std::function<void(const std::string &)> error) const override;
+      std::function<void(const std::string &)> error) const;
 
  private:
   std::string baseUrl_;
-  std::shared_ptr<iot::http::IHttpTransport> transport_;
 };
