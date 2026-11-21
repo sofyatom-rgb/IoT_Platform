@@ -1,8 +1,8 @@
 #pragma once
 
-#include <cstdlib>
 #include <exception>
-#include <functional>
+#include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -10,55 +10,64 @@
 #include <utility>
 #include <vector>
 
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
+
 namespace test {
-namespace terminal {
-inline bool colorsEnabled() {
-  // Respect the conventional opt-out and common terminal color controls.
-  if (const char *noColor = std::getenv("NO_COLOR");
-      noColor != nullptr && *noColor != '\0') {
-    return false;
-  }
-  if (const char *forceColor = std::getenv("CLICOLOR_FORCE");
-      forceColor != nullptr && std::string(forceColor) != "0") {
-    return true;
-  }
-  if (const char *color = std::getenv("CLICOLOR");
-      color != nullptr && std::string(color) == "0") {
-    return false;
-  }
-  if (const char *term = std::getenv("TERM");
-      term != nullptr && std::string(term) == "dumb") {
-    return false;
-  }
-  return true;
-}
 
-inline std::string paint(const std::string &text, const char *colorCode) {
-  if (!colorsEnabled()) return text;
-  return std::string(colorCode) + text + "\033[0m";
-}
-
-inline constexpr const char *green = "\033[1;32m";
-inline constexpr const char *red = "\033[1;31m";
-}  // namespace terminal
-
+/// Тест и его функция запуска.
 struct Case {
   std::string name;
   void (*run)();
 };
 
+/// Возвращает общий список зарегистрированных тестов.
 inline std::vector<Case> &registry() {
   static std::vector<Case> cases;
   return cases;
 }
 
+/// Добавляет тест в список запуска.
 class Registrar {
  public:
+  /// Регистрирует тест при загрузке файла.
   Registrar(std::string name, void (*run)()) {
     registry().push_back({std::move(name), run});
   }
 };
 
+/// Проверяет, можно ли безопасно использовать ANSI-цвета для потока.
+inline bool colorEnabled(FILE *stream) {
+  const char *noColor = std::getenv("NO_COLOR");
+  if (noColor != nullptr && *noColor != '\0') return false;
+
+  const auto enabled = [](const char *name) {
+    const char *value = std::getenv(name);
+    return value != nullptr && *value != '\0' && std::string(value) != "0";
+  };
+  if (enabled("FORCE_COLOR") || enabled("CLICOLOR_FORCE")) return true;
+
+  const char *term = std::getenv("TERM");
+  if (term != nullptr && std::string(term) == "dumb") return false;
+
+#ifdef _WIN32
+  return _isatty(_fileno(stream)) != 0;
+#else
+  return isatty(fileno(stream)) != 0;
+#endif
+}
+
+/// Добавляет ANSI-код, если вывод поддерживает цвета.
+inline std::string paint(const std::string &text, const char *code,
+                         bool enabled) {
+  if (!enabled) return text;
+  return std::string(code) + text + "\033[0m";
+}
+
+/// Завершает тест с ошибкой, если условие не выполнено.
 inline void expect(bool condition, const char *expression,
                    const char *file, int line) {
   if (condition) return;
@@ -67,6 +76,7 @@ inline void expect(bool condition, const char *expression,
   throw std::runtime_error(message.str());
 }
 
+/// Проверяет равенство двух значений.
 template <typename Expected, typename Actual>
 void expectEqual(const Expected &expected, const Actual &actual,
                  const char *expression, const char *file, int line) {
@@ -76,36 +86,43 @@ void expectEqual(const Expected &expected, const Actual &actual,
   throw std::runtime_error(message.str());
 }
 
+/// Запускает зарегистрированные тесты и возвращает код результата.
 inline int runAll() {
+  constexpr const char *green = "\033[32m";
+  constexpr const char *red = "\033[31m";
+
+  const bool colorOut = colorEnabled(stdout);
+  const bool colorErr = colorEnabled(stderr);
   int passed = 0;
   int failed = 0;
+
   for (const auto &testCase : registry()) {
     try {
       testCase.run();
       ++passed;
-      std::cout << terminal::paint("[PASS] " + testCase.name, terminal::green)
-                << '\n';
+      std::cout << paint("[PASS] " + testCase.name, green, colorOut) << '\n';
     } catch (const std::exception &error) {
       ++failed;
-      std::cerr << terminal::paint("[FAIL] " + testCase.name + ": " + error.what(),
-                                   terminal::red)
+      std::cerr << paint("[FAIL] " + testCase.name + ": " + error.what(),
+                         red, colorErr)
                 << '\n';
     } catch (...) {
       ++failed;
-      std::cerr << terminal::paint("[FAIL] " + testCase.name + ": unknown exception",
-                                   terminal::red)
+      std::cerr << paint("[FAIL] " + testCase.name + ": unknown exception",
+                         red, colorErr)
                 << '\n';
     }
   }
 
-  std::ostringstream summary;
-  summary << "Test summary: " << passed << " passed, " << failed << " failed, "
-          << registry().size() << " total";
-  const char *summaryColor = failed == 0 ? terminal::green : terminal::red;
-  std::cout << '\n' << terminal::paint(summary.str(), summaryColor) << '\n';
-
+  std::cout << "\nTest summary: "
+            << paint(std::to_string(passed) + " passed", green, colorOut)
+            << ", "
+            << paint(std::to_string(failed) + " failed",
+                     failed == 0 ? green : red, colorOut)
+            << ", " << registry().size() << " total\n";
   return failed == 0 ? 0 : 1;
 }
+
 }  // namespace test
 
 #define TEST_CASE(name)                                          \
@@ -115,4 +132,5 @@ inline int runAll() {
 #define EXPECT_TRUE(expression) \
   ::test::expect(static_cast<bool>(expression), #expression, __FILE__, __LINE__)
 #define EXPECT_FALSE(expression) EXPECT_TRUE(!(expression))
-#define EXPECT_EQ(expected, actual) ::test::expectEqual((expected), (actual), #expected " == " #actual, __FILE__, __LINE__)
+#define EXPECT_EQ(expected, actual) \
+  ::test::expectEqual((expected), (actual), #expected " == " #actual, __FILE__, __LINE__)

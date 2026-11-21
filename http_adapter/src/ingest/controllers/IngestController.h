@@ -17,18 +17,24 @@
 // Ответ датчику — снова конверт (adapter кодирует).
 class IngestController {
  public:
+  /// Создаёт контроллер с конфигурацией из Drogon.
   IngestController();
+  /// Создаёт контроллер с явно заданными параметрами и IoT-клиентом.
   IngestController(bool codecEnabled, std::string codecKey,
                    std::shared_ptr<IIoTClient> iotClient);
 
+  /// Регистрирует маршруты приёма и проксирования телеметрии.
   void registerRoutes();
 
+  /// Принимает показание, при необходимости расшифровывает его и передаёт в Core.
   void ingest(const drogon::HttpRequestPtr &request,
               std::function<void(const drogon::HttpResponsePtr &)> callback);
 
+  /// Запрашивает у Core историю показаний устройства.
   void getTelemetry(const drogon::HttpRequestPtr &request,
                     std::function<void(const drogon::HttpResponsePtr &)> callback);
 
+  /// Удаляет историю показаний устройства через Core.
   void deleteTelemetry(const drogon::HttpRequestPtr &request,
                        std::function<void(const drogon::HttpResponsePtr &)> callback);
 

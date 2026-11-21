@@ -12,6 +12,7 @@
 #include <vector>
 
 namespace {
+/// Собирает JSON-конверт из зашифрованных данных и checksum.
 std::string makeEnvelope(const std::string &blob, const std::string &checksum) {
   Json::Value envelope;
   envelope["checksum"] = checksum;

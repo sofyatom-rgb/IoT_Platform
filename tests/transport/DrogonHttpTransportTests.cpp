@@ -25,8 +25,10 @@
 #include "ingest/services/AdapterService.h"
 
 namespace {
+/// Принимает один локальный HTTP-запрос и отвечает заданным статусом.
 class OneShotHttpServer {
  public:
+  /// Запускает локальный TCP-сервер на свободном loopback-порту.
   explicit OneShotHttpServer(
       int statusCode = 200,
       std::string responseBody = R"({"accepted":true})")
@@ -59,6 +61,7 @@ class OneShotHttpServer {
     worker_ = std::thread([this] { serveOneRequest(); });
   }
 
+  /// Дожидается потока сервера и закрывает слушающий сокет.
   ~OneShotHttpServer() {
     // serveOneRequest() uses poll() with a finite timeout, so a failed client
     // cannot leave the test process blocked forever in accept().
@@ -66,14 +69,17 @@ class OneShotHttpServer {
     if (listenFd_ >= 0) ::close(listenFd_);
   }
 
+  /// Возвращает порт, выбранный операционной системой.
   unsigned short port() const noexcept { return port_; }
 
+  /// Возвращает полученный HTTP-запрос в исходном виде.
   std::string requestText() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return requestText_;
   }
 
  private:
+  /// Принимает запрос, сохраняет его и отправляет HTTP-ответ.
   void serveOneRequest() {
     pollfd listener{listenFd_, POLLIN, 0};
     const int ready = ::poll(&listener, 1, 5000);
@@ -147,6 +153,7 @@ class OneShotHttpServer {
   std::string requestText_;
 };
 
+/// Проверяет, как HTTP-метод представлен в реальном запросе на сокете.
 void expectHttpMethod(iot::http::Method method, const std::string &expectedLine) {
   OneShotHttpServer server;
   iot::http::DrogonHttpTransport transport(

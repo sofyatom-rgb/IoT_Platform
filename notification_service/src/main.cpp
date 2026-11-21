@@ -48,9 +48,7 @@ int main(int, char *argv[]) {
   }
 
   auto threadPool = std::make_shared<WorkerThreadPool>(4);
-  auto telegramApi = std::make_shared<TgBotApi>(token);
-  auto telegramClient =
-      std::make_shared<TelegramBotClient>(std::move(telegramApi), threadPool);
+  auto telegramClient = std::make_shared<TelegramBotClient>(token);
   NotificationService notificationService{std::move(telegramClient),
                                           std::move(emailService), threadPool,
                                           std::move(telegramTemplates)};

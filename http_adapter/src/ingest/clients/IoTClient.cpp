@@ -31,10 +31,8 @@ void IoTClient::sendTelemetry(
               iot::http::stringField(response->jsonBody, "notification_status");
           if (status != nullptr) {
             if (success) success(*status);
-            return;
-          }
-          if (error) {
-            error("IoT Core response is missing a valid notification_status");
+          } else if (success) {
+            success("");
           }
           return;
         }
@@ -53,6 +51,17 @@ void IoTClient::sendTelemetry(
                 std::to_string(status) + message);
         }
       });
+}
+
+void IoTClient::sendTelemetry(
+    int deviceId, double temperature, std::function<void()> success,
+    std::function<void(const std::string &)> error) const {
+  sendTelemetry(
+      deviceId, temperature,
+      [success = std::move(success)](const std::string &) {
+        if (success) success();
+      },
+      std::move(error));
 }
 
 void IoTClient::getTelemetry(

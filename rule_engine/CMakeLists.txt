@@ -13,7 +13,7 @@ add_executable(rule_engine
     src/repositories/RuleRepository.cpp
     src/clients/NotificationClient.cpp
 )
-target_include_directories(rule_engine PRIVATE src ${PROJECT_SOURCE_DIR})
+target_include_directories(rule_engine PRIVATE src ${CMAKE_SOURCE_DIR})
 set_target_properties(rule_engine PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )

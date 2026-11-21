@@ -21,6 +21,7 @@ namespace {
 using drogon::orm::DbClient;
 using drogon::orm::DbClientPtr;
 
+/// Подключается к тестовой PostgreSQL-базе и проверяет доступность соединения.
 DbClientPtr database() {
   static DbClientPtr client = [] {
     const char *configured = std::getenv("IOT_TEST_DATABASE_URL");
@@ -35,6 +36,7 @@ DbClientPtr database() {
   return client;
 }
 
+/// Генерирует email, который не пересекается с другими тестовыми записями.
 std::string uniqueEmail() {
   static std::atomic<unsigned long long> sequence{0};
   const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
@@ -42,6 +44,7 @@ std::string uniqueEmail() {
          std::to_string(sequence.fetch_add(1)) + "@example.test";
 }
 
+/// Ожидает callback репозитория и возвращает его результат.
 template <typename T, typename Invoker>
 T awaitValue(Invoker &&invoke) {
   auto promise = std::make_shared<std::promise<T>>();
@@ -57,6 +60,7 @@ T awaitValue(Invoker &&invoke) {
   return future.get();
 }
 
+/// Ожидает завершения асинхронной операции репозитория.
 template <typename Invoker>
 void awaitVoid(Invoker &&invoke) {
   auto promise = std::make_shared<std::promise<void>>();
@@ -72,6 +76,7 @@ void awaitVoid(Invoker &&invoke) {
   future.get();
 }
 
+/// Разбирает JSON, возвращённый репозиторием.
 Json::Value parseJson(const std::string &text) {
   Json::CharReaderBuilder builder;
   Json::Value result;
@@ -83,12 +88,14 @@ Json::Value parseJson(const std::string &text) {
   return result;
 }
 
+/// Создаёт пользователя для интеграционного сценария.
 int createUser(UsersRepository &repository, const std::string &email) {
   return awaitValue<int>([&](auto success, auto error) {
     repository.save(email, "test-password", "Repository Test", "", success, error);
   });
 }
 
+/// Создаёт устройство, привязанное к тестовому пользователю.
 int createDevice(DevicesRepository &repository, int ownerId,
                  const std::string &name = "Test sensor") {
   return awaitValue<int>([&](auto success, auto error) {
@@ -96,6 +103,7 @@ int createDevice(DevicesRepository &repository, int ownerId,
   });
 }
 
+/// Удаляет созданного пользователя, если тест завершился до ручной очистки.
 struct UserCleanup {
   int id{0};
   ~UserCleanup() {

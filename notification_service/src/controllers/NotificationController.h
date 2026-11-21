@@ -4,10 +4,13 @@
 
 #include "services/NotificationService.h"
 
+/// Принимает HTTP-запросы и передаёт их сервису уведомлений.
 class NotificationController {
  public:
+  /// Создаёт контроллер с сервисом отправки уведомлений.
   explicit NotificationController(NotificationService service);
 
+  /// Регистрирует маршрут отправки температурных уведомлений.
   void registerRoutes();
 
   // Kept public so the handler can be tested directly without starting a server.

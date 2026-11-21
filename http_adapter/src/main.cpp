@@ -5,6 +5,7 @@
 
 #include "ingest/controllers/IngestController.h"
 
+/// Запускает HTTP-адаптер датчиков.
 int main(int, char *argv[]) {
   const auto configPath =
       std::filesystem::absolute(argv[0]).parent_path().parent_path() /

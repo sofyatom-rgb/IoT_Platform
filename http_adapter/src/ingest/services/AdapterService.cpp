@@ -5,7 +5,9 @@
 
 AdapterService::AdapterService(std::shared_ptr<IIoTClient> client)
     : client_(std::move(client)) {
-  if (!client_) throw std::invalid_argument("AdapterService requires an IoT client");
+  if (!client_) {
+    throw std::invalid_argument("AdapterService requires an IoT client");
+  }
 }
 
 void AdapterService::processTelemetry(
@@ -14,6 +16,17 @@ void AdapterService::processTelemetry(
     std::function<void(const std::string &)> error) const {
   client_->sendTelemetry(deviceId, temperature, std::move(success),
                          std::move(error));
+}
+
+void AdapterService::processTelemetry(
+    int deviceId, double temperature, std::function<void()> success,
+    std::function<void(const std::string &)> error) const {
+  processTelemetry(
+      deviceId, temperature,
+      [success = std::move(success)](const std::string &) {
+        if (success) success();
+      },
+      std::move(error));
 }
 
 void AdapterService::getTelemetry(

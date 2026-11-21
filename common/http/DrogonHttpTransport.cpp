@@ -10,6 +10,7 @@
 namespace iot::http {
 namespace {
 
+/// Преобразует скаляр из внутреннего формата в значение JsonCpp.
 Json::Value toJsonValue(const JsonScalar &value) {
   return std::visit(
       [](const auto &item) -> Json::Value {
@@ -29,6 +30,7 @@ Json::Value toJsonValue(const JsonScalar &value) {
       value);
 }
 
+/// Преобразует простое значение JsonCpp во внутренний формат.
 JsonScalar fromJsonValue(const Json::Value &value) {
   if (value.isNull()) return nullptr;
   if (value.isBool()) return value.asBool();
@@ -38,6 +40,7 @@ JsonScalar fromJsonValue(const Json::Value &value) {
   return nullptr;
 }
 
+/// Переводит HTTP-метод проекта в соответствующий метод Drogon.
 drogon::HttpMethod toDrogonMethod(Method method) {
   switch (method) {
     case Method::Get: return drogon::Get;

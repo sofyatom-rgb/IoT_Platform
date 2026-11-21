@@ -4,8 +4,10 @@
 
 namespace codec {
 
-// Классический Base64 (RFC 4648, с паддингом '=').
+/// Кодирует строку в Base64 по RFC 4648.
 std::string base64Encode(const std::string &data);
-bool        base64Decode(const std::string &text, std::string &out);
+
+/// Декодирует Base64; при ошибке возвращает false.
+bool base64Decode(const std::string &text, std::string &out);
 
 }  // namespace codec

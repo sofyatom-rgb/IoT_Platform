@@ -7,11 +7,18 @@
 #include "clients/ITelegramApi.h"
 #include "clients/ITelegramBotClient.h"
 #include "clients/WorkerThreadPool.h"
+#include "common/http/HttpTransport.h"
 
 class TelegramBotClient : public ITelegramBotClient {
 public:
   TelegramBotClient(std::shared_ptr<ITelegramApi> telegramApi,
                     std::shared_ptr<WorkerThreadPool> threadPool);
+
+  // Совместимость со старыми вызывающими: токен и HTTP-транспорт.
+  explicit TelegramBotClient(std::string botToken);
+
+  TelegramBotClient(std::string botToken,
+                    std::shared_ptr<iot::http::IHttpTransport> transport);
 
   bool isEnabled() const override { return telegramApi_->isEnabled(); }
   void
@@ -26,4 +33,5 @@ public:
 private:
   std::shared_ptr<ITelegramApi> telegramApi_;
   std::shared_ptr<WorkerThreadPool> threadPool_;
+  bool synchronous_ = false;
 };
