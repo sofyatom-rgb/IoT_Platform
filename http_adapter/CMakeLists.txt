@@ -12,7 +12,7 @@ add_executable(http_adapter
     src/codec/Encoder.cpp
     src/codec/Decoder.cpp
 )
-target_include_directories(http_adapter PRIVATE src)
+target_include_directories(http_adapter PRIVATE src ${PROJECT_SOURCE_DIR})
 set_target_properties(http_adapter PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )

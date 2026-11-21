@@ -3,6 +3,8 @@
 #include "clients/NotificationClient.h"
 #include "repositories/RuleRepository.h"
 
+#include <drogon/drogon.h>
+
 #include <utility>
 
 RuleService::RuleService(drogon::orm::DbClientPtr db,
@@ -72,6 +74,8 @@ void RuleService::checkAndNotify(
     double temperature,
     std::function<void()> success,
     std::function<void(const std::string&)> error) const {
+  LOG_INFO << "[rule_engine] Checking temperature rules for device "
+           << deviceId << ", temperature=" << temperature;
   auto repo = std::make_shared<RuleRepository>(db_);
   std::string url = notificationUrl_;
   // 1. Получаем правила для устройства
@@ -80,6 +84,7 @@ void RuleService::checkAndNotify(
       [url, deviceId, temperature, repo, success,
        error](const std::vector<Rule>& rules) mutable {
         if (rules.empty()) {
+          LOG_INFO << "[rule_engine] No rules configured for device " << deviceId;
           success();  // правил нет — ничего не проверяем
           return;
         }
@@ -90,6 +95,8 @@ void RuleService::checkAndNotify(
             [url, deviceId, temperature, rules, repo, success,
              error](const std::string& chatId) mutable {
               if (chatId.empty()) {
+                LOG_INFO << "[rule_engine] Telegram chat is not configured for device "
+                         << deviceId;
                 success();  // чат не настроен — уведомлять некому
                 return;
               }
@@ -113,11 +120,15 @@ void RuleService::checkAndNotify(
               }
 
               if (!violated) {
+                LOG_INFO << "[rule_engine] Temperature is within configured rules for device "
+                         << deviceId;
                 success();  // все правила в норме
                 return;
               }
 
               // 4. Отправляем уведомление через notification_service
+              LOG_WARN << "[rule_engine] Rule violated for device " << deviceId
+                       << "; sending temperature alert";
               auto client = std::make_shared<NotificationClient>(url);
               client->sendTemperatureAlert(
                   chatId,

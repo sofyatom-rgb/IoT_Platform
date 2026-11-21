@@ -1,5 +1,7 @@
 #include "clients/NotificationClient.h"
 
+#include <drogon/drogon.h>
+
 #include <sstream>
 #include <utility>
 
@@ -13,6 +15,8 @@ void NotificationClient::sendTemperatureAlert(
     double threshold,
     std::function<void()> success,
     std::function<void(const std::string&)> error) const {
+  LOG_INFO << "[rule_engine][http] -> POST " << baseUrl_
+           << "/notifications/temperature";
   auto client = drogon::HttpClient::newHttpClient(baseUrl_);
   auto req = drogon::HttpRequest::newHttpRequest();
   req->setMethod(drogon::Post);
@@ -28,13 +32,17 @@ void NotificationClient::sendTemperatureAlert(
 
   client->sendRequest(
       req,
-      [client, success = std::move(success), error = std::move(error)](
+      [client, baseUrl = baseUrl_, success = std::move(success), error = std::move(error)](
           drogon::ReqResult result, const drogon::HttpResponsePtr& response) {
-        if (result == drogon::ReqResult::Ok &&
+        const int code = response ? static_cast<int>(response->getStatusCode()) : 0;
+        if (result == drogon::ReqResult::Ok && response &&
             response->getStatusCode() == drogon::k200OK) {
+          LOG_INFO << "[rule_engine][http] <- POST " << baseUrl
+                   << "/notifications/temperature status=" << code;
           success();
         } else {
-          int code = response ? static_cast<int>(response->getStatusCode()) : 0;
+          LOG_ERROR << "[rule_engine][http] <- POST " << baseUrl
+                    << "/notifications/temperature failed; status=" << code;
           error("Notification service returned HTTP " + std::to_string(code));
         }
       });

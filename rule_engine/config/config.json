@@ -17,5 +17,9 @@
   ],
   "custom_config": {
     "notification_service_url": "http://127.0.0.1:8082"
+  },
+  "log": {
+    "log_level": "INFO",
+    "log_path": ""
   }
 }

@@ -10,7 +10,7 @@ add_executable(notification_service
     src/clients/TelegramBotClientDrogon.cpp
 )
 
-target_include_directories(notification_service PRIVATE src)
+target_include_directories(notification_service PRIVATE src ${CMAKE_SOURCE_DIR})
 set_target_properties(notification_service PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )

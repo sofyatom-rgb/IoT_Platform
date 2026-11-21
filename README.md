@@ -16,6 +16,7 @@ IoT Platform — учебный backend для регистрации польз
 - [Требования](#требования)
 - [Сборка](#сборка)
 - [Unit-тесты](#unit-тесты)
+- [Логирование](#логирование)
 - [Запуск и автоматическая инициализация базы](#запуск-и-автоматическая-инициализация-базы)
 - [Общий сценарий использования](#общий-сценарий-использования)
 - [HTTP API](#http-api)
@@ -96,7 +97,7 @@ IoT_Platform/
 │       ├── services/                 # Формирует содержание уведомления
 │       └── clients/                  # Отправляет сообщения в Telegram Bot API
 │
-└── build/                            # Генерируется CMake; здесь находятся бинарники
+└── build-app/                        # Генерируется CMake; здесь находятся бинарники
     └── bin/
         ├── iot_core
         ├── http_adapter
@@ -167,130 +168,175 @@ IoT-устройство / curl / клиентское приложение
 - Linux/macOS или другая среда, где доступны инструменты проекта;
 - CMake версии 3.16 или новее;
 - C++-компилятор с поддержкой C++26;
-- установленный Drogon и его зависимости;
-- OpenSSL и JsonCpp development-пакеты для шифрования и JSON;
-- PostgreSQL для запуска приложения и отдельных integration-тестов;
+- установленный Drogon и его зависимости — для сборки приложений, тестов контроллеров и реального HTTP-транспорта; базовые unit-тесты без этих компонентов собираются без Drogon;
+- OpenSSL и JsonCpp development-пакеты — для приложения и дополнительных codec-тестов (`BUILD_CODEC_TESTING=ON`);
+- PostgreSQL — для запуска приложения и отдельных integration-тестов репозиториев;
 - переменная окружения `PASSWORD_PEPPER` для запуска IoT Core;
 - Docker и Docker Compose plugin;
 - `curl` для примеров ниже (необязательно, можно использовать любой HTTP-клиент).
 
 Проект вызывает `find_package(Drogon CONFIG REQUIRED)`, поэтому установленный пакет Drogon должен быть виден CMake.
 
-## Сборка
+## Сборка приложения и тестов
 
-Команды выполняются из корня репозитория. Для сборки только приложений, без тестовых
-целей:
+Команды выполняются из корня репозитория. Приложение и тесты собираются в **разных
+каталогах**: `build-app` и `build-tests`. Не нужно включать `BUILD_APPLICATION=ON`,
+чтобы собрать тесты.
 
-```sh
-cmake -S . -B build -DBUILD_APPLICATION=ON -DBUILD_TESTING=OFF
-cmake --build build -j"$(nproc)"
-```
-
-CMake собирает четыре приложения: `iot_core`, `http_adapter`,
-`notification_service` и `rule_engine`. Бинарники и копии конфигурационных файлов
-создаются в `build/bin/`.
-
-Для пересборки после изменения исходников достаточно выполнить:
+### 1. Собрать только приложение
 
 ```sh
-cmake --build build -j"$(nproc)"
+cmake -S . -B build-app \
+  -DBUILD_APPLICATION=ON \
+  -DBUILD_TESTING=OFF
+cmake --build build-app -j"$(nproc)"
 ```
 
-Для полной чистой пересборки удалите каталог сборки и создайте его заново:
+Будут собраны четыре приложения: `iot_core`, `http_adapter`,
+`notification_service` и `rule_engine`. Бинарники и конфигурационные файлы
+появятся в `build-app/bin/`. Тестовые цели в этой конфигурации не создаются.
+
+Повторная сборка после изменения исходников:
 
 ```sh
-rm -rf build
-cmake -S . -B build -DBUILD_APPLICATION=ON -DBUILD_TESTING=OFF
-cmake --build build -j"$(nproc)"
+cmake --build build-app -j"$(nproc)"
 ```
 
-### Сборка только тестов без Drogon
+Полная пересборка приложения с нуля:
 
-Этот режим подходит для быстрой проверки сервисов, клиентов, валидации и связок
-компонентов. В нём не собираются приложения, контроллеры Drogon, настоящий HTTP-транспорт
-и тесты PostgreSQL:
+```sh
+rm -rf build-app
+cmake -S . -B build-app -DBUILD_APPLICATION=ON -DBUILD_TESTING=OFF
+cmake --build build-app -j"$(nproc)"
+```
+
+### 2. Собрать тесты отдельно от приложения
+
+Для основного набора unit- и component-тестов без Drogon и PostgreSQL:
 
 ```sh
 cmake -S . -B build-tests \
   -DBUILD_APPLICATION=OFF \
   -DBUILD_TESTING=ON \
-  -DBUILD_CODEC_TESTING=OFF \
+  -DBUILD_CODEC_TESTING=ON \
+  -DBUILD_CONTROLLER_TESTING=OFF \
+  -DBUILD_POSTGRES_INTEGRATION_TESTING=OFF \
+  -DBUILD_TRANSPORT_INTEGRATION_TESTING=OFF
+cmake --build build-tests -j"$(nproc)"
+```
+
+В этой конфигурации запускаются **57 сценариев**. Флаг `BUILD_CODEC_TESTING`
+включает `codec_unit_tests` — ещё 4 сценария кодирования/декодирования, которым
+нужны OpenSSL и JsonCpp. Четыре простых теста Base64/CRC32 (`codec_primitive_tests`)
+собираются независимо от этого флага. Если development-пакет JsonCpp не установлен,
+можно временно указать `-DBUILD_CODEC_TESTING=OFF`: тогда останется 53 сценария.
+В Ubuntu/Debian необходимые пакеты устанавливаются командой:
+
+```sh
+sudo apt install libssl-dev libjsoncpp-dev
+```
+
+Запустить тесты:
+
+```sh
+ctest --test-dir build-tests --output-on-failure
+```
+
+### 3. Собрать расширенный набор тестов, включая контроллеры и HTTP-транспорт
+
+Эта конфигурация всё ещё **не собирает приложения**. Она собирает только тестовые
+исполняемые файлы. Для контроллеров и реального Drogon HTTP-транспорта потребуется
+установленный Drogon; для codec-тестов — OpenSSL и JsonCpp. PostgreSQL не нужен.
+
+```sh
+cmake -S . -B build-tests-full \
+  -DBUILD_APPLICATION=OFF \
+  -DBUILD_TESTING=ON \
+  -DBUILD_CODEC_TESTING=ON \
+  -DBUILD_CONTROLLER_TESTING=ON \
+  -DBUILD_TRANSPORT_INTEGRATION_TESTING=ON \
+  -DBUILD_POSTGRES_INTEGRATION_TESTING=OFF
+cmake --build build-tests-full -j"$(nproc)"
+ctest --test-dir build-tests-full --output-on-failure
+```
+
+Ожидается **105 сценариев**. Контроллеры тестируются напрямую, а их сервисные
+зависимости подменяются FakeIt. Восемь `drogon_transport_integration_tests` проверяют
+реальный HTTP-транспорт через локальный TCP-сервер. Ни один бинарник приложения
+для этого собирать не требуется.
+
+### 4. Запустить полный набор из 113 сценариев, включая PostgreSQL
+
+Ещё восемь сценариев проверяют реальные SQL-репозитории. Это интеграционные тесты:
+они должны обращаться к PostgreSQL, иначе проверка SQL, ограничений и внешних ключей
+теряет смысл.
+
+Сначала запустите PostgreSQL:
+
+```sh
+docker compose up -d postgres
+```
+
+Создайте отдельную тестовую базу (эту команду нужно выполнить один раз):
+
+```sh
+docker compose exec postgres psql -U postgres -d postgres \
+  -c "CREATE DATABASE iot_platform_test;"
+```
+
+Примените схему:
+
+```sh
+docker compose exec -T postgres psql -U postgres -d iot_platform_test \
+  -v ON_ERROR_STOP=1 < init.sql
+```
+
+Соберите тесты. Обратите внимание: `BUILD_APPLICATION` остаётся `OFF` — собираются
+тестовые цели, а не четыре микросервиса.
+
+```sh
+cmake -S . -B build-tests-full \
+  -DBUILD_APPLICATION=OFF \
+  -DBUILD_TESTING=ON \
+  -DBUILD_CODEC_TESTING=ON \
+  -DBUILD_CONTROLLER_TESTING=ON \
+  -DBUILD_TRANSPORT_INTEGRATION_TESTING=ON \
+  -DBUILD_POSTGRES_INTEGRATION_TESTING=ON
+cmake --build build-tests-full -j"$(nproc)"
+```
+
+Запустите все тесты с переменной подключения к тестовой БД:
+
+```sh
+IOT_TEST_DATABASE_URL='host=127.0.0.1 port=5433 dbname=iot_platform_test user=postgres password=postgres' \
+  ctest --test-dir build-tests-full --output-on-failure
+```
+
+При успешном выполнении должны пройти все **113 сценариев**.
+
+### 5. Пересборка и очистка тестов
+
+После изменения исходников тестов достаточно повторить сборку и запуск:
+
+```sh
+cmake --build build-tests -j"$(nproc)"
+ctest --test-dir build-tests --output-on-failure
+```
+
+Чтобы полностью пересоздать тестовую конфигурацию:
+
+```sh
+rm -rf build-tests
+cmake -S . -B build-tests \
+  -DBUILD_APPLICATION=OFF \
+  -DBUILD_TESTING=ON \
+  -DBUILD_CODEC_TESTING=ON \
   -DBUILD_CONTROLLER_TESTING=OFF \
   -DBUILD_POSTGRES_INTEGRATION_TESTING=OFF \
   -DBUILD_TRANSPORT_INTEGRATION_TESTING=OFF
 cmake --build build-tests -j"$(nproc)"
 ctest --test-dir build-tests --output-on-failure
 ```
-
-В этой конфигурации запускаются 53 сценария. Если установлены OpenSSL и JsonCpp,
-можно включить ещё четыре проверки кодирования и декодирования, установив
-`-DBUILD_CODEC_TESTING=ON`.
-
-### Сборка приложения и тестов без отдельной тестовой БД
-
-На машине с Drogon, OpenSSL и JsonCpp можно собрать приложения, модульные тесты
-контроллеров и тесты настоящего HTTP-транспорта:
-
-```sh
-cmake -S . -B build-all \
-  -DBUILD_APPLICATION=ON \
-  -DBUILD_TESTING=ON \
-  -DBUILD_CODEC_TESTING=ON \
-  -DBUILD_CONTROLLER_TESTING=ON \
-  -DBUILD_TRANSPORT_INTEGRATION_TESTING=ON \
-  -DBUILD_POSTGRES_INTEGRATION_TESTING=OFF
-cmake --build build-all -j"$(nproc)"
-ctest --test-dir build-all --output-on-failure
-```
-
-Эта конфигурация содержит 105 сценариев. 40 тестов контроллеров создают запросы Drogon
-напрямую и подменяют сервисы через FakeIt; отдельный сервер и PostgreSQL им не нужны.
-Восемь тестов `drogon_transport_integration_tests` проверяют реальный HTTP-транспорт
-через локальный TCP-сервер.
-
-### Полный набор, включая PostgreSQL
-
-Ещё восемь сценариев проверяют реальные SQL-репозитории. Они намеренно работают с
-PostgreSQL, а не с FakeIt: иначе это были бы unit-тесты репозиториев, а не проверка SQL,
-ограничений и внешних ключей. Для них нужна отдельная тестовая база.
-
-Сначала запустите PostgreSQL из Compose:
-
-```sh
-docker compose up -d postgres
-```
-
-Создайте отдельную БД и примените к ней схему:
-
-```sh
-docker compose exec postgres psql -U postgres -d postgres \
-  -c "CREATE DATABASE iot_platform_test;"
-docker compose exec -T postgres psql -U postgres -d iot_platform_test \
-  -v ON_ERROR_STOP=1 < init.sql
-```
-
-Соберите набор с PostgreSQL-тестами:
-
-```sh
-cmake -S . -B build-all \
-  -DBUILD_APPLICATION=ON \
-  -DBUILD_TESTING=ON \
-  -DBUILD_CODEC_TESTING=ON \
-  -DBUILD_CONTROLLER_TESTING=ON \
-  -DBUILD_TRANSPORT_INTEGRATION_TESTING=ON \
-  -DBUILD_POSTGRES_INTEGRATION_TESTING=ON
-cmake --build build-all -j"$(nproc)"
-```
-
-Запустите весь набор, передав строку подключения к тестовой БД:
-
-```sh
-IOT_TEST_DATABASE_URL='host=127.0.0.1 port=5433 dbname=iot_platform_test user=postgres password=postgres' \
-  ctest --test-dir build-all --output-on-failure
-```
-
-При успешном выполнении все 113 тестовых сценариев должны пройти. Тесты БД используют
-уникальные email и удаляют созданные записи после проверки.
 
 ### Запуск отдельных наборов
 
@@ -305,31 +351,31 @@ CTest регистрирует не каждый `TEST_CASE`, а исполня�
 
 ```sh
 # Показать зарегистрированные CTest-наборы
-ctest --test-dir build-all -N
+ctest --test-dir build-tests-full -N
 
 # Показать каждый сценарий: [PASS] будет зелёным, [FAIL] — красным
-ctest --test-dir build-all --verbose
+ctest --test-dir build-tests-full --verbose
 
 # Запустить один набор напрямую — цвет определяется по терминалу
-./build-all/tests/service_unit_tests
+./build-tests-full/tests/service_unit_tests
 
 # Принудительно включить цвета, например при перенаправлении вывода
-FORCE_COLOR=1 ./build-all/tests/service_unit_tests
+FORCE_COLOR=1 ./build-tests-full/tests/service_unit_tests
 
 # Отключить цвета
-NO_COLOR=1 ctest --test-dir build-all --verbose
+NO_COLOR=1 ctest --test-dir build-tests-full --verbose
 
 # Повторить только клиентские тесты
-ctest --test-dir build-all -R client_unit_tests --output-on-failure
+ctest --test-dir build-tests-full -R client_unit_tests --output-on-failure
 
 # Повторить только тесты контроллеров
-ctest --test-dir build-all -R controller_unit_tests --output-on-failure
+ctest --test-dir build-tests-full -R controller_unit_tests --output-on-failure
 
 # Собрать только один исполняемый файл
-cmake --build build-all --target client_unit_tests -j"$(nproc)"
+cmake --build build-tests-full --target client_unit_tests -j"$(nproc)"
 
 # Запустить его напрямую — он выведет каждый TEST_CASE
-./build-all/tests/client_unit_tests
+./build-tests-full/tests/client_unit_tests
 ```
 
 ### Какие сценарии входят в полный набор
@@ -380,6 +426,205 @@ fakeit::Verify(Method(*repositoryMock, save)).Once();
 поведение с реальной БД и реальным сокетом. Подменять эти части FakeIt означало бы
 потерять смысл таких проверок.
 
+
+## Логирование
+
+Во всех четырёх сервисах используется встроенный логгер Drogon (`LOG_INFO`,
+`LOG_WARN`, `LOG_ERROR`, `LOG_FATAL`). Общая настройка находится в
+`common/logging/DrogonLogging.h` и подключается при запуске каждого приложения.
+
+### Что попадает в журнал
+
+| Событие | Уровень | Пример |
+|---|---|---|
+| Запуск сервиса и подключение инфраструктуры | `INFO` | `[iot_core] Starting IoT Core` |
+| Входящий HTTP-запрос | `INFO` | `HTTP request: POST /telemetry` |
+| Успешный HTTP-ответ | `INFO` | `HTTP response: POST /telemetry -> 200` |
+| Клиентская ошибка HTTP | `WARN` | `HTTP response: POST /users -> 400` |
+| Ошибка сервера HTTP | `ERROR` | `HTTP response: POST /telemetry -> 500` |
+| Начало SQL-операции и её успешное завершение | `INFO` | `[iot_core][db] telemetry.save: started` |
+| Ошибка SQL | `ERROR` | `[iot_core][db] telemetry.save failed` |
+| Исходящий HTTP-запрос и ответ | `INFO` | `[http] -> POST http://127.0.0.1:8082/notifications/temperature` |
+| Ошибка сети или неуспешный исходящий HTTP-ответ | `ERROR` | `[http] <- POST ... failed; status=0 network_error` |
+
+Логируются входящие запросы всех маршрутов каждого сервиса, обращения к PostgreSQL
+в `iot_core` и `rule_engine`, исходящие HTTP-вызовы из Adapter/Core/Notification
+Service, а также вызов Notification Service из Rule Engine.
+
+### Где находятся файлы
+
+При старте приложение создаёт каталог `logs` рядом со своим исполняемым файлом.
+При стандартной сборке это `build-app/bin/logs/`:
+
+```text
+build-app/bin/logs/
+├── iot_core.log
+├── http_adapter.log
+├── notification_service.log
+└── rule_engine.log
+```
+
+Каждый сервис пишет в отдельный файл. Размер файла ограничен 10 MiB, Drogon
+хранит до пяти файлов ротации. Логгер настраивается на уровень `INFO`, поэтому
+в журнал попадают сообщения `INFO`, `WARN`, `ERROR` и `FATAL`.
+
+### Как посмотреть логи
+
+Открой отдельный терминал и следи за логом нужного сервиса:
+
+```sh
+# IoT Core
+tail -f build-app/bin/logs/iot_core.log
+
+# Adapter
+tail -f build-app/bin/logs/http_adapter.log
+
+# Notification Service
+tail -f build-app/bin/logs/notification_service.log
+
+# Rule Engine
+tail -f build-app/bin/logs/rule_engine.log
+```
+
+Фильтрация ошибок:
+
+```sh
+grep -E '\[ERROR\]|\[FATAL\]' build-app/bin/logs/*.log
+```
+
+### Как продемонстрировать работу
+
+1. Собери приложение по инструкции из раздела [Сборка](#сборка), запусти PostgreSQL
+   вместе с одноразовым сервисом инициализации схемы:
+
+   ```sh
+   docker compose up -d
+   export PASSWORD_PEPPER='local-development-pepper'
+   ./build-app/bin/iot_core
+   ```
+
+2. В другом терминале отправь запрос проверки доступности:
+
+   ```sh
+   curl -i http://127.0.0.1:8080/ping
+   ```
+
+   В `iot_core.log` появятся входящий `GET /ping` и ответ `200` (`INFO`).
+
+3. Отправь заведомо некорректный запрос:
+
+   ```sh
+   curl -i -X POST http://127.0.0.1:8080/telemetry \
+     -H 'Content-Type: application/json' \
+     -d '{"device_id":-1,"temperature":22.5}'
+   ```
+
+   Контроллер ответит `400`; журнал покажет запрос и ответ с уровнем `WARN`.
+
+4. Создай пользователя и устройство, чтобы увидеть реальные SQL-операции. Укажи
+   свой тестовый Telegram chat ID, если планируешь проверять уведомления:
+
+   ```sh
+   curl -i -X POST http://127.0.0.1:8080/users \
+     -H 'Content-Type: application/json' \
+     -d '{"email":"demo@example.com","password":"demo-password","name":"Demo","telegram_chat_id":"<your-chat-id>"}'
+
+   curl -i -X POST http://127.0.0.1:8080/devices \
+     -H 'Content-Type: application/json' \
+     -d '{"owner_id":<user-id-from-response>,"name":"Demo sensor","type":"temperature"}'
+
+   curl -i -X POST http://127.0.0.1:8080/telemetry \
+     -H 'Content-Type: application/json' \
+     -d '{"device_id":<device-id-from-response>,"temperature":22.5}'
+   ```
+
+   В `iot_core.log` появятся `users.save`, `devices.save` и `telemetry.save` с
+   записями `started` и `completed` (`INFO`). Замени заполнители реальными ID.
+
+5. Запусти остальные сервисы в отдельных терминалах:
+
+   ```sh
+   # Терминал 2
+   ./build-app/bin/http_adapter
+
+   # Терминал 3
+   TELEGRAM_BOT_TOKEN='<token-from-BotFather>' ./build-app/bin/notification_service
+
+   # Терминал 4
+   ./build-app/bin/rule_engine
+   ```
+
+   Проверь входящие запросы каждого сервиса:
+
+   ```sh
+   # Adapter: некорректный JSON даст 400 (WARN)
+   curl -i -X POST http://127.0.0.1:8081/ingest \
+     -H 'Content-Type: application/json' -d '{'
+
+   # Notification Service: пустое тело даст 400 (WARN)
+   curl -i -X POST http://127.0.0.1:8082/notifications/temperature \
+     -H 'Content-Type: application/json' -d '{}'
+
+   # Rule Engine: ping даст 200 (INFO)
+   curl -i http://127.0.0.1:8083/ping
+   ```
+
+6. Чтобы увидеть исходящие HTTP-запросы и Telegram-уведомление, отправь в Core
+   температуру выше `temperature_threshold` из `iot_core/config/HTTPConfig.json`:
+
+   ```sh
+   curl -i -X POST http://127.0.0.1:8080/telemetry \
+     -H 'Content-Type: application/json' \
+     -d '{"device_id":<device-id-from-response>,"temperature":35}'
+   ```
+
+   В `iot_core.log` появится запрос к Notification Service, а в
+   `notification_service.log` — запрос к Telegram Bot API. Для успешной доставки
+   пользователь должен заранее открыть бота и нажать **Start**.
+
+   Для Rule Engine создай правило и отправь температуру выше его порога:
+
+   ```sh
+   curl -i -X POST http://127.0.0.1:8083/rules \
+     -H 'Content-Type: application/json' \
+     -d '{"device_id":<device-id-from-response>,"operator":">","value":30}'
+
+   curl -i -X POST http://127.0.0.1:8083/telemetry \
+     -H 'Content-Type: application/json' \
+     -d '{"device_id":<device-id-from-response>,"temperature":35}'
+   ```
+
+   В `rule_engine.log` будут видны SQL-операции, проверка правила и HTTP-вызов
+   Notification Service.
+
+7. Чтобы проверить `ERROR` PostgreSQL, временно останови БД и повтори запрос
+   записи телеметрии:
+
+   ```sh
+   docker compose stop postgres
+   curl -i -X POST http://127.0.0.1:8080/telemetry \
+     -H 'Content-Type: application/json' \
+     -d '{"device_id":1,"temperature":22.5}'
+   docker compose start postgres
+   ```
+
+   В `iot_core.log` появится `[iot_core][db] telemetry.save failed`, а HTTP-ответ
+   будет `500`. Подожди, пока PostgreSQL снова станет healthy, прежде чем
+   продолжать работу.
+
+### Безопасность логов
+
+Логи намеренно не содержат HTTP-тела, query string и заголовки. Они также не
+содержат пароли, хеши паролей, Telegram chat ID или содержимое сообщений. Это важно:
+тела запросов регистрации и уведомлений содержат чувствительные данные. Telegram Bot
+API передаёт токен в URL; общий HTTP-транспорт заменяет его в логах на `<redacted>`.
+В PostgreSQL-журнал попадают имя операции и факт ошибки, но не значения параметров
+`$1`, `$2` и т. д. Текст ошибки драйвера намеренно не записывается, поскольку он
+может содержать значения полей из диагностического сообщения PostgreSQL.
+
+Для локальной демонстрации используются тестовые данные. Не отправляй реальные
+пароли и токены в публичные логи и не коммить секреты в репозиторий.
+
 ## Запуск и автоматическая инициализация базы
 
 ### 1. Запустить контейнеры и дождаться базы
@@ -417,7 +662,7 @@ Core подключается к БД на `127.0.0.1:5433` согласно `io
 Core ищет конфиги рядом с исполняемым файлом, поэтому его можно запускать из корня проекта:
 
 ```sh
-./build/bin/iot_core
+./build-app/bin/iot_core
 ```
 
 Ожидаемый порт по умолчанию: `8080`.
@@ -435,7 +680,7 @@ export TELEGRAM_BOT_TOKEN='<token-from-BotFather>'
 В отдельном терминале из корня проекта запустите:
 
 ```sh
-./build/bin/notification_service
+./build-app/bin/notification_service
 ```
 
 Сервис слушает только локальный интерфейс `127.0.0.1:8082`; поэтому этот вариант рассчитан на запуск Core и Notification Service на одном компьютере. Токен бота нужен только Notification Service.
@@ -445,7 +690,7 @@ export TELEGRAM_BOT_TOKEN='<token-from-BotFather>'
 Оставьте Core запущенным. Откройте отдельный терминал в корне проекта:
 
 ```sh
-./build/bin/http_adapter
+./build-app/bin/http_adapter
 ```
 
 Ожидаемый порт по умолчанию: `8081`. В конфигурации Adapter задан адрес Core `http://127.0.0.1:8080`.
@@ -462,7 +707,7 @@ export TELEGRAM_BOT_TOKEN='<token-from-BotFather>'
 - `notification_service/config/HTTPConfig.json` — адрес и порт Notification Service.
 - В `iot_core/config/HTTPConfig.json` в `custom_config` задаются `temperature_threshold` и `notification_service_url`.
 
-CMake копирует их в `build/bin`. После изменения конфигов повторите конфигурацию/сборку или скопируйте файлы в `build/bin`, чтобы приложение получило обновлённые настройки.
+CMake копирует их в `build-app/bin`. После изменения конфигов повторите конфигурацию/сборку или скопируйте файлы в `build-app/bin`, чтобы приложение получило обновлённые настройки.
 
 ## Общий сценарий использования
 

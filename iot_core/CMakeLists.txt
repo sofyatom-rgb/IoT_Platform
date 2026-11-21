@@ -16,7 +16,7 @@ add_executable(iot_core
     src/devices/repositories/DevicesRepository.cpp
     src/services/PasswordHasher.cpp
 )
-target_include_directories(iot_core PRIVATE src)
+target_include_directories(iot_core PRIVATE src ${PROJECT_SOURCE_DIR})
 set_target_properties(iot_core PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )

@@ -4,5 +4,9 @@
       "address": "127.0.0.1",
       "port": 8082
     }
-  ]
+  ],
+  "log": {
+    "log_level": "INFO",
+    "log_path": ""
+  }
 }

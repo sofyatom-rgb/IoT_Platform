@@ -1,5 +1,7 @@
 #include <drogon/drogon.h>
 
+#include "common/logging/DrogonLogging.h"
+
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -19,29 +21,32 @@
 
 /// Загружает конфигурацию, собирает зависимости IoT Core и запускает HTTP-сервер.
 int main(int, char *argv[]) {
-  const char *pepper = std::getenv("PASSWORD_PEPPER");
-  if (!pepper || std::string(pepper).empty()) {
-    LOG_FATAL << "PASSWORD_PEPPER is not set";
-    return 1;
-  }
-
   const auto configDirectory =
       std::filesystem::absolute(argv[0]).parent_path();
   drogon::app()
       .loadConfigFile((configDirectory / "PostgreSQLConfig.json").string())
       .loadConfigFile((configDirectory / "HTTPConfig.json").string());
+  iot::logging::configureDrogonLogging(configDirectory / "logs", "iot_core");
+  LOG_INFO << "[iot_core] Starting IoT Core";
+
+  const char *pepper = std::getenv("PASSWORD_PEPPER");
+  if (!pepper || std::string(pepper).empty()) {
+    LOG_FATAL << "[iot_core] PASSWORD_PEPPER is not set";
+    return 1;
+  }
 
   const auto &customConfig = drogon::app().getCustomConfig();
   if (!customConfig["temperature_threshold"].isNumeric() ||
       !customConfig["notification_service_url"].isString() ||
       customConfig["notification_service_url"].asString().empty()) {
-    std::cerr << "HTTPConfig.json must define temperature_threshold and "
-                 "notification_service_url under custom_config\n";
+    LOG_ERROR << "[iot_core] HTTPConfig.json must define temperature_threshold "
+                 "and notification_service_url under custom_config";
     return 1;
   }
 
   // Создаём реальные зависимости приложения в одной точке композиции.
   const auto database = drogon::app().getDbClient();
+  LOG_INFO << "[iot_core] PostgreSQL client configured";
   auto usersService = std::make_shared<UsersService>(
       std::make_shared<UsersRepository>(database));
   auto devicesService = std::make_shared<DevicesService>(
@@ -63,6 +68,7 @@ int main(int, char *argv[]) {
   DevicesController devicesController(devicesService);
   devicesController.registerRoutes();
 
+  LOG_INFO << "[iot_core] HTTP server is ready";
   drogon::app().run();
   return 0;
 }

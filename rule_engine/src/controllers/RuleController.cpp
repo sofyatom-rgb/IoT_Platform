@@ -23,8 +23,8 @@ Json::Value errorJson(const std::string &msg) {
 }
 
 // Записывает ошибку БД в лог и возвращает клиенту общий ответ.
-void replyDbError(const Callback &cb, const std::string &msg) {
-  LOG_ERROR << "DB error: " << msg;
+void replyDbError(const Callback &cb) {
+  LOG_ERROR << "[rule_engine][db] request failed";
   reply(cb, drogon::k500InternalServerError, errorJson("internal error"));
 }
 
@@ -94,7 +94,7 @@ void RuleController::registerRoutes() {
               ok["rule_id"] = id;
               reply(cb, drogon::k201Created, ok);
             },
-            [cb](const std::string &msg) { replyDbError(cb, msg); });
+            [cb](const std::string &) { replyDbError(cb); });
       },
       {drogon::Post});
 
@@ -122,7 +122,7 @@ void RuleController::registerRoutes() {
               for (const auto &r : rules) arr.append(ruleToJson(r));
               reply(cb, drogon::k200OK, arr);
             },
-            [cb](const std::string &msg) { replyDbError(cb, msg); });
+            [cb](const std::string &) { replyDbError(cb); });
       },
       {drogon::Get});
 
@@ -137,7 +137,7 @@ void RuleController::registerRoutes() {
               if (msg == "Rule not found") {
                 reply(cb, drogon::k404NotFound, errorJson(msg));
               } else {
-                replyDbError(cb, msg);
+                replyDbError(cb);
               }
             });
       },
@@ -166,7 +166,7 @@ drogon::app().registerHandler(
             ok["status"] = "ok";
             reply(cb, drogon::k200OK, ok);
           },
-          [cb](const std::string &msg) { replyDbError(cb, msg); });
+          [cb](const std::string &) { replyDbError(cb); });
     },
     {drogon::Put});
 
@@ -181,7 +181,7 @@ drogon::app().registerHandler(
               resp->setStatusCode(drogon::k204NoContent);
               cb(resp);
             },
-            [cb](const std::string &msg) { replyDbError(cb, msg); });
+            [cb](const std::string &) { replyDbError(cb); });
       },
       {drogon::Delete});
   // POST /rules/{id}/devices/{deviceId} — привязать правило к устройству
@@ -196,7 +196,7 @@ drogon::app().registerHandler(
             ok["status"] = "ok";
             reply(cb, drogon::k201Created, ok);
           },
-          [cb](const std::string &msg) { replyDbError(cb, msg); });
+          [cb](const std::string &) { replyDbError(cb); });
     },
     {drogon::Post});
 
@@ -212,7 +212,7 @@ drogon::app().registerHandler(
             resp->setStatusCode(drogon::k204NoContent);
             cb(resp);
           },
-          [cb](const std::string &msg) { replyDbError(cb, msg); });
+          [cb](const std::string &) { replyDbError(cb); });
     },
     {drogon::Delete});
   // POST /telemetry — проверить правила для пришедшей температуры
@@ -238,8 +238,8 @@ drogon::app().registerHandler(
               ok["status"] = "ok";
               reply(cb, drogon::k200OK, ok);
             },
-            [cb](const std::string &msg) {
-              LOG_ERROR << "checkAndNotify failed: " << msg;
+            [cb](const std::string &) {
+              LOG_ERROR << "[rule_engine] checkAndNotify failed";
               reply(cb, drogon::k500InternalServerError,
                     errorJson("notification failed"));
             });
