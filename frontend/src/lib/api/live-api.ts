@@ -170,5 +170,17 @@ export const liveApi = {
     return next;
   },
   async testEmail(email: string): Promise<void> { await request(notifications, '/notifications/email/test', { method: 'POST', body: JSON.stringify({ email }) }); },
-  async testTelegram(device: Device, user: User, threshold: number, reading: number): Promise<void> { await request(notifications, '/notifications/temperature', { method: 'POST', body: JSON.stringify({ device_id: null, chat_id: user.telegram_chat_id, email: user.email, device_name: device.name, temperature: reading, threshold }) }); },
+  async testTelegram(device: Device, user: User, threshold: number, reading: number): Promise<void> {
+    // Тест Telegram проверяет только этот канал, email отправляется отдельной кнопкой.
+    await request(notifications, '/notifications/temperature', {
+      method: 'POST',
+      body: JSON.stringify({
+        device_id: null,
+        chat_id: user.telegram_chat_id,
+        device_name: device.name,
+        temperature: reading,
+        threshold,
+      }),
+    });
+  },
 };
