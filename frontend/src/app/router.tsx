@@ -178,7 +178,10 @@ function Login({ register = false }: { register?: boolean }) {
             String(form.get('password')),
             String(form.get('telegram') ?? ''),
           )
-        : await api.login(String(form.get('email')), String(form.get('password')));
+        : await api.login(
+            String(form.get('email')),
+            String(form.get('password')),
+          );
       login(user);
       toast.success(register ? 'Аккаунт создан' : `С возвращением, ${user.name || user.email}`);
       navTo('/');
@@ -224,21 +227,19 @@ function Login({ register = false }: { register?: boolean }) {
               <input name="email" type="email" required placeholder="you@company.ru" />
             </div>
           </label>
-          {(!live || register) && (
-            <label className="field">
-              <span>Пароль</span>
-              <div className="input-icon">
-                <LockKeyhole size={16} />
-                <input
-                  name="password"
-                  type="password"
-                  required
-                  minLength={8}
-                  placeholder="Минимум 8 символов"
-                />
-              </div>
-            </label>
-          )}
+          <label className="field">
+            <span>Пароль</span>
+            <div className="input-icon">
+              <LockKeyhole size={16} />
+              <input
+                name="password"
+                type="password"
+                required
+                minLength={8}
+                placeholder="Минимум 8 символов"
+              />
+            </div>
+          </label>
           {register && (
             <label className="field">
               <span>

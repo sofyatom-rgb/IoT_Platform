@@ -5,13 +5,19 @@ const rulesBase = import.meta.env.VITE_RULES_BASE ?? '/api/rules';
 const notifications = import.meta.env.VITE_NOTIFICATIONS_BASE ?? '/api/notifications';
 const deviceKey = 'iot-monitor-live-device-ids';
 const ownerKey = 'iot-monitor-live-owner-id';
+const tokenKey = 'iot-monitor-live-token';
 
 type Json = Record<string, unknown> | unknown[];
 
 async function request<T extends Json>(base: string, path: string, init: RequestInit = {}): Promise<T> {
+  const token = sessionStorage.getItem(tokenKey);
   const response = await fetch(`${base}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init.headers ?? {}),
+    },
   });
   const text = await response.text();
   const body: unknown = text ? JSON.parse(text) : undefined;
@@ -31,16 +37,29 @@ function deviceFrom(raw: Record<string, unknown>): Device {
 }
 
 export const liveApi = {
-  async login(email: string): Promise<User> {
-    const user = await request<Record<string, unknown>>(core, '/auth/login', { method: 'POST', body: JSON.stringify({ email }) });
-    const result = { id: Number(user.id), email: String(user.email), name: String(user.name ?? ''), telegram_chat_id: user.telegram_chat_id === null ? null : String(user.telegram_chat_id ?? ''), role: 'user' as const };
-    sessionStorage.setItem(ownerKey, String(result.id));
-    return result;
+  async login(email: string, password: string): Promise<User> {
+    const auth = await request<Record<string, unknown>>(core, '/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+    const id = Number(auth.user_id);
+    sessionStorage.setItem(tokenKey, String(auth.token));
+    sessionStorage.setItem(ownerKey, String(id));
+    const raw = await request<Record<string, unknown>>(core, `/users?id=${id}`);
+    return {
+      id,
+      email: String(raw.email ?? email),
+      name: String(raw.name ?? ''),
+      telegram_chat_id: raw.telegram_chat_id === null ? null : String(raw.telegram_chat_id ?? ''),
+      role: 'user',
+    };
   },
   async register(name: string, email: string, password: string, telegramChatId = ''): Promise<User> {
-    const result = await request<Record<string, unknown>>(core, '/users', { method: 'POST', body: JSON.stringify({ name, email, password, telegram_chat_id: telegramChatId }) });
-    const id = Number(result.user_id); sessionStorage.setItem(ownerKey, String(id));
-    return { id, name, email, telegram_chat_id: telegramChatId || null, role: 'user' };
+    await request(core, '/users', {
+      method: 'POST',
+      body: JSON.stringify({ name, email, password, telegram_chat_id: telegramChatId }),
+    });
+    return this.login(email, password);
   },
   async devices(): Promise<Device[]> {
     const ownerId = Number(sessionStorage.getItem(ownerKey) ?? import.meta.env.VITE_LIVE_OWNER_ID);

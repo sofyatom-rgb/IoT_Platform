@@ -90,8 +90,9 @@ int main(int, char *argv[]) {
                  << " user=" << quoteConnectionValue(database["user"].asString())
                  << " password=" << quoteConnectionValue(database["passwd"].asString());
   drogon::app().loadConfigJson(config);
+  drogon::app().loadConfigJson(databaseConfig);
 
-  const auto &customConfig = drogon::app().getCustomConfig();
+  const auto &customConfig = config["custom_config"];
   if (!customConfig["rule_engine_url"].isString() ||
       customConfig["rule_engine_url"].asString().empty()) {
     std::cerr << "HTTPConfig.json must define rule_engine_url under "

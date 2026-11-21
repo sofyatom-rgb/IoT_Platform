@@ -59,6 +59,13 @@ void DevicesService::getById(
       error);
 }
 
+void DevicesService::listByOwner(
+    int userId,
+    std::function<void(const std::string &)> success,
+    std::function<void(const std::string &)> error) const {
+  repository_.getByOwnerId(userId, std::move(success), std::move(error));
+}
+
 void DevicesService::getNotificationInfo(
     int deviceId,
     std::function<void(int, const std::string &)> success,

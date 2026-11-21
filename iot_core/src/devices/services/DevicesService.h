@@ -35,6 +35,10 @@ class DevicesService {
                std::function<void(const std::string &)> success,
                std::function<void(const std::string &)> error) const;
 
+  void listByOwner(int userId,
+                   std::function<void(const std::string &)> success,
+                   std::function<void(const std::string &)> error) const;
+
  private:
   DevicesRepository repository_;
 };

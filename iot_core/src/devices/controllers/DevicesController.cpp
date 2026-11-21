@@ -1,5 +1,6 @@
 #include "devices/controllers/DevicesController.h"
 
+#include <sstream>
 #include <string>
 #include <utility>
 
@@ -36,7 +37,11 @@ void DevicesController::registerRoutes() {
       "/devices",
       [this](const drogon::HttpRequestPtr &request,
              std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        getDevice(request, std::move(callback));
+        if (request->getParameter("id").empty()) {
+          listDevices(request, std::move(callback));
+        } else {
+          getDevice(request, std::move(callback));
+        }
       },
       {drogon::Get, "AuthFilter"});
 }
@@ -223,6 +228,42 @@ void DevicesController::getDevice(
           errorBody["message"] = "Failed to parse device data";
           callback(drogon::HttpResponse::newHttpJsonResponse(errorBody));
         }
+      },
+      [callback](const std::string &error) {
+        Json::Value body;
+        body["status"] = "error";
+        body["message"] = error;
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+      });
+}
+void DevicesController::listDevices(
+    const drogon::HttpRequestPtr &request,
+    std::function<void(const drogon::HttpResponsePtr &)> callback) {
+  const int userId = request->attributes()->get<int>("user_id");
+  if (userId <= 0) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "Unauthorized";
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    return;
+  }
+
+  DevicesService service(drogon::app().getDbClient());
+  service.listByOwner(
+      userId,
+      [callback](const std::string &responseBody) {
+        Json::Value body;
+        Json::CharReaderBuilder builder;
+        std::string errors;
+        std::istringstream input(responseBody);
+        if (!Json::parseFromStream(builder, input, &body, &errors)) {
+          Json::Value errorBody;
+          errorBody["status"] = "error";
+          errorBody["message"] = "Failed to parse device list";
+          callback(drogon::HttpResponse::newHttpJsonResponse(errorBody));
+          return;
+        }
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
       },
       [callback](const std::string &error) {
         Json::Value body;

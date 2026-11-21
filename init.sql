@@ -14,6 +14,23 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE users
     ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT;
 
+ALTER TABLE users
+    DROP COLUMN IF EXISTS password;
+
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS password_hash TEXT;
+
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS salt TEXT;
+
+UPDATE users
+    SET password_hash = '', salt = ''
+    WHERE password_hash IS NULL OR salt IS NULL;
+
+ALTER TABLE users
+    ALTER COLUMN password_hash SET NOT NULL,
+    ALTER COLUMN salt SET NOT NULL;
+
 CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_chat_id_unique
     ON users (telegram_chat_id)
     WHERE telegram_chat_id IS NOT NULL;
