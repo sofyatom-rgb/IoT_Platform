@@ -4,6 +4,7 @@
 #include <json/json.h>
 
 #include <sstream>
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -40,6 +41,47 @@ JsonScalar fromJsonValue(const Json::Value &value) {
   return nullptr;
 }
 
+/// Возвращает человекочитаемое имя HTTP-метода для журнала.
+const char *methodName(Method method) {
+  switch (method) {
+    case Method::Get: return "GET";
+    case Method::Post: return "POST";
+    case Method::Put: return "PUT";
+    case Method::Delete: return "DELETE";
+  }
+  return "UNKNOWN";
+}
+
+/// Удаляет из URL учётные данные и query-параметры перед логированием.
+std::string safeBaseUrl(std::string url) {
+  const auto scheme = url.find("://");
+  if (scheme != std::string::npos) {
+    const auto authorityStart = scheme + 3;
+    const auto authorityEnd = url.find_first_of("/?#", authorityStart);
+    const auto end = authorityEnd == std::string::npos ? url.size() : authorityEnd;
+    const auto at = url.rfind('@', end);
+    if (at != std::string::npos && at >= authorityStart) {
+      url.replace(authorityStart, at - authorityStart, "<redacted>");
+    }
+  }
+
+  const auto queryOrFragment = url.find_first_of("?#");
+  if (queryOrFragment != std::string::npos) {
+    url.erase(queryOrFragment);
+  }
+  return url;
+}
+
+/// Telegram кладёт токен бота в путь запроса — никогда не пишем его в журнал.
+std::string safePath(const std::string &path) {
+  const auto bot = path.find("/bot");
+  const auto sendMessage = path.find("/sendMessage", bot);
+  if (bot == std::string::npos || sendMessage == std::string::npos) {
+    return path;
+  }
+  return path.substr(0, bot) + "/bot<redacted>" + path.substr(sendMessage);
+}
+
 /// Переводит HTTP-метод проекта в соответствующий метод Drogon.
 drogon::HttpMethod toDrogonMethod(Method method) {
   switch (method) {
@@ -59,9 +101,16 @@ DrogonHttpTransport::DrogonHttpTransport(std::string baseUrl)
 void DrogonHttpTransport::send(const Request &request,
                                Completion completion) const {
   if (baseUrl_.empty()) {
+    LOG_ERROR << "[http] Cannot send " << methodName(request.method) << ' '
+              << safePath(request.path) << ": base URL is empty";
     if (completion) completion(Result::NetworkError, std::nullopt);
     return;
   }
+
+  const std::string logPath = safePath(request.path);
+  const std::string logBaseUrl = safeBaseUrl(baseUrl_);
+  LOG_INFO << "[http] -> " << methodName(request.method) << ' ' << logBaseUrl
+           << logPath;
 
   auto client = drogon::HttpClient::newHttpClient(baseUrl_);
   auto drogonRequest = drogon::HttpRequest::newHttpRequest();
@@ -81,7 +130,8 @@ void DrogonHttpTransport::send(const Request &request,
 
   client->sendRequest(
       drogonRequest,
-      [completion = std::move(completion)](
+      [completion = std::move(completion), method = methodName(request.method),
+       logPath, logBaseUrl](
           drogon::ReqResult result,
           const drogon::HttpResponsePtr &drogonResponse) mutable {
         std::optional<Response> response;
@@ -105,6 +155,18 @@ void DrogonHttpTransport::send(const Request &request,
             converted.jsonParseError = std::move(parseError);
           }
           response = std::move(converted);
+        }
+
+        const int status = response ? response->statusCode : 0;
+        if (result == drogon::ReqResult::Ok && response && status < 400) {
+          LOG_INFO << "[http] <- " << method << ' ' << logBaseUrl << logPath
+                   << " status=" << status;
+        } else {
+          LOG_ERROR << "[http] <- " << method << ' ' << logBaseUrl << logPath
+                    << " failed; status=" << status
+                    << (result == drogon::ReqResult::Ok
+                            ? (response ? " http_error" : " no_response")
+                            : " network_error");
         }
 
         if (completion) {

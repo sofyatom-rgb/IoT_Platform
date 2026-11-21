@@ -1,9 +1,11 @@
 #include "services/RuleService.h"
 
-#include "common/http/DrogonHttpTransport.h"
-#include "repositories/RuleRepository.h"
+#include <drogon/drogon.h>
 
 #include <utility>
+
+#include "common/http/DrogonHttpTransport.h"
+#include "repositories/RuleRepository.h"
 
 RuleService::RuleService(drogon::orm::DbClientPtr db,
                          std::string notificationServiceUrl)
@@ -28,6 +30,7 @@ void RuleService::detachFromDevice(
   auto repo = std::make_shared<RuleRepository>(db_);
   repo->detachFromDevice(ruleId, deviceId, std::move(success), std::move(error));
 }
+
 void RuleService::createRule(
     int deviceId,
     const std::string& op,
@@ -77,16 +80,27 @@ void RuleService::checkAndNotify(
     double temperature,
     std::function<void(const std::string&)> success,
     std::function<void(const std::string&)> error) const {
+  LOG_INFO << "[rule_engine][service] checkAndNotify: started for device "
+           << deviceId << ", temperature=" << temperature;
+
+  // Ошибки уведомлений и БД пишем в журнал, но сохраняем исходный контракт ответа.
+  const auto logError = [error](const std::string &message) {
+    LOG_ERROR << "[rule_engine][service] checkAndNotify failed: " << message;
+    error(message);
+  };
+
   auto repo = std::make_shared<RuleRepository>(db_);
   auto notificationClient = notificationClient_;
   repo->getRulesForDevice(
       deviceId,
       [deviceId, temperature, repo, notificationClient, success,
-       error](const std::vector<Rule>& rules) mutable {
+       logError](const std::vector<Rule>& rules) mutable {
         if (rules.empty()) {
+          LOG_INFO << "[rule_engine][service] checkAndNotify: no rules for device "
+                   << deviceId;
           notificationClient->clearTemperatureAlert(
               deviceId,
-              [success]() { success("no_rules"); }, error);
+              [success]() { success("no_rules"); }, logError);
           return;
         }
 
@@ -104,26 +118,37 @@ void RuleService::checkAndNotify(
         }
 
         if (triggeredRule == nullptr) {
+          LOG_INFO << "[rule_engine][service] checkAndNotify: temperature is within "
+                      "rules for device "
+                   << deviceId;
           notificationClient->clearTemperatureAlert(
               deviceId,
-              [success]() { success("not_triggered"); }, error);
+              [success]() { success("not_triggered"); }, logError);
           return;
         }
 
         if (isNotificationOnCooldown(deviceId)) {
+          LOG_INFO << "[rule_engine][service] checkAndNotify: notification is on "
+                      "cooldown for device "
+                   << deviceId;
           success("cooldown");
           return;
         }
 
         const double threshold = triggeredRule->value;
+        LOG_WARN << "[rule_engine][service] checkAndNotify: rule violated for device "
+                 << deviceId << ", threshold=" << threshold;
         repo->getNotificationTargetsForDevice(
             deviceId,
             [deviceId, temperature, threshold, notificationClient, success,
-             error](const NotificationTargets& targets) mutable {
+             logError](const NotificationTargets& targets) mutable {
               if (targets.chatId.empty() && targets.email.empty()) {
+                LOG_WARN << "[rule_engine][service] checkAndNotify: no notification "
+                            "recipients for device "
+                         << deviceId;
                 notificationClient->clearTemperatureAlert(
                     deviceId,
-                    [success]() { success("no_recipients"); }, error);
+                    [success]() { success("no_recipients"); }, logError);
                 return;
               }
               notificationClient->sendTemperatureAlert(
@@ -131,13 +156,16 @@ void RuleService::checkAndNotify(
                   temperature, threshold,
                   [deviceId, success](const std::string &status) {
                     markNotificationSent(deviceId);
+                    LOG_INFO << "[rule_engine][service] checkAndNotify: alert sent for "
+                                "device "
+                             << deviceId << ", status=" << status;
                     success(status);
                   },
-                  error);
+                  logError);
             },
-            error);
+            logError);
       },
-      error);
+      logError);
 }
 
 std::mutex &RuleService::cooldownMutex() {
@@ -154,6 +182,8 @@ RuleService::cooldownMap() {
 void RuleService::resetNotificationCooldown(int deviceId) {
   std::lock_guard<std::mutex> lock(cooldownMutex());
   cooldownMap().erase(deviceId);
+  LOG_INFO << "[rule_engine][service] notification cooldown reset for device "
+           << deviceId;
 }
 
 bool RuleService::isNotificationOnCooldown(int deviceId) {

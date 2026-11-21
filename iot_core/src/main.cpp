@@ -10,6 +10,7 @@
 #include "auth/controllers/AuthController.h"
 #include "common/db/DbClientProvider.h"
 #include "common/http/DrogonHttpTransport.h"
+#include "common/logging/DrogonLogging.h"
 #include "devices/controllers/DevicesController.h"
 #include "devices/repositories/DevicesRepository.h"
 #include "devices/services/DevicesService.h"
@@ -79,27 +80,34 @@ int main(int, char *argv[]) {
   loadDotEnv(
       std::filesystem::absolute(argv[0]).parent_path().parent_path().parent_path() / ".env");
 
-  const char *pepper = std::getenv("PASSWORD_PEPPER");
-  if (!pepper || std::string(pepper).empty()) {
-    std::cerr << "PASSWORD_PEPPER is not set\n";
-    return 1;
-  }
-
-  const char *jwtSecret = std::getenv("JWT_SECRET");
-  if (!jwtSecret || std::string(jwtSecret).size() < 32) {
-    std::cerr << "JWT_SECRET is not set or shorter than 32 characters\n";
-    return 1;
-  }
-
   const auto configDirectory =
       std::filesystem::absolute(argv[0]).parent_path().parent_path() / "config";
   auto config = readConfig(configDirectory / "HTTPConfig.json");
   const auto databaseConfig =
       readConfig(configDirectory / "PostgreSQLConfig.json");
+
+  // HTTPConfig.json содержит только HTTP-настройки; DbClient создаётся явно
+  // ниже из PostgreSQLConfig.json и сохраняется в DbClientProvider.
+  drogon::app().loadConfigFile((configDirectory / "HTTPConfig.json").string());
+  iot::logging::configureDrogonLogging(configDirectory / "logs", "iot_core");
+  LOG_INFO << "[iot_core] Starting IoT Core";
+
+  const char *pepper = std::getenv("PASSWORD_PEPPER");
+  if (!pepper || std::string(pepper).empty()) {
+    LOG_ERROR << "[iot_core] PASSWORD_PEPPER is not set";
+    return 1;
+  }
+
+  const char *jwtSecret = std::getenv("JWT_SECRET");
+  if (!jwtSecret || std::string(jwtSecret).size() < 32) {
+    LOG_ERROR << "[iot_core] JWT_SECRET is not set or shorter than 32 characters";
+    return 1;
+  }
+
   if (!databaseConfig["db_clients"].isArray() ||
       databaseConfig["db_clients"].empty()) {
-    std::cerr << "PostgreSQLConfig.json must define a non-empty db_clients "
-                 "array\n";
+    LOG_ERROR << "[iot_core] PostgreSQLConfig.json must define a non-empty "
+                 "db_clients array";
     return 1;
   }
   const auto &database = databaseConfig["db_clients"][0];
@@ -107,20 +115,16 @@ int main(int, char *argv[]) {
       !database["host"].isString() || !database["port"].isUInt() ||
       !database["dbname"].isString() || !database["user"].isString() ||
       !database["passwd"].isString()) {
-    std::cerr << "The first db_clients entry must contain valid PostgreSQL "
-                 "connection settings\n";
+    LOG_ERROR << "[iot_core] The first db_clients entry must contain valid "
+                 "PostgreSQL connection settings";
     return 1;
   }
-
-  // HTTPConfig.json содержит только HTTP-настройки; DbClient создаётся явно
-  // ниже из PostgreSQLConfig.json и сохраняется в DbClientProvider.
-  drogon::app().loadConfigFile((configDirectory / "HTTPConfig.json").string());
 
   const auto &customConfig = config["custom_config"];
   if (!customConfig["rule_engine_url"].isString() ||
       customConfig["rule_engine_url"].asString().empty()) {
-    std::cerr << "HTTPConfig.json must define rule_engine_url under "
-                 "custom_config\n";
+    LOG_ERROR << "[iot_core] HTTPConfig.json must define rule_engine_url under "
+                 "custom_config";
     return 1;
   }
 
@@ -137,6 +141,7 @@ int main(int, char *argv[]) {
     db->setTimeout(database["timeout"].asDouble());
   }
   DbClientProvider::set(db);
+  LOG_INFO << "[iot_core] PostgreSQL client configured";
 
   auto ruleEngineClient = std::make_shared<RuleEngineClient>(
       customConfig["rule_engine_url"].asString(),
@@ -158,6 +163,7 @@ int main(int, char *argv[]) {
   AuthController authController;
   authController.registerRoutes();
 
+  LOG_INFO << "[iot_core] HTTP server is ready";
   drogon::app().run();
   return 0;
 }

@@ -5,5 +5,9 @@
       "port": 8082
     }
   ],
-  "custom_config": {}
+  "custom_config": {},
+  "log": {
+    "log_level": "INFO",
+    "log_path": ""
+  }
 }

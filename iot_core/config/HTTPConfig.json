@@ -7,5 +7,9 @@
   ],
   "custom_config": {
     "rule_engine_url": "http://127.0.0.1:8083"
+  },
+  "log": {
+    "log_level": "INFO",
+    "log_path": ""
   }
 }

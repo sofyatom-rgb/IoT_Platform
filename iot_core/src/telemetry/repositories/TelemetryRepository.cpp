@@ -28,10 +28,15 @@ void TelemetryRepository::save(
     std::function<void()> success,
     std::function<void(const std::string &)> error) const {
   // Записываем показание в PostgreSQL.
+  LOG_INFO << "[iot_core][db] telemetry.save: started";
   db_->execSqlAsync(
       "INSERT INTO telemetry (device_id, temperature) VALUES ($1, $2)",
-      [success](const drogon::orm::Result &) { success(); },
+      [success](const drogon::orm::Result &) {
+        LOG_INFO << "[iot_core][db] telemetry.save: completed";
+        success();
+      },
       [error](const drogon::orm::DrogonDbException &e) {
+        LOG_ERROR << "[iot_core][db] telemetry.save failed";
         error(e.base().what());
       },
       deviceId, temperature);
@@ -41,10 +46,15 @@ void TelemetryRepository::getByDeviceId(
     int deviceId,
     std::function<void(const std::string &)> success,
     std::function<void(const std::string &)> error) const {
+  LOG_INFO << "[iot_core][db] telemetry.getByDeviceId: started";
   db_->execSqlAsync(
       "SELECT id, device_id, temperature, time FROM telemetry WHERE device_id = $1 ORDER BY id DESC",
-      [success](const drogon::orm::Result &r) { success(serializeTelemetry(r)); },
+      [success](const drogon::orm::Result &r) {
+        LOG_INFO << "[iot_core][db] telemetry.getByDeviceId: completed";
+        success(serializeTelemetry(r));
+      },
       [error](const drogon::orm::DrogonDbException &e) {
+        LOG_ERROR << "[iot_core][db] telemetry.getByDeviceId failed";
         error(e.base().what());
       },
       deviceId);
@@ -55,13 +65,16 @@ void TelemetryRepository::queryByDeviceId(
     std::function<void(const std::string &)> success,
     std::function<void(const std::string &)> error) const {
   if (query.afterId) {
+    LOG_INFO << "[iot_core][db] telemetry.queryByDeviceId (after): started";
     db_->execSqlAsync(
         "SELECT id, device_id, temperature, time FROM telemetry "
         "WHERE device_id = $1 AND id > $2 ORDER BY id ASC LIMIT 5000",
         [success](const drogon::orm::Result &rows) {
+          LOG_INFO << "[iot_core][db] telemetry.queryByDeviceId (after): completed";
           success(serializeTelemetry(rows));
         },
         [error](const drogon::orm::DrogonDbException &e) {
+          LOG_ERROR << "[iot_core][db] telemetry.queryByDeviceId (after) failed";
           error(e.base().what());
         },
         deviceId, *query.afterId);
@@ -69,13 +82,16 @@ void TelemetryRepository::queryByDeviceId(
   }
 
   if (query.allTime) {
+    LOG_INFO << "[iot_core][db] telemetry.queryByDeviceId (all): started";
     db_->execSqlAsync(
         "SELECT id, device_id, temperature, time FROM telemetry "
         "WHERE device_id = $1 ORDER BY time DESC, id DESC",
         [success](const drogon::orm::Result &rows) {
+          LOG_INFO << "[iot_core][db] telemetry.queryByDeviceId (all): completed";
           success(serializeTelemetry(rows));
         },
         [error](const drogon::orm::DrogonDbException &e) {
+          LOG_ERROR << "[iot_core][db] telemetry.queryByDeviceId (all) failed";
           error(e.base().what());
         },
         deviceId);
@@ -83,6 +99,7 @@ void TelemetryRepository::queryByDeviceId(
   }
 
   if (query.from && query.to) {
+    LOG_INFO << "[iot_core][db] telemetry.queryByDeviceId (range): started";
     db_->execSqlAsync(
         "SELECT id, device_id, temperature, time FROM telemetry "
         "WHERE device_id = $1 "
@@ -90,9 +107,11 @@ void TelemetryRepository::queryByDeviceId(
         "AND time <= ($3::timestamptz AT TIME ZONE 'UTC') "
         "ORDER BY time DESC, id DESC",
         [success](const drogon::orm::Result &rows) {
+          LOG_INFO << "[iot_core][db] telemetry.queryByDeviceId (range): completed";
           success(serializeTelemetry(rows));
         },
         [error](const drogon::orm::DrogonDbException &e) {
+          LOG_ERROR << "[iot_core][db] telemetry.queryByDeviceId (range) failed";
           error(e.base().what());
         },
         deviceId, *query.from, *query.to);
@@ -106,12 +125,15 @@ void TelemetryRepository::deleteByDeviceId(
     int deviceId,
     std::function<void()> success,
     std::function<void(const std::string &)> error) const {
+  LOG_INFO << "[iot_core][db] telemetry.deleteByDeviceId: started";
   db_->execSqlAsync(
       "DELETE FROM telemetry WHERE device_id = $1",
       [success](const drogon::orm::Result &r) {
+        LOG_INFO << "[iot_core][db] telemetry.deleteByDeviceId: completed";
         success();
       },
       [error](const drogon::orm::DrogonDbException &e) {
+        LOG_ERROR << "[iot_core][db] telemetry.deleteByDeviceId failed";
         error(e.base().what());
       },
       deviceId);

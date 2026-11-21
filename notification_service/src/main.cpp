@@ -10,19 +10,22 @@
 #include "clients/TelegramBotClient.h"
 #include "clients/TgBotApi.h"
 #include "clients/WorkerThreadPool.h"
+#include "common/logging/DrogonLogging.h"
 #include "controllers/NotificationController.h"
 #include "notifications/EmailConfig.h"
 #include "notifications/EmailService.h"
 #include "notifications/TelegramMessageTemplates.h"
 
 int main(int, char *argv[]) {
-  const auto configPath =
-      std::filesystem::absolute(argv[0]).parent_path().parent_path() /
-      "config" / "NotificationHTTPConfig.json";
-  drogon::app().loadConfigFile(configPath.string());
-  const auto telegramTemplatesPath =
-      std::filesystem::absolute(argv[0]).parent_path().parent_path() /
-      "config" / "TelegramTemplates.json";
+  const auto configDirectory =
+      std::filesystem::absolute(argv[0]).parent_path().parent_path() / "config";
+  drogon::app().loadConfigFile(
+      (configDirectory / "NotificationHTTPConfig.json").string());
+  iot::logging::configureDrogonLogging(configDirectory / "logs",
+                                       "notification_service");
+  LOG_INFO << "[notification_service] Starting Notification Service";
+
+  const auto telegramTemplatesPath = configDirectory / "TelegramTemplates.json";
   TelegramMessageTemplates telegramTemplates(telegramTemplatesPath.string());
 
   const char *telegramBotToken = std::getenv("TELEGRAM_BOT_TOKEN");
@@ -55,6 +58,7 @@ int main(int, char *argv[]) {
   NotificationController controller(std::move(notificationService));
   controller.registerRoutes();
 
+  LOG_INFO << "[notification_service] HTTP server is ready";
   drogon::app().run();
   return 0;
 }

@@ -23,7 +23,7 @@ Json::Value errorJson(const std::string &msg) {
 
 // Ошибки БД логируем у себя, клиенту отдаём общий текст
 void replyDbError(const Callback &cb, const std::string &msg) {
-  LOG_ERROR << "DB error: " << msg;
+  LOG_ERROR << "[rule_engine][controller] DB error: " << msg;
   reply(cb, drogon::k500InternalServerError, errorJson("internal error"));
 }
 
@@ -72,6 +72,7 @@ void RuleController::registerRoutes() {
             !json->isMember("operator") || !json->isMember("value") ||
             !(*json)["device_id"].isInt() || !(*json)["value"].isNumeric() ||
             !(*json)["operator"].isString()) {
+          LOG_WARN << "[rule_engine][controller] createRule: invalid request body";
           reply(cb, drogon::k400BadRequest,
                 errorJson("device_id, operator, value are required"));
           return;
@@ -91,6 +92,7 @@ void RuleController::registerRoutes() {
             [cb](int id) {
               Json::Value ok;
               ok["status"] = "ok";
+              LOG_INFO << "[rule_engine][controller] createRule: created rule " << id;
               ok["rule_id"] = id;
               reply(cb, drogon::k201Created, ok);
             },
@@ -233,14 +235,16 @@ drogon::app().registerHandler(
 
         makeService()->checkAndNotify(
             deviceId, temperature,
-            [cb](const std::string& notificationStatus) {
+            [cb, deviceId](const std::string& notificationStatus) {
+              LOG_INFO << "[rule_engine][controller] telemetry checked for device "
+                       << deviceId << ", notification_status=" << notificationStatus;
               Json::Value ok;
               ok["status"] = "ok";
               ok["notification_status"] = notificationStatus;
               reply(cb, drogon::k200OK, ok);
             },
             [cb](const std::string &msg) {
-              LOG_ERROR << "checkAndNotify failed: " << msg;
+              LOG_ERROR << "[rule_engine][controller] checkAndNotify failed: " << msg;
               reply(cb, drogon::k500InternalServerError,
                     errorJson(msg));
             });
@@ -258,7 +262,11 @@ drogon::app().registerHandler(
                 errorJson("device_id is required"));
           return;
         }
-        RuleService::resetNotificationCooldown((*json)["device_id"].asInt());
+        const int deviceId = (*json)["device_id"].asInt();
+        RuleService::resetNotificationCooldown(deviceId);
+        LOG_INFO << "[rule_engine][controller] notification cooldown reset for "
+                    "device "
+                 << deviceId;
         Json::Value ok;
         ok["status"] = "ok";
         reply(cb, drogon::k200OK, ok);
