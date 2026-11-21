@@ -78,7 +78,9 @@ drogon/
 commands.txt
 .postman/
 postman/
-
 # ESP32 firmware local files
 firmware/esp32/.pio/
 firmware/esp32/include/secrets.h
+
+iot_core/third_party/
+

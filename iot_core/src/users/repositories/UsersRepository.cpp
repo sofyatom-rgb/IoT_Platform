@@ -1,9 +1,22 @@
 #include "users/repositories/UsersRepository.h"
 
+#include <cstdlib>
+#include <stdexcept>
 #include <utility>
+#include <optional>
+
+#include "services/PasswordHasher.h"
 
 UsersRepository::UsersRepository(drogon::orm::DbClientPtr db)
-    : db_(std::move(db)) {}
+    : db_(std::move(db)), hasher_(readPepper()) {}
+
+std::string UsersRepository::readPepper() {
+  const char* pepper = std::getenv("PASSWORD_PEPPER");
+  if (!pepper || std::string(pepper).empty()) {
+    throw std::runtime_error("PASSWORD_PEPPER is not set");
+  }
+  return pepper;
+}
 
 void UsersRepository::save(const std::string &email,
                            const std::string &password,
@@ -11,20 +24,33 @@ void UsersRepository::save(const std::string &email,
                            const std::string &telegramChatId,
                            std::function<void(int)> success,
                            std::function<void(const std::string &)> error) const {
-  db_->execSqlAsync(
-      "INSERT INTO users (email, password, name, telegram_chat_id) "
-      "VALUES ($1, $2, $3, NULLIF($4, '')) RETURNING id",
-      [success](const drogon::orm::Result &r) {
-        if (!r.empty()) {
-          success(r[0]["id"].as<int>());
-        } else {
+  const std::string salt = PasswordHasher::generateSalt();
+  const std::string hash = hasher_.hash(password, salt);
+  const std::string status = "guest";  // админа назначаем вручную через SQL
+  auto db = db_;                       // копия указателя, не this
+  db->execSqlAsync(
+      "INSERT INTO users (email, password_hash, salt, name, telegram_chat_id) "
+      "VALUES ($1, $2, $3, $4, NULLIF($5, '')) RETURNING id",
+      [db, success, error, status](const drogon::orm::Result &r) {
+        if (r.empty()) {
           success(-1);
+          return;
         }
+        const int userId = r[0]["id"].as<int>();
+        db->execSqlAsync(
+            "INSERT INTO user_status (user_id, status) VALUES ($1, $2)",
+            [success, userId](const drogon::orm::Result &) {
+              success(userId);
+            },
+            [error](const drogon::orm::DrogonDbException &e) {
+              error(e.base().what());
+            },
+            userId, status);
       },
       [error](const drogon::orm::DrogonDbException &e) {
         error(e.base().what());
       },
-      email, password, name, telegramChatId);
+      email, hash, salt, name, telegramChatId);
 }
 
 void UsersRepository::deleteById(int userId,
@@ -48,15 +74,18 @@ void UsersRepository::updateById(int userId,
                                  const std::string &telegramChatId,
                                  std::function<void()> success,
                                  std::function<void(const std::string &)> error) const {
+  const std::string salt = PasswordHasher::generateSalt();
+  const std::string hash = hasher_.hash(password, salt);
   db_->execSqlAsync(
-      "UPDATE users SET email = $1, password = CASE WHEN $2 = '' THEN password ELSE $2 END, name = $3, telegram_chat_id = NULLIF($4, '') WHERE id = $5",
+      "UPDATE users SET email = $1, password_hash = $2, salt = $3, "
+      "name = $4, telegram_chat_id = NULLIF($5, '') WHERE id = $6",
       [success](const drogon::orm::Result &) {
         success();
       },
       [error](const drogon::orm::DrogonDbException &e) {
         error(e.base().what());
       },
-      email, password, name, telegramChatId, userId);
+      email, hash, salt, name, telegramChatId, userId);
 }
 
 void UsersRepository::getById(
@@ -87,56 +116,42 @@ void UsersRepository::getById(
       userId);
 }
 
-void UsersRepository::getByEmail(
-    const std::string &email, std::function<void(const std::string &)> success,
-    std::function<void(const std::string &)> error) const {
-  db_->execSqlAsync(
-      "SELECT id, email, name, telegram_chat_id FROM users WHERE email = $1",
-      [success, error](const drogon::orm::Result &r) {
-        if (r.empty()) { error("User not found"); return; }
-        Json::Value item;
-        item["id"] = r[0]["id"].as<int>();
-        item["email"] = r[0]["email"].as<std::string>();
-        item["name"] = r[0]["name"].isNull() ? "" : r[0]["name"].as<std::string>();
-        const auto chatId = r[0]["telegram_chat_id"];
-        item["telegram_chat_id"] = chatId.isNull() ? Json::Value::null : chatId.as<std::string>();
-        success(Json::FastWriter().write(item));
-      },
-      [error](const drogon::orm::DrogonDbException &e) { error(e.base().what()); }, email);
-}
-
-void UsersRepository::getNotificationTargets(
+void UsersRepository::getTelegramChatId(
     int userId,
-    std::function<void(const NotificationTargets &)> success,
+    std::function<void(const std::string &)> success,
     std::function<void(const std::string &)> error) const {
   db_->execSqlAsync(
-      "SELECT telegram_chat_id, email FROM users WHERE id = $1",
+      "SELECT telegram_chat_id FROM users WHERE id = $1",
       [success, error](const drogon::orm::Result &result) {
         if (result.empty()) {
           error("User not found");
           return;
         }
-        NotificationTargets targets;
-        const auto chatId = result[0]["telegram_chat_id"];
-        targets.chatId = chatId.isNull() ? std::string{} : chatId.as<std::string>();
-        const auto email = result[0]["email"];
-        targets.email = email.isNull() ? std::string{} : email.as<std::string>();
-        success(targets);
+        const auto value = result[0]["telegram_chat_id"];
+        success(value.isNull() ? std::string{} : value.as<std::string>());
       },
       [error](const drogon::orm::DrogonDbException &e) {
         error(e.base().what());
       },
       userId);
 }
-
-void UsersRepository::getTelegramChatId(
-    int userId,
-    std::function<void(const std::string &)> success,
+void UsersRepository::findCredentials(
+    const std::string &email,
+    std::function<void(std::optional<Credentials>)> success,
     std::function<void(const std::string &)> error) const {
-  getNotificationTargets(
-      userId,
-      [success = std::move(success)](const NotificationTargets &targets) {
-        success(targets.chatId);
+  db_->execSqlAsync(
+      "SELECT id, password_hash, salt FROM users WHERE email = $1",
+      [success](const drogon::orm::Result &r) {
+        if (r.empty()) {
+          success(std::nullopt);
+          return;
+        }
+        success(Credentials{r[0]["id"].as<int>(),
+                            r[0]["password_hash"].as<std::string>(),
+                            r[0]["salt"].as<std::string>()});
       },
-      std::move(error));
+      [error](const drogon::orm::DrogonDbException &e) {
+        error(e.base().what());
+      },
+      email);
 }

@@ -30,7 +30,6 @@ void replyDbError(const Callback &cb, const std::string &msg) {
 Json::Value ruleToJson(const Rule &r) {
   Json::Value j;
   j["rule_id"] = r.rule_id;
-  j["device_id"] = r.device_id;
   j["operator"] = r.op;
   j["value"] = r.value;
   return j;
@@ -85,6 +84,7 @@ void RuleController::registerRoutes() {
                 errorJson("operator must be one of: > < = !="));
           return;
         }
+        
 
         makeService()->createRule(
             deviceId, op, value,
@@ -143,32 +143,32 @@ void RuleController::registerRoutes() {
       },
       {drogon::Get});
 
-  // PUT /rules/{id}
-  drogon::app().registerHandler(
-      "/rules/{id}",
-      [makeService](const drogon::HttpRequestPtr &req, Callback &&cb, int id) {
-        auto json = req->getJsonObject();
-        if (!json || !json->isMember("device_id") ||
-            !json->isMember("operator") || !json->isMember("value")) {
-          reply(cb, drogon::k400BadRequest,
-                errorJson("device_id, operator, value are required"));
-          return;
-        }
-        std::string op = (*json)["operator"].asString();
-        if (!validOperator(op)) {
-          reply(cb, drogon::k400BadRequest, errorJson("bad operator"));
-          return;
-        }
-        makeService()->updateRule(
-            id, (*json)["device_id"].asInt(), op, (*json)["value"].asDouble(),
-            [cb]() {
-              Json::Value ok;
-              ok["status"] = "ok";
-              reply(cb, drogon::k200OK, ok);
-            },
-            [cb](const std::string &msg) { replyDbError(cb, msg); });
-      },
-      {drogon::Put});
+// PUT /rules/{id}
+drogon::app().registerHandler(
+    "/rules/{id}",
+    [makeService](const drogon::HttpRequestPtr &req, Callback &&cb, int id) {
+      auto json = req->getJsonObject();
+      if (!json || !json->isMember("operator") || !json->isMember("value") ||
+          !(*json)["operator"].isString() || !(*json)["value"].isNumeric()) {
+        reply(cb, drogon::k400BadRequest,
+              errorJson("operator and value are required"));
+        return;
+      }
+      std::string op = (*json)["operator"].asString();
+      if (!validOperator(op)) {
+        reply(cb, drogon::k400BadRequest, errorJson("bad operator"));
+        return;
+      }
+      makeService()->updateRule(
+          id, op, (*json)["value"].asDouble(),
+          [cb]() {
+            Json::Value ok;
+            ok["status"] = "ok";
+            reply(cb, drogon::k200OK, ok);
+          },
+          [cb](const std::string &msg) { replyDbError(cb, msg); });
+    },
+    {drogon::Put});
 
   // DELETE /rules/{id}
   drogon::app().registerHandler(
@@ -184,7 +184,37 @@ void RuleController::registerRoutes() {
             [cb](const std::string &msg) { replyDbError(cb, msg); });
       },
       {drogon::Delete});
+  // POST /rules/{id}/devices/{deviceId} — привязать правило к устройству
+drogon::app().registerHandler(
+    "/rules/{id}/devices/{deviceId}",
+    [makeService](const drogon::HttpRequestPtr &, Callback &&cb,
+                  int ruleId, int deviceId) {
+      makeService()->attachToDevice(
+          ruleId, deviceId,
+          [cb]() {
+            Json::Value ok;
+            ok["status"] = "ok";
+            reply(cb, drogon::k201Created, ok);
+          },
+          [cb](const std::string &msg) { replyDbError(cb, msg); });
+    },
+    {drogon::Post});
 
+// DELETE /rules/{id}/devices/{deviceId} — отвязать
+drogon::app().registerHandler(
+    "/rules/{id}/devices/{deviceId}",
+    [makeService](const drogon::HttpRequestPtr &, Callback &&cb,
+                  int ruleId, int deviceId) {
+      makeService()->detachFromDevice(
+          ruleId, deviceId,
+          [cb]() {
+            auto resp = drogon::HttpResponse::newHttpResponse();
+            resp->setStatusCode(drogon::k204NoContent);
+            cb(resp);
+          },
+          [cb](const std::string &msg) { replyDbError(cb, msg); });
+    },
+    {drogon::Delete});
   // POST /telemetry — проверить правила для пришедшей температуры
   drogon::app().registerHandler(
       "/telemetry",

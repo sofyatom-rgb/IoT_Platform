@@ -1,12 +1,13 @@
 #include <drogon/drogon.h>
 
-#include <fstream>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <sstream>
 #include <string>
 
+#include "auth/controllers/AuthController.h"
 #include "common/http/DrogonHttpTransport.h"
 #include "devices/controllers/DevicesController.h"
 #include "devices/repositories/DevicesRepository.h"
@@ -49,6 +50,18 @@ std::string quoteConnectionValue(const std::string &value) {
 }  // namespace
 
 int main(int, char *argv[]) {
+  const char *pepper = std::getenv("PASSWORD_PEPPER");
+  if (!pepper || std::string(pepper).empty()) {
+    std::cerr << "PASSWORD_PEPPER is not set\n";
+    return 1;
+  }
+
+  const char *jwtSecret = std::getenv("JWT_SECRET");
+  if (!jwtSecret || std::string(jwtSecret).size() < 32) {
+    std::cerr << "JWT_SECRET is not set or shorter than 32 characters\n";
+    return 1;
+  }
+
   const auto configDirectory =
       std::filesystem::absolute(argv[0]).parent_path().parent_path() / "config";
   auto config = readConfig(configDirectory / "HTTPConfig.json");
@@ -86,7 +99,6 @@ int main(int, char *argv[]) {
     return 1;
   }
 
-  // Composition root: здесь создаются реальные реализации зависимостей.
   const auto connectionCount =
       database.get("number_of_connections", 1).asUInt();
   if (connectionCount == 0) {
@@ -98,10 +110,6 @@ int main(int, char *argv[]) {
   if (database["timeout"].isNumeric()) {
     db->setTimeout(database["timeout"].asDouble());
   }
-  auto usersService = std::make_shared<UsersService>(
-      std::make_shared<UsersRepository>(db));
-  auto devicesService = std::make_shared<DevicesService>(
-      std::make_shared<DevicesRepository>(db));
   auto ruleEngineClient = std::make_shared<RuleEngineClient>(
       customConfig["rule_engine_url"].asString(),
       std::make_shared<iot::http::DrogonHttpTransport>(
@@ -110,15 +118,17 @@ int main(int, char *argv[]) {
       std::make_shared<TelemetryRepository>(db),
       ruleEngineClient);
 
-  // Контроллеры получают готовые сервисы через конструкторы.
   TelemetryController telemetryController(telemetryService);
   telemetryController.registerRoutes();
 
-  UsersController usersController(usersService);
+  UsersController usersController;
   usersController.registerRoutes();
 
-  DevicesController devicesController(devicesService);
+  DevicesController devicesController;
   devicesController.registerRoutes();
+
+  AuthController authController;
+  authController.registerRoutes();
 
   drogon::app().run();
   return 0;

@@ -40,6 +40,16 @@ class DevicesRepository : public IDevicesRepository {
   void getByOwnerId(int ownerId, std::function<void(const std::string &)> success,
                     std::function<void(const std::string &)> error) const override;
 
+  // Проверить право доступа пользователя к HTTP-методу через user_status + permissions.
+  void checkPermission(int userId, const std::string &method,
+                       std::function<void(bool)> success,
+                       std::function<void(const std::string &)> error) const;
+
+  // Проверить, что устройство принадлежит пользователю.
+  void checkDeviceOwnership(int deviceId, int userId,
+                            std::function<void(bool)> success,
+                            std::function<void(const std::string &)> error) const;
+
  private:
   drogon::orm::DbClientPtr db_;
 };

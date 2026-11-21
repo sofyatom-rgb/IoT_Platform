@@ -1,33 +1,40 @@
 #pragma once
 
 #include <functional>
-#include <memory>
 #include <string>
 
-#include "devices/repositories/IDevicesRepository.h"
-#include "devices/services/IDevicesService.h"
+#include "devices/repositories/DevicesRepository.h"
 
-// Сервис устройств зависит от интерфейса репозитория, а не от PostgreSQL.
-class DevicesService : public IDevicesService {
+// Сервисный слой устройств.
+class DevicesService {
  public:
-  explicit DevicesService(std::shared_ptr<IDevicesRepository> repository);
+  explicit DevicesService(drogon::orm::DbClientPtr db);
 
-  void save(int ownerId, const std::string &name, const std::string &type,
+  void save(int userId, int ownerId,
+            const std::string &name,
+            const std::string &type,
             std::function<void(int)> success,
-            std::function<void(const std::string &)> error) const override;
-  void deleteById(int deviceId, std::function<void()> success,
-                  std::function<void(const std::string &)> error) const override;
-  void getNotificationInfo(int deviceId,
-                           std::function<void(int, const std::string &)> success,
-                           std::function<void(const std::string &)> error) const override;
-  void updateById(int deviceId, int ownerId, const std::string &name,
-                  const std::string &type, std::function<void()> success,
-                  std::function<void(const std::string &)> error) const override;
-  void getById(int deviceId, std::function<void(const std::string &)> success,
-               std::function<void(const std::string &)> error) const override;
-  void getByOwnerId(int ownerId, std::function<void(const std::string &)> success,
-                    std::function<void(const std::string &)> error) const override;
+            std::function<void(const std::string &)> error) const;
+
+  void deleteById(int userId, int deviceId,
+                  std::function<void()> success,
+                  std::function<void(const std::string &)> error) const;
+
+  void getNotificationInfo(
+      int deviceId,
+      std::function<void(int, const std::string &)> success,
+      std::function<void(const std::string &)> error) const;
+
+  void updateById(int userId, int deviceId, int ownerId,
+                  const std::string &name,
+                  const std::string &type,
+                  std::function<void()> success,
+                  std::function<void(const std::string &)> error) const;
+
+  void getById(int userId, int deviceId,
+               std::function<void(const std::string &)> success,
+               std::function<void(const std::string &)> error) const;
 
  private:
-  std::shared_ptr<IDevicesRepository> repository_;
+  DevicesRepository repository_;
 };

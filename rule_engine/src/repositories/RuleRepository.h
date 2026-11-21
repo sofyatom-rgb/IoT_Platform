@@ -8,7 +8,6 @@
 
 struct Rule {
   int rule_id;
-  int device_id;
   std::string op;   // ">", "<", "=", "!="
   double value;
 };
@@ -45,13 +44,12 @@ class RuleRepository {
       std::function<void(const std::string&)> error) const;
 
   // Обновить правило
-  void updateRule(
-      int ruleId,
-      int deviceId,
-      const std::string& op,
-      double value,
-      std::function<void()> success,
-      std::function<void(const std::string&)> error) const;
+void updateRule(
+    int ruleId,
+    const std::string& op,
+    double value,
+    std::function<void()> success,
+    std::function<void(const std::string&)> error) const;
 
   // Удалить правило по id
   void deleteRule(
@@ -64,6 +62,17 @@ class RuleRepository {
       int deviceId,
       std::function<void(const NotificationTargets&)> success,
       std::function<void(const std::string&)> error) const;
+void attachToDevice(
+    int ruleId,
+    int deviceId,
+    std::function<void()> success,
+    std::function<void(const std::string&)> error) const;
+
+void detachFromDevice(
+    int ruleId,
+    int deviceId,
+    std::function<void()> success,
+    std::function<void(const std::string&)> error) const;
 
  private:
   drogon::orm::DbClientPtr db_;
