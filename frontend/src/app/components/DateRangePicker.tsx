@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, Check, ChevronLeft, ChevronRight, RotateCcw, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronLeft, ChevronRight, Clock, RotateCcw, X } from 'lucide-react';
 import type { TimeRange } from '../../lib/types';
 
 export type RangePreset = '1h' | '2h' | '6h' | '24h' | '7d' | '30d' | 'custom';
@@ -303,9 +303,11 @@ type RangeControlsProps = {
   range: TimeRange;
   onPreset: (preset: Exclude<RangePreset, 'custom'>) => void;
   onCustom: (range: TimeRange) => void;
+  onToNow?: () => void;
+  onAllTime?: () => void;
 };
 
-export function RangeControls({ preset, range, onPreset, onCustom }: RangeControlsProps) {
+export function RangeControls({ preset, range, onPreset, onCustom, onToNow, onAllTime }: RangeControlsProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -345,6 +347,29 @@ export function RangeControls({ preset, range, onPreset, onCustom }: RangeContro
           >
             <CalendarDays size={14} /> Свой диапазон
           </button>
+          {onToNow && (
+            <button
+              type="button"
+              className={`range-preset ${preset === 'custom' ? 'active' : ''}`}
+              onClick={() => {
+                const now = Date.now();
+                onCustom({ from: range.from, to: now });
+              }}
+              aria-label="Диапазон до текущего времени"
+            >
+              <Clock size={14} /> До текущего времени
+            </button>
+          )}
+          {onAllTime && (
+            <button
+              type="button"
+              className={`range-preset range-preset--all-time ${preset === 'custom' ? 'active' : ''}`}
+              onClick={onAllTime}
+              aria-label="За всё время"
+            >
+              <Clock size={14} /> За всё время
+            </button>
+          )}
           {open && (
             <DateRangePicker
               value={range}

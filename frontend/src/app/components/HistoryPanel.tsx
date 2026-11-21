@@ -13,6 +13,7 @@ type HistoryPanelProps = {
   preset: RangePreset;
   onPreset: (preset: Exclude<RangePreset, 'custom'>) => void;
   onCustom: (range: TimeRange) => void;
+  onToNow?: () => void;
   accent?: string;
   rules?: Rule[];
 };
@@ -33,9 +34,15 @@ export function HistoryPanel({
   preset,
   onPreset,
   onCustom,
+  onToNow,
   accent,
   rules,
 }: HistoryPanelProps) {
+  const toNow = () => {
+    onCustom({ from: range.from, to: Date.now() });
+    onToNow?.();
+  };
+
   const visible = values
     .map((item) => ({ item, timestamp: parseTimestamp(item.time).getTime() }))
     .filter(
@@ -59,7 +66,7 @@ export function HistoryPanel({
         </div>
       </div>
 
-      <RangeControls preset={preset} range={range} onPreset={onPreset} onCustom={onCustom} />
+      <RangeControls preset={preset} range={range} onPreset={onPreset} onCustom={onCustom} onToNow={toNow} />
 
       <div className="history-layout">
         <div className="history-list">
@@ -68,7 +75,7 @@ export function HistoryPanel({
             <span>Температура</span>
           </div>
           {list.map(({ item }) => {
-            const bad = rules?.some((rule) => violates(rule, item.temperature)) ?? false;
+            const bad = rules?.every((rule) => violates(rule, item.temperature)) ?? false;
             return (
               <div className={`history-item ${bad ? 'alert' : ''}`} key={item.id}>
                 <span className="history-time">

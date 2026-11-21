@@ -699,6 +699,12 @@ input:focus {
 .row a {
   color: var(--text);
   text-decoration: none;
+  white-space: normal;
+  max-width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .row a:hover {
@@ -834,6 +840,7 @@ input:focus {
   transform-style: preserve-3d;
   isolation: isolate;
   pointer-events: none;
+  overflow: visible;
 
   --dm-w: 76px;
   --dm-h: 118px;
@@ -847,11 +854,12 @@ input:focus {
   min-height: 360px;
   --dm-w: clamp(112px, 12.5vw, 178px);
   --dm-h: calc(var(--dm-w) * 1.55);
+  overflow: visible;
 }
 
 .device-model-card {
   min-height: 150px;
-  overflow: hidden;
+  overflow: visible;
   --dm-w: clamp(66px, 5.4vw, 86px);
   --dm-h: calc(var(--dm-w) * 1.55);
 }
@@ -860,6 +868,7 @@ input:focus {
   min-height: 110px;
   --dm-w: 58px;
   --dm-h: 90px;
+  overflow: visible;
 }
 
 .dm-aura {
@@ -963,7 +972,7 @@ input:focus {
   background:
     linear-gradient(100deg, transparent 0 62%, rgba(255, 255, 255, 0.08) 63% 66%, transparent 67%),
     linear-gradient(160deg, hsl(var(--dm-hue) 62% 24%), #0a101b 46%, #060a12 100%);
-  border: 1px solid rgba(94, 234, 212, 0.5);
+  border: 1px solid var(--dm-accent);
   box-shadow:
     inset 10px 0 18px rgba(255, 255, 255, 0.08),
     inset -12px 0 22px rgba(0, 0, 0, 0.65),
@@ -1259,15 +1268,24 @@ input:focus {
   gap: 12px;
 }
 
+.device-card-head > div {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .device-card-head h2 {
   margin: 0 0 4px;
   font-size: 20px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .device-card-head p {
   margin: 0;
   font-size: 11px;
   color: var(--muted);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .device-card-body {
@@ -1484,6 +1502,19 @@ input:focus {
   border-color: rgba(45, 212, 191, 0.55);
   color: #dffffa;
   background: rgba(45, 212, 191, 0.12);
+}
+
+.range-preset--all-time {
+  border-color: #a78bfa;
+  color: #c4b5fd;
+  background: rgba(167, 139, 250, 0.15);
+}
+
+.range-preset--all-time:hover,
+.range-preset--all-time.active {
+  border-color: #c4b5fd;
+  color: #a78bfa;
+  background: rgba(167, 139, 250, 0.25);
 }
 
 .range-hint {

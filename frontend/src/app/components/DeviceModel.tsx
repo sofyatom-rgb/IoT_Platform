@@ -27,6 +27,16 @@ export function deviceTheme(id: number): DeviceTheme {
   return themes[Math.abs(id - 1) % themes.length];
 }
 
+function generateBeautifulValue(variant: 'hero' | 'card' | 'mini'): string {
+  const values = {
+    hero: ['23.6', '18.4', '27.1', '31.8', '15.9', '22.5', '29.3'], // sequenced nice numbers
+    card: ['--', '17.5', '23.9', '', '21.2', ''], // alternating with dashes
+    mini: ['--', '25.1', ''], // simple values
+  };
+  const v = values[variant];
+  return v[Math.floor(Math.random() * v.length)];
+}
+
 type DeviceModelProps = {
   theme?: DeviceTheme;
   variant?: 'hero' | 'card' | 'mini';
@@ -40,6 +50,7 @@ export function DeviceModel({
   value,
   label,
 }: DeviceModelProps) {
+  const effectiveValue = value ?? generateBeautifulValue(variant);
   const style = {
     '--dm-hue': theme.hue,
     '--dm-accent': theme.accent,
@@ -64,7 +75,7 @@ export function DeviceModel({
         </span>
         <div className="dm-body">
           <div className="dm-screen">
-            <span className="dm-screen-value">{value ?? '°C'}</span>
+            <span className="dm-screen-value">{effectiveValue}</span>
             <span className="dm-screen-label">{label ?? 'LIVE'}</span>
             <span className="dm-scan" />
           </div>

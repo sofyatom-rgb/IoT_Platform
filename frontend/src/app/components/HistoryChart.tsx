@@ -94,6 +94,9 @@ export function HistoryChart({ values, range, accent = '#2dd4bf' }: HistoryChart
     )
     .sort((left, right) => left.timestamp - right.timestamp);
 
+  const dataMin = points.length > 0 ? points[0].timestamp : range.from;
+  const dataMax = points.length > 0 ? points[points.length - 1].timestamp : range.to;
+
   if (!points.length) {
     return (
       <div className="chart-empty">
@@ -156,7 +159,7 @@ export function HistoryChart({ values, range, accent = '#2dd4bf' }: HistoryChart
               dataKey="timestamp"
               type="number"
               scale="time"
-              domain={[range.from, range.to]}
+              domain={[dataMin, dataMax]}
               tick={{ fill: '#8a9bb4', fontSize: 11 }}
               tickLine={false}
               axisLine={false}

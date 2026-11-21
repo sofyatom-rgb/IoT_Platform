@@ -547,6 +547,7 @@ function Detail() {
   const [customRange, setCustomRange] = useState<TimeRange>(() => presetRange('24h'));
   const [tick, setTick] = useState(0);
   const [loadError, setLoadError] = useState('');
+  const [showManual, setShowManual] = useState(false);
   const errorToastId = `device-detail-${id}`;
   const theme = deviceTheme(id);
 
@@ -598,13 +599,14 @@ function Detail() {
 
   const last = latest ?? items[0];
 
-  const send = async (event: FormEvent<HTMLFormElement>) => {
+  const handleManualSend = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const value = Number(new FormData(event.currentTarget).get('temperature'));
     if (!Number.isFinite(value)) return;
     try {
       await api.send(id, value);
       toast.success('Показание отправлено');
+      setShowManual(false);
       reload();
     } catch (error) {
       notifyError(error, 'Не удалось отправить показание');
@@ -643,27 +645,36 @@ function Detail() {
       </div>
 
       <div className="grid two">
-        <form className="card send-card" onSubmit={(event) => void send(event)}>
-          <div className="card-head">
-            <div>
-              <h2>Новое показание</h2>
-              <p>Ручная отправка значения в телеметрию.</p>
+        {showManual && (
+          <form className="card send-card" onSubmit={(event) => void handleManualSend(event)}>
+            <div className="card-head">
+              <div>
+                <h2>Новое показание</h2>
+                <p>Ручная отправка значения в телеметрию.</p>
+              </div>
+              <span className="badge online">
+                <Activity size={12} /> Live
+              </span>
             </div>
-            <span className="badge online">
-              <Activity size={12} /> Live
-            </span>
-          </div>
-          <label className="field">
-            <span>Температура, °C</span>
-            <div className="input-icon">
-              <Thermometer size={16} />
-              <input name="temperature" type="number" step="0.1" required placeholder="23.5" />
-            </div>
-          </label>
-          <button className="btn">
-            <Plus size={16} /> Отправить
-          </button>
-        </form>
+            <label className="field">
+              <span>Температура, °C</span>
+              <div className="input-icon">
+                <Thermometer size={16} />
+                <input name="temperature" type="number" step="0.1" required placeholder="23.5" />
+              </div>
+            </label>
+            <button className="btn">
+              <Plus size={16} /> Отправить
+            </button>
+          </form>
+        )}
+
+        <button
+          className="btn ghost small"
+          onClick={() => setShowManual((v) => !v)}
+        >
+          <Plus size={12} /> Добавить данные вручную
+        </button>
 
         <section className="card rules-card">
           <div className="card-head">
@@ -711,6 +722,37 @@ function Detail() {
         accent={theme.accent}
         rules={rules}
       />
+
+      <section className="card rules-card">
+        <div className="card-head">
+          <div>
+            <h2>Правила</h2>
+            <p>
+              {rules.length
+                ? `Активных порогов: ${rules.length}`
+                : 'Пороги ещё не настроены.'}
+            </p>
+          </div>
+          <NavLink className="btn ghost small" to={`/rules?device=${device.id}`}>
+            <PencilLine size={14} /> Изменить правила
+          </NavLink>
+        </div>
+        <div className="rules-list">
+          {rules.map((rule) => (
+            <div className="rule-pill" key={rule.rule_id}>
+              <div>
+                <small>RULE #{rule.rule_id}</small>
+                <div className="rule-expression">
+                  <span>{rule.operator}</span>
+                  <b>{temperature(rule.value)}</b>
+                </div>
+              </div>
+              <span className="badge">Температура</span>
+            </div>
+          ))}
+          {!rules.length && <p className="muted">Для устройства не настроены пороги.</p>}
+        </div>
+      </section>
 
       <button className="btn ghost danger" onClick={() => void remove()}>
         <Trash2 size={16} /> Удалить устройство

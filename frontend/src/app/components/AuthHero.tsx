@@ -1,7 +1,19 @@
 import { Activity, Droplets, Radio, ShieldCheck, Thermometer, Wifi } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { DeviceModel, deviceTheme } from './DeviceModel';
 
 export function AuthHero() {
+  const [temperature, setTemperature] = useState(20);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setTemperature(20 + Math.random() * 10);
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const temp = temperature.toFixed(1);
+
   return (
     <section className="hero auth-hero">
       <div className="hero-brand">
@@ -12,7 +24,7 @@ export function AuthHero() {
 
       <div className="hero-stage">
         <span className="hero-beam" />
-        <DeviceModel variant="hero" theme={deviceTheme(1)} value="23.6" label="°C" />
+        <DeviceModel variant="hero" theme={deviceTheme(1)} value={temp} label="°C" />
 
         <div className="hero-chip hero-chip-a">
           <span className="chip-icon">
@@ -20,7 +32,7 @@ export function AuthHero() {
           </span>
           <span>
             <small>Температура</small>
-            <b>23.6 °C</b>
+            <b>{temp} °C</b>
           </span>
         </div>
         <div className="hero-chip hero-chip-b">
