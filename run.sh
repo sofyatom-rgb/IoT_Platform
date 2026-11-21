@@ -86,13 +86,26 @@ cleanup() {
       kill "$pid" 2>/dev/null || true
     fi
   done
+  for port in 8080 8081 8082 8083; do
+    fuser -k "${port}/tcp" >/dev/null 2>&1 || true
+  done
   wait 2>/dev/null || true
   docker compose down
 }
 trap cleanup INT TERM EXIT
 
-# 3-6. Сервисы.
-start_service "iot_core" ./build/bin/iot_core
+# iot_core перезапускается автоматически, если процесс неожиданно умрёт.
+(
+  while true; do
+    ./build/bin/iot_core
+    echo "iot_core остановился, перезапуск..." >&2
+    sleep 1
+  done
+) &
+PIDS+=($!)
+sleep 1
+
+# 4-6. Остальные сервисы.
 start_service "http_adapter" ./build/bin/http_adapter
 start_service "rule_engine" ./build/bin/rule_engine
 start_service "notification_service" ./build/bin/notification_service
