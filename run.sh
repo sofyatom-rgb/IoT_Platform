@@ -18,6 +18,14 @@ until docker compose exec -T postgres pg_isready -U postgres -d iot_platform >/d
 done
 sleep 3
 
+# Переменные окружения нужны всем сервисам, поэтому грузим их до запуска.
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
 PIDS=()
 
 free_port() {
@@ -61,15 +69,7 @@ sleep 1
 PIDS+=($!)
 sleep 1
 
-# 6. Переменные окружения из .env.
-if [ -f .env ]; then
-  set -a
-  # shellcheck disable=SC1091
-  source .env
-  set +a
-fi
-
-# 7. Notification Service.
+# 6. Notification Service.
 ./build/bin/notification_service &
 PIDS+=($!)
 
