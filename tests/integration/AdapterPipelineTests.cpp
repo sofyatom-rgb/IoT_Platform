@@ -13,6 +13,7 @@
 /// Проверяет цепочку AdapterService → IoTClient → HTTP-транспорт.
 TEST_CASE(adapter_pipeline_uses_real_iot_client_and_posts_telemetry) {
   test::HttpTransportMock transport;
+  transport.response() = iot::http::Response{201, "{}", true, {}, {}};
   auto client = std::make_shared<IoTClient>(transport.shared());
   AdapterService adapter(client);
 
@@ -26,9 +27,9 @@ TEST_CASE(adapter_pipeline_uses_real_iot_client_and_posts_telemetry) {
   EXPECT_TRUE(error.empty());
   EXPECT_EQ(1U, transport.requests().size());
   EXPECT_EQ(iot::http::Method::Post, transport.lastRequest().method);
-  EXPECT_EQ(std::string("/telemetry"), transport.lastRequest().path);
-  EXPECT_EQ(std::int64_t{64}, std::get<std::int64_t>(
-      transport.lastRequest().jsonBody.at("device_id")));
+  EXPECT_EQ(std::string("/devices/64/telemetry"), transport.lastRequest().path);
+  EXPECT_TRUE(transport.lastRequest().jsonBody.find("device_id") ==
+              transport.lastRequest().jsonBody.end());
   EXPECT_EQ(27.25, std::get<double>(
       transport.lastRequest().jsonBody.at("temperature")));
   fakeit::Verify(Method(transport.mock(), send)).Once();

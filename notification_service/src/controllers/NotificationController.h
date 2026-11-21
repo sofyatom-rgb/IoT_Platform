@@ -13,10 +13,14 @@ class NotificationController {
   /// Регистрирует маршрут отправки температурных уведомлений.
   void registerRoutes();
 
-  // Kept public so the handler can be tested directly without starting a server.
+  // Публичные методы, чтобы обработчики можно было проверять без запуска сервера.
   void sendTemperatureAlert(
       const drogon::HttpRequestPtr &request,
       std::function<void(const drogon::HttpResponsePtr &)> callback);
+  void clearTemperatureAlert(
+      int deviceId,
+      std::function<void(const drogon::HttpResponsePtr &)> callback);
+  // Легаси-вариант: device_id передаётся в JSON-теле.
   void clearTemperatureAlert(
       const drogon::HttpRequestPtr &request,
       std::function<void(const drogon::HttpResponsePtr &)> callback);

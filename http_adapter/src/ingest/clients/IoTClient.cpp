@@ -16,9 +16,8 @@ void IoTClient::sendTelemetry(
     std::function<void(const std::string &)> error) const {
   iot::http::Request request;
   request.method = iot::http::Method::Post;
-  request.path = "/telemetry";
-  request.jsonBody = {{"device_id", static_cast<std::int64_t>(deviceId)},
-                      {"temperature", temperature}};
+  request.path = "/devices/" + std::to_string(deviceId) + "/telemetry";
+  request.jsonBody = {{"temperature", temperature}};
 
   transport_->send(
       request,
@@ -26,7 +25,7 @@ void IoTClient::sendTelemetry(
           iot::http::Result result,
           std::optional<iot::http::Response> response) {
         if (result == iot::http::Result::Ok && response &&
-            response->statusCode == 200) {
+            response->statusCode == 201) {
           const auto *status =
               iot::http::stringField(response->jsonBody, "notification_status");
           if (status != nullptr) {
@@ -68,9 +67,8 @@ void IoTClient::getTelemetry(
     int deviceId, std::function<void(const std::string &)> success,
     std::function<void(const std::string &)> error) const {
   iot::http::Request request;
-  request.method = iot::http::Method::Post;
-  request.path = "/telemetry/query";
-  request.jsonBody = {{"device_id", static_cast<std::int64_t>(deviceId)}};
+  request.method = iot::http::Method::Get;
+  request.path = "/devices/" + std::to_string(deviceId) + "/telemetry";
 
   transport_->send(
       request,
@@ -95,8 +93,7 @@ void IoTClient::deleteTelemetry(
     std::function<void(const std::string &)> error) const {
   iot::http::Request request;
   request.method = iot::http::Method::Delete;
-  request.path = "/telemetry";
-  request.jsonBody = {{"device_id", static_cast<std::int64_t>(deviceId)}};
+  request.path = "/devices/" + std::to_string(deviceId) + "/telemetry";
 
   transport_->send(
       request,
@@ -104,7 +101,7 @@ void IoTClient::deleteTelemetry(
           iot::http::Result result,
           std::optional<iot::http::Response> response) {
         if (result == iot::http::Result::Ok && response &&
-            response->statusCode == 200) {
+            response->statusCode == 204) {
           if (success) success();
           return;
         }

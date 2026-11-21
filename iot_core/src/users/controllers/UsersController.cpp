@@ -69,6 +69,53 @@ bool parseId(const std::string &s, int &out) {
 }  // namespace
 
 void UsersController::registerRoutes() {
+  // REST-вариант маршрутов: id в URI, но менять можно только свой профиль.
+  const auto isSelf = [](const drogon::HttpRequestPtr &request, int userId) {
+    return userId > 0 && request->attributes()->get<int>("user_id") == userId;
+  };
+  const auto forbidden = [](const Callback &cb) {
+    replyError(cb, drogon::k403Forbidden, "forbidden");
+  };
+
+  drogon::app().registerHandler(
+      "/users/{id}",
+      [this, isSelf, forbidden](const drogon::HttpRequestPtr &request,
+                                Callback &&cb, int userId) {
+        if (!isSelf(request, userId)) {
+          forbidden(cb);
+          return;
+        }
+        request->setParameter("id", std::to_string(userId));
+        deleteUser(request, std::move(cb));
+      },
+      {drogon::Delete, "AuthFilter"});
+
+  drogon::app().registerHandler(
+      "/users/{id}",
+      [this, isSelf, forbidden](const drogon::HttpRequestPtr &request,
+                                Callback &&cb, int userId) {
+        if (!isSelf(request, userId)) {
+          forbidden(cb);
+          return;
+        }
+        request->setParameter("id", std::to_string(userId));
+        updateUser(request, std::move(cb));
+      },
+      {drogon::Put, "AuthFilter"});
+
+  drogon::app().registerHandler(
+      "/users/{id}",
+      [this, isSelf, forbidden](const drogon::HttpRequestPtr &request,
+                                Callback &&cb, int userId) {
+        if (!isSelf(request, userId)) {
+          forbidden(cb);
+          return;
+        }
+        request->setParameter("id", std::to_string(userId));
+        getUser(request, std::move(cb));
+      },
+      {drogon::Get, "AuthFilter"});
+
   // POST /users -> создать пользователя (без авторизации: это регистрация).
   drogon::app().registerHandler(
       "/users",
@@ -142,6 +189,7 @@ void UsersController::create(
         body["user_id"] = userId;
         auto r = drogon::HttpResponse::newHttpJsonResponse(body);
         r->setStatusCode(drogon::k201Created);
+        r->addHeader("Location", "/users/" + std::to_string(userId));
         callback(r);
       },
       [callback](const std::string &error) {
@@ -166,10 +214,9 @@ void UsersController::deleteUser(
   service.deleteById(
       userId,
       [callback]() {
-        Json::Value body;
-        body["status"] = "ok";
-        body["message"] = "User deleted";
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        auto response = drogon::HttpResponse::newHttpResponse();
+        response->setStatusCode(drogon::k204NoContent);
+        callback(response);
       },
       [callback](const std::string &error) { replyDbError(callback, error); });
 }

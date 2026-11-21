@@ -35,6 +35,46 @@ NotificationController::NotificationController(NotificationService service)
 
 void NotificationController::registerRoutes() {
   drogon::app().registerHandler(
+      "/health",
+      [](const drogon::HttpRequestPtr &,
+         std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
+        Json::Value body;
+        body["status"] = "ok";
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+      },
+      {drogon::Get});
+  drogon::app().registerHandler(
+      "/notifications/temperature-alerts",
+      [this](const drogon::HttpRequestPtr &request,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
+        sendTemperatureAlert(request, std::move(callback));
+      },
+      {drogon::Post});
+  drogon::app().registerHandler(
+      "/notifications/temperature-alerts/{device_id}",
+      [this](const drogon::HttpRequestPtr &,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+             int id) {
+        clearTemperatureAlert(id, std::move(callback));
+      },
+      {drogon::Delete});
+  drogon::app().registerHandler(
+      "/notifications/emails",
+      [this](const drogon::HttpRequestPtr &request,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
+        sendEmailAlert(request, std::move(callback));
+      },
+      {drogon::Post});
+  drogon::app().registerHandler(
+      "/notifications/test-emails",
+      [this](const drogon::HttpRequestPtr &request,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
+        sendTestEmail(request, std::move(callback));
+      },
+      {drogon::Post});
+
+  // Старые пути остаются алисами для фронтенда и ранее сохранённых клиентов.
+  drogon::app().registerHandler(
       "/notifications/temperature",
       [this](const drogon::HttpRequestPtr &request,
              std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
@@ -108,6 +148,20 @@ void NotificationController::sendTemperatureAlert(
       [callback](const std::string &error) {
         callback(jsonError(error, drogon::k502BadGateway));
       });
+}
+
+void NotificationController::clearTemperatureAlert(
+    int deviceId,
+    std::function<void(const drogon::HttpResponsePtr &)> callback) {
+  if (deviceId <= 0) {
+    callback(jsonError("Expected a positive device ID in the URL",
+                       drogon::k400BadRequest));
+    return;
+  }
+  service_.clearTemperatureAlert(deviceId);
+  auto response = drogon::HttpResponse::newHttpResponse();
+  response->setStatusCode(drogon::k204NoContent);
+  callback(response);
 }
 
 void NotificationController::clearTemperatureAlert(

@@ -53,7 +53,13 @@ void RuleController::registerRoutes() {
     return std::make_shared<RuleService>(drogon::app().getDbClient(), url);
   };
 
-  // GET /ping — проверка, что сервис жив
+  // GET /health — проверка доступности; /ping оставлен как старый алиас.
+  auto handleHealth = [](const drogon::HttpRequestPtr &, Callback &&cb) {
+    Json::Value body;
+    body["status"] = "ok";
+    reply(cb, drogon::k200OK, body);
+  };
+  drogon::app().registerHandler("/health", handleHealth, {drogon::Get});
   drogon::app().registerHandler(
       "/ping",
       [](const drogon::HttpRequestPtr &, Callback &&cb) {
@@ -94,7 +100,10 @@ void RuleController::registerRoutes() {
               ok["status"] = "ok";
               LOG_INFO << "[rule_engine][controller] createRule: created rule " << id;
               ok["rule_id"] = id;
-              reply(cb, drogon::k201Created, ok);
+              auto response = drogon::HttpResponse::newHttpJsonResponse(ok);
+              response->setStatusCode(drogon::k201Created);
+              response->addHeader("Location", "/rules/" + std::to_string(id));
+              cb(response);
             },
             [cb](const std::string &msg) { replyDbError(cb, msg); });
       },
@@ -217,10 +226,10 @@ drogon::app().registerHandler(
           [cb](const std::string &msg) { replyDbError(cb, msg); });
     },
     {drogon::Delete});
-  // POST /telemetry — проверить правила для пришедшей температуры
-  drogon::app().registerHandler(
-      "/telemetry",
-      [makeService](const drogon::HttpRequestPtr &req, Callback &&cb) {
+  // POST /telemetry-events — проверить правила для пришедшей температуры.
+  // /telemetry оставлен для совместимости со старыми вызывающими.
+  auto handleTelemetry = [makeService](const drogon::HttpRequestPtr &req,
+                                       Callback &&cb) {
         auto json = req->getJsonObject();
         if (!json || !json->isMember("device_id") ||
             !json->isMember("temperature") ||
@@ -248,8 +257,10 @@ drogon::app().registerHandler(
               reply(cb, drogon::k500InternalServerError,
                     errorJson(msg));
             });
-      },
-      {drogon::Post});
+  };
+  drogon::app().registerHandler("/telemetry-events", handleTelemetry,
+                                {drogon::Post});
+  drogon::app().registerHandler("/telemetry", handleTelemetry, {drogon::Post});
 
   // POST /notification-cooldown/reset -> сбросить 5-минутный тайм-аут уведомлений устройства.
   drogon::app().registerHandler(

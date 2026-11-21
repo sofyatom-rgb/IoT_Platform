@@ -45,6 +45,37 @@ void DevicesController::registerRoutes() {
         }
       },
       {drogon::Get, "AuthFilter"});
+
+  // REST-варианты: id устройства передаётся в URI.
+  drogon::app().registerHandler(
+      "/devices/{id}",
+      [this](const drogon::HttpRequestPtr &request,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+             int deviceId) {
+        request->setParameter("device_id", std::to_string(deviceId));
+        deleteDevice(request, std::move(callback));
+      },
+      {drogon::Delete, "AuthFilter"});
+
+  drogon::app().registerHandler(
+      "/devices/{id}",
+      [this](const drogon::HttpRequestPtr &request,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+             int deviceId) {
+        request->setParameter("id", std::to_string(deviceId));
+        updateDevice(request, std::move(callback));
+      },
+      {drogon::Put, "AuthFilter"});
+
+  drogon::app().registerHandler(
+      "/devices/{id}",
+      [this](const drogon::HttpRequestPtr &request,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+             int deviceId) {
+        request->setParameter("id", std::to_string(deviceId));
+        getDevice(request, std::move(callback));
+      },
+      {drogon::Get, "AuthFilter"});
 }
 
 void DevicesController::create(
@@ -81,7 +112,10 @@ void DevicesController::create(
         Json::Value body;
         body["status"] = "ok";
         body["device_id"] = deviceId;
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+        response->setStatusCode(drogon::k201Created);
+        response->addHeader("Location", "/devices/" + std::to_string(deviceId));
+        callback(response);
       },
       [callback](const std::string &error) {
         Json::Value body;
@@ -104,25 +138,35 @@ void DevicesController::deleteDevice(
     return;
   }
 
-  if (!json || !(*json)["device_id"].isInt() ||
-      (*json)["device_id"].asInt() <= 0) {
+  // REST передаёт id в URI, старый вариант — в JSON.
+  int deviceId = 0;
+  const std::string idParam = request->getParameter("device_id");
+  if (!idParam.empty()) {
+    try {
+      deviceId = std::stoi(idParam);
+    } catch (...) {
+      deviceId = 0;
+    }
+  } else if (json && (*json)["device_id"].isInt()) {
+    deviceId = (*json)["device_id"].asInt();
+  }
+  if (deviceId <= 0) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "device_id must be a positive integer in JSON body";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    body["message"] = "device_id must be a positive integer";
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
     return;
   }
-
-  const int deviceId = (*json)["device_id"].asInt();
 
   DevicesService service(DbClientProvider::get());
   service.deleteById(
       userId, deviceId,
       [callback]() {
-        Json::Value body;
-        body["status"] = "ok";
-        body["message"] = "Device deleted";
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        auto response = drogon::HttpResponse::newHttpResponse();
+        response->setStatusCode(drogon::k204NoContent);
+        callback(response);
       },
       [callback](const std::string &error) {
         Json::Value body;
