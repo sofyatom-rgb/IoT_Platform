@@ -306,7 +306,7 @@ TEST_CASE(drogon_http_transport_reports_empty_base_url_without_network_call) {
 
 TEST_CASE(adapter_service_iot_client_and_drogon_transport_reach_local_http_server) {
   OneShotHttpServer server(
-      200, R"({"notification_status":"not_triggered"})");
+      201, R"({"notification_status":"not_triggered"})");
   auto transport = std::make_shared<iot::http::DrogonHttpTransport>(
       "http://127.0.0.1:" + std::to_string(server.port()));
   auto client = std::make_shared<IoTClient>(transport);
@@ -331,7 +331,7 @@ TEST_CASE(adapter_service_iot_client_and_drogon_transport_reach_local_http_serve
   const auto rawRequest = server.requestText();
   EXPECT_TRUE(success);
   EXPECT_EQ("not_triggered", error);
-  EXPECT_TRUE(rawRequest.find("POST /telemetry HTTP/1.1") != std::string::npos);
-  EXPECT_TRUE(rawRequest.find("\"device_id\":31") != std::string::npos);
+  EXPECT_TRUE(rawRequest.find("POST /devices/31/telemetry HTTP/1.1") != std::string::npos);
+  EXPECT_TRUE(rawRequest.find("\"device_id\":31") == std::string::npos);
   EXPECT_TRUE(rawRequest.find("\"temperature\":18.25") != std::string::npos);
 }

@@ -12,7 +12,8 @@
 #include "ingest/clients/IIoTClient.h"
 
 // HTTP-слой адаптера.
-// Вход от датчиков — зашифрованный конверт {checksum, ciphertext}.
+// device_id приходит в URI /devices/{id}/telemetry; тело содержит temperature.
+// При включённом codec тело — зашифрованный конверт {checksum, ciphertext}.
 // Выход к iot_core — обычный JSON (adapter раскодирует).
 // Ответ датчику — снова конверт (adapter кодирует).
 class IngestController {
@@ -23,13 +24,13 @@ class IngestController {
 
   void registerRoutes();
 
-  void ingest(const drogon::HttpRequestPtr &request,
+  void ingest(int deviceId, const drogon::HttpRequestPtr &request,
               std::function<void(const drogon::HttpResponsePtr &)> callback);
 
-  void getTelemetry(const drogon::HttpRequestPtr &request,
+  void getTelemetry(int deviceId,
                     std::function<void(const drogon::HttpResponsePtr &)> callback);
 
-  void deleteTelemetry(const drogon::HttpRequestPtr &request,
+  void deleteTelemetry(int deviceId,
                        std::function<void(const drogon::HttpResponsePtr &)> callback);
 
  private:

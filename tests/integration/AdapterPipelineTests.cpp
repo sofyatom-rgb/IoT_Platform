@@ -15,7 +15,7 @@ class RecordingHttpTransport final : public iot::http::IHttpTransport {
   mutable std::vector<iot::http::Request> requests;
   iot::http::Result result{iot::http::Result::Ok};
   std::optional<iot::http::Response> response{
-      iot::http::Response{200, R"({"notification_status":"not_triggered"})",
+      iot::http::Response{201, R"({"notification_status":"not_triggered"})",
                           true,
                           {{"notification_status",
                             std::string("not_triggered")}},
@@ -54,9 +54,8 @@ TEST_CASE(adapter_pipeline_uses_real_iot_client_and_posts_telemetry) {
   EXPECT_TRUE(error.empty());
   EXPECT_EQ(std::size_t{1}, transport->requests.size());
   EXPECT_EQ(iot::http::Method::Post, lastRequest(*transport).method);
-  EXPECT_EQ(std::string("/telemetry"), lastRequest(*transport).path);
-  EXPECT_EQ(std::int64_t(64),
-            std::get<std::int64_t>(lastRequest(*transport).jsonBody.at("device_id")));
+  EXPECT_EQ(std::string("/devices/64/telemetry"), lastRequest(*transport).path);
+  EXPECT_TRUE(lastRequest(*transport).jsonBody.find("device_id") == lastRequest(*transport).jsonBody.end());
   EXPECT_EQ(27.25,
             std::get<double>(lastRequest(*transport).jsonBody.at("temperature")));
 }

@@ -16,13 +16,13 @@ class DevicesController {
   void create(const drogon::HttpRequestPtr &request,
               std::function<void(const drogon::HttpResponsePtr &)> callback);
 
-  void deleteDevice(const drogon::HttpRequestPtr &request,
+  void deleteDevice(int deviceId,
                     std::function<void(const drogon::HttpResponsePtr &)> callback);
 
-  void updateDevice(const drogon::HttpRequestPtr &request,
+  void updateDevice(int deviceId, const drogon::HttpRequestPtr &request,
                     std::function<void(const drogon::HttpResponsePtr &)> callback);
 
-  void getDevice(const drogon::HttpRequestPtr &request,
+  void getDevice(int deviceId,
                  std::function<void(const drogon::HttpResponsePtr &)> callback);
 
  private:

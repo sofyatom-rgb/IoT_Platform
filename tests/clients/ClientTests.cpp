@@ -69,10 +69,10 @@ public:
 } // namespace
 
 // IoTClient: проверяем не fake-объект сервиса, а настоящий код HTTP-клиента.
-TEST_CASE(iot_client_send_uses_post_telemetry_and_correct_json_fields) {
+TEST_CASE(iot_client_send_uses_device_telemetry_resource_and_temperature_body) {
   auto transport = std::make_shared<FakeHttpTransport>();
   transport->nextResponse = response(
-      200, R"({"notification_status":"not_triggered"})",
+      201, R"({"notification_status":"not_triggered"})",
       {{"notification_status", std::string("not_triggered")}});
   IoTClient client(transport);
 
@@ -92,17 +92,15 @@ TEST_CASE(iot_client_send_uses_post_telemetry_and_correct_json_fields) {
   EXPECT_TRUE(errorMessage.empty());
   EXPECT_EQ(1U, transport->requests.size());
   EXPECT_EQ(iot::http::Method::Post, lastRequest(*transport).method);
-  EXPECT_EQ(std::string("/telemetry"), lastRequest(*transport).path);
-  EXPECT_EQ(
-      std::int64_t(42),
-      std::get<std::int64_t>(lastRequest(*transport).jsonBody.at("device_id")));
+  EXPECT_EQ(std::string("/devices/42/telemetry"), lastRequest(*transport).path);
+  EXPECT_TRUE(lastRequest(*transport).jsonBody.find("device_id") == lastRequest(*transport).jsonBody.end());
   EXPECT_EQ(23.75, std::get<double>(
                        lastRequest(*transport).jsonBody.at("temperature")));
 }
 
 TEST_CASE(iot_client_send_reports_missing_notification_status) {
   auto transport = std::make_shared<FakeHttpTransport>();
-  transport->nextResponse = response(200, "{}");
+  transport->nextResponse = response(201, "{}");
   IoTClient client(transport);
 
   bool succeeded = false;
@@ -116,7 +114,7 @@ TEST_CASE(iot_client_send_reports_missing_notification_status) {
             errorMessage);
 }
 
-TEST_CASE(iot_client_send_reports_non_200_http_status) {
+TEST_CASE(iot_client_send_reports_non_created_http_status) {
   auto transport = std::make_shared<FakeHttpTransport>();
   transport->nextResponse = response(503, "service unavailable");
   IoTClient client(transport);
@@ -131,7 +129,7 @@ TEST_CASE(iot_client_send_reports_non_200_http_status) {
   EXPECT_TRUE(errorMessage.find("503") != std::string::npos);
 }
 
-TEST_CASE(iot_client_get_uses_query_endpoint_and_returns_response_body) {
+TEST_CASE(iot_client_get_uses_device_telemetry_resource_and_returns_response_body) {
   auto transport = std::make_shared<FakeHttpTransport>();
   transport->nextResponse = response(200, "[{\"temperature\":21.5}]");
   IoTClient client(transport);
@@ -142,18 +140,16 @@ TEST_CASE(iot_client_get_uses_query_endpoint_and_returns_response_body) {
       19, [&](const std::string &body) { received = body; },
       [&](const std::string &error) { errorMessage = error; });
 
-  EXPECT_EQ(iot::http::Method::Post, lastRequest(*transport).method);
-  EXPECT_EQ(std::string("/telemetry/query"), lastRequest(*transport).path);
-  EXPECT_EQ(
-      std::int64_t(19),
-      std::get<std::int64_t>(lastRequest(*transport).jsonBody.at("device_id")));
+  EXPECT_EQ(iot::http::Method::Get, lastRequest(*transport).method);
+  EXPECT_EQ(std::string("/devices/19/telemetry"), lastRequest(*transport).path);
+  EXPECT_TRUE(lastRequest(*transport).jsonBody.empty());
   EXPECT_EQ(std::string("[{\"temperature\":21.5}]"), received);
   EXPECT_TRUE(errorMessage.empty());
 }
 
 TEST_CASE(iot_client_delete_uses_delete_telemetry_and_device_id) {
   auto transport = std::make_shared<FakeHttpTransport>();
-  transport->nextResponse = response(200, "{}");
+  transport->nextResponse = response(204, "");
   IoTClient client(transport);
 
   bool succeeded = false;
@@ -165,10 +161,8 @@ TEST_CASE(iot_client_delete_uses_delete_telemetry_and_device_id) {
   EXPECT_TRUE(succeeded);
   EXPECT_TRUE(errorMessage.empty());
   EXPECT_EQ(iot::http::Method::Delete, lastRequest(*transport).method);
-  EXPECT_EQ(std::string("/telemetry"), lastRequest(*transport).path);
-  EXPECT_EQ(
-      std::int64_t(5),
-      std::get<std::int64_t>(lastRequest(*transport).jsonBody.at("device_id")));
+  EXPECT_EQ(std::string("/devices/5/telemetry"), lastRequest(*transport).path);
+  EXPECT_TRUE(lastRequest(*transport).jsonBody.empty());
 }
 
 TEST_CASE(iot_client_reports_network_failure_without_response) {
@@ -205,7 +199,7 @@ TEST_CASE(rule_engine_client_posts_telemetry_and_returns_rule_status) {
   EXPECT_EQ("telegram=sent; email=sent", notificationStatus);
   EXPECT_TRUE(errorMessage.empty());
   EXPECT_EQ(iot::http::Method::Post, lastRequest(*transport).method);
-  EXPECT_EQ(std::string("/telemetry"),
+  EXPECT_EQ(std::string("/telemetry-events"),
             lastRequest(*transport).path);
   EXPECT_EQ(
       std::int64_t(12),
@@ -277,7 +271,7 @@ TEST_CASE(notification_client_forwards_device_and_all_notification_recipients) {
   EXPECT_EQ("telegram=sent; email=sent", statuses);
   EXPECT_TRUE(errorMessage.empty());
   EXPECT_EQ(iot::http::Method::Post, lastRequest(*transport).method);
-  EXPECT_EQ("/notifications/temperature", lastRequest(*transport).path);
+  EXPECT_EQ("/notifications/temperature-alerts", lastRequest(*transport).path);
   EXPECT_EQ(std::int64_t(42),
             std::get<std::int64_t>(
                 lastRequest(*transport).jsonBody.at("device_id")));
@@ -294,17 +288,16 @@ TEST_CASE(notification_client_resets_deduplication_for_device) {
   bool succeeded = false;
   std::string errorMessage;
 
+  transport->nextResponse = response(204, "");
   client.clearTemperatureAlert(
       42, [&] { succeeded = true; },
       [&](const std::string &value) { errorMessage = value; });
 
   EXPECT_TRUE(succeeded);
   EXPECT_TRUE(errorMessage.empty());
-  EXPECT_EQ(iot::http::Method::Post, lastRequest(*transport).method);
-  EXPECT_EQ("/notifications/temperature/normal", lastRequest(*transport).path);
-  EXPECT_EQ(std::int64_t(42),
-            std::get<std::int64_t>(
-                lastRequest(*transport).jsonBody.at("device_id")));
+  EXPECT_EQ(iot::http::Method::Delete, lastRequest(*transport).method);
+  EXPECT_EQ("/notifications/temperature-alerts/42", lastRequest(*transport).path);
+  EXPECT_TRUE(lastRequest(*transport).jsonBody.empty());
 }
 
 // TelegramBotClient.

@@ -16,48 +16,61 @@ TelemetryController::TelemetryController(std::shared_ptr<TelemetryService> servi
 }
 
 void TelemetryController::registerRoutes() {
-  // POST /telemetry -> сохранить показание.
+  // POST /devices/{id}/telemetry -> добавить показание устройства.
   drogon::app().registerHandler(
-      "/telemetry",
+      "/devices/{id}/telemetry",
       [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        create(request, std::move(callback));
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+             int deviceId) {
+        create(deviceId, request, std::move(callback));
       },
       {drogon::Post});
 
-  // GET /ping -> ответить pong.
+  // GET /health -> проверить доступность сервиса.
   drogon::app().registerHandler(
-      "/ping",
+      "/health",
       [](const drogon::HttpRequestPtr &,
          std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        auto response = drogon::HttpResponse::newHttpResponse();
-        response->setBody("pong\n");
-        callback(response);
+        Json::Value body;
+        body["status"] = "ok";
+        callback(drogon::HttpResponse::newHttpJsonResponse(body));
       },
       {drogon::Get});
 
-  // POST /telemetry/query with JSON {"device_id": X} -> получить последние записи.
+  // GET /devices/{id}/telemetry -> получить показания устройства.
   drogon::app().registerHandler(
-      "/telemetry/query",
-      [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        getTelemetry(request, std::move(callback));
+      "/devices/{id}/telemetry",
+      [this](const drogon::HttpRequestPtr &,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+             int deviceId) {
+        getTelemetry(deviceId, std::move(callback));
       },
-      {drogon::Post});
+      {drogon::Get});
 
-  // DELETE /telemetry with JSON {"device_id": X} -> удалить телеметрию.
+  // DELETE /devices/{id}/telemetry -> удалить показания устройства.
   drogon::app().registerHandler(
-      "/telemetry",
-      [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        deleteTelemetry(request, std::move(callback));
+      "/devices/{id}/telemetry",
+      [this](const drogon::HttpRequestPtr &,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+             int deviceId) {
+        deleteTelemetry(deviceId, std::move(callback));
       },
       {drogon::Delete});
 }
 
 void TelemetryController::create(
-    const drogon::HttpRequestPtr &request,
+    int deviceId, const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
+  if (!iot::validation::isPositiveId(deviceId)) {
+    Json::Value body;
+    body["status"] = "error";
+    body["message"] = "Expected a positive device ID in the URL";
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(drogon::k400BadRequest);
+    callback(response);
+    return;
+  }
+
   const auto json = request->getJsonObject();
 
   if (!json) {
@@ -70,14 +83,13 @@ void TelemetryController::create(
     return;
   }
 
-  if (!(*json)["device_id"].isInt() ||
-      !(*json)["temperature"].isNumeric() ||
+  if (!(*json)["temperature"].isNumeric() ||
       !iot::validation::isValidTelemetryInput(
-          (*json)["device_id"].asInt(), (*json)["temperature"].asDouble())) {
+          deviceId, (*json)["temperature"].asDouble())) {
     Json::Value body;
     body["status"] = "error";
     body["message"] =
-        "Expected a positive integer device_id and finite numeric temperature";
+        "Expected a finite numeric temperature";
     auto response = drogon::HttpResponse::newHttpJsonResponse(body);
     response->setStatusCode(drogon::k400BadRequest);
     callback(response);
@@ -85,12 +97,14 @@ void TelemetryController::create(
   }
 
   service_->save(
-      (*json)["device_id"].asInt(), (*json)["temperature"].asDouble(),
+      deviceId, (*json)["temperature"].asDouble(),
       [callback](const std::string &notificationStatus) {
         Json::Value body;
         body["status"] = "ok";
         body["notification_status"] = notificationStatus;
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+        response->setStatusCode(drogon::k201Created);
+        callback(response);
       },
       [callback](const std::string &error) {
         Json::Value body;
@@ -103,21 +117,17 @@ void TelemetryController::create(
 }
 
 void TelemetryController::getTelemetry(
-    const drogon::HttpRequestPtr &request,
+    int deviceId,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
-  const auto json = request->getJsonObject();
-  if (!json || !(*json)["device_id"].isInt() ||
-      !iot::validation::isPositiveId((*json)["device_id"].asInt())) {
+  if (!iot::validation::isPositiveId(deviceId)) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "Expected a positive integer device_id in JSON body";
+    body["message"] = "Expected a positive device ID in the URL";
     auto response = drogon::HttpResponse::newHttpJsonResponse(body);
     response->setStatusCode(drogon::k400BadRequest);
     callback(response);
     return;
   }
-
-  const int deviceId = (*json)["device_id"].asInt();
 
   service_->getByDeviceId(
       deviceId,
@@ -149,29 +159,24 @@ void TelemetryController::getTelemetry(
 }
 
 void TelemetryController::deleteTelemetry(
-    const drogon::HttpRequestPtr &request,
+    int deviceId,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
-  const auto json = request->getJsonObject();
-  if (!json || !(*json)["device_id"].isInt() ||
-      !iot::validation::isPositiveId((*json)["device_id"].asInt())) {
+  if (!iot::validation::isPositiveId(deviceId)) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "Expected a positive integer device_id in JSON body";
+    body["message"] = "Expected a positive device ID in the URL";
     auto response = drogon::HttpResponse::newHttpJsonResponse(body);
     response->setStatusCode(drogon::k400BadRequest);
     callback(response);
     return;
   }
 
-  const int deviceId = (*json)["device_id"].asInt();
-
   service_->deleteByDeviceId(
       deviceId,
       [callback]() {
-        Json::Value body;
-        body["status"] = "ok";
-        body["message"] = "Telemetry deleted";
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        auto response = drogon::HttpResponse::newHttpResponse();
+        response->setStatusCode(drogon::k204NoContent);
+        callback(response);
       },
       [callback](const std::string &error) {
         Json::Value body;

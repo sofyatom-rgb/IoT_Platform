@@ -70,7 +70,7 @@ TEST_CASE(telemetry_pipeline_persists_then_posts_reading_to_rule_engine) {
   EXPECT_EQ(std::size_t{1}, transport->requests.size());
   const auto &request = transport->requests.back();
   EXPECT_EQ(iot::http::Method::Post, request.method);
-  EXPECT_EQ(std::string("/telemetry"), request.path);
+  EXPECT_EQ(std::string("/telemetry-events"), request.path);
   EXPECT_EQ(std::int64_t(12),
             std::get<std::int64_t>(request.jsonBody.at("device_id")));
   EXPECT_EQ(41.75,

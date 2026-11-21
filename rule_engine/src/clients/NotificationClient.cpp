@@ -29,7 +29,7 @@ void NotificationClient::sendTemperatureAlert(
 
   iot::http::Request request;
   request.method = iot::http::Method::Post;
-  request.path = "/notifications/temperature";
+  request.path = "/notifications/temperature-alerts";
   request.jsonBody = {
       {"device_id", static_cast<std::int64_t>(deviceId)},
       {"chat_id", chatId},
@@ -83,16 +83,15 @@ void NotificationClient::clearTemperatureAlert(
     return;
   }
   iot::http::Request request;
-  request.method = iot::http::Method::Post;
-  request.path = "/notifications/temperature/normal";
-  request.jsonBody = {{"device_id", static_cast<std::int64_t>(deviceId)}};
+  request.method = iot::http::Method::Delete;
+  request.path = "/notifications/temperature-alerts/" + std::to_string(deviceId);
   transport_->send(
       request,
       [success = std::move(success), error = std::move(error)](
           iot::http::Result result,
           std::optional<iot::http::Response> response) {
         if (result == iot::http::Result::Ok && response &&
-            response->statusCode == 200) {
+            response->statusCode == 204) {
           if (success) success();
           return;
         }

@@ -25,30 +25,33 @@ void DevicesController::registerRoutes() {
       },
       {drogon::Post});
 
-  // DELETE /devices with JSON {"device_id": X} -> удалить устройство.
+  // DELETE /devices/{id} -> удалить устройство.
   drogon::app().registerHandler(
-      "/devices",
-      [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        deleteDevice(request, std::move(callback));
+      "/devices/{id}",
+      [this](const drogon::HttpRequestPtr &,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+             int deviceId) {
+        deleteDevice(deviceId, std::move(callback));
       },
       {drogon::Delete});
 
-  // PUT /devices?id=X -> обновить устройство.
+  // PUT /devices/{id} -> полностью обновить устройство.
   drogon::app().registerHandler(
-      "/devices",
+      "/devices/{id}",
       [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        updateDevice(request, std::move(callback));
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+             int deviceId) {
+        updateDevice(deviceId, request, std::move(callback));
       },
       {drogon::Put});
 
-  // GET /devices?id=X -> получить устройство.
+  // GET /devices/{id} -> получить устройство.
   drogon::app().registerHandler(
-      "/devices",
-      [this](const drogon::HttpRequestPtr &request,
-             std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-        getDevice(request, std::move(callback));
+      "/devices/{id}",
+      [this](const drogon::HttpRequestPtr &,
+             std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+             int deviceId) {
+        getDevice(deviceId, std::move(callback));
       },
       {drogon::Get});
 }
@@ -97,7 +100,10 @@ void DevicesController::create(
         Json::Value body;
         body["status"] = "ok";
         body["device_id"] = deviceId;
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+        response->setStatusCode(drogon::k201Created);
+        response->addHeader("Location", "/devices/" + std::to_string(deviceId));
+        callback(response);
       },
       [callback](const std::string &error) {
         Json::Value body;
@@ -110,29 +116,24 @@ void DevicesController::create(
 }
 
 void DevicesController::deleteDevice(
-    const drogon::HttpRequestPtr &request,
+    int deviceId,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
-  const auto json = request->getJsonObject();
-  if (!json || !(*json)["device_id"].isInt() ||
-      (*json)["device_id"].asInt() <= 0) {
+  if (deviceId <= 0) {
     Json::Value body;
     body["status"] = "error";
-    body["message"] = "Expected a positive integer device_id in JSON body";
+    body["message"] = "Expected a positive device ID in the URL";
     auto response = drogon::HttpResponse::newHttpJsonResponse(body);
     response->setStatusCode(drogon::k400BadRequest);
     callback(response);
     return;
   }
 
-  const int deviceId = (*json)["device_id"].asInt();
-
   service_->deleteById(
       deviceId,
       [callback]() {
-        Json::Value body;
-        body["status"] = "ok";
-        body["message"] = "Device deleted";
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
+        auto response = drogon::HttpResponse::newHttpResponse();
+        response->setStatusCode(drogon::k204NoContent);
+        callback(response);
       },
       [callback](const std::string &error) {
         Json::Value body;
@@ -144,7 +145,7 @@ void DevicesController::deleteDevice(
       });
 }
 void DevicesController::updateDevice(
-    const drogon::HttpRequestPtr &request,
+    int deviceId, const drogon::HttpRequestPtr &request,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
   const auto json = request->getJsonObject();
   if (!json) {
@@ -157,7 +158,6 @@ void DevicesController::updateDevice(
     return;
   }
 
-  const auto deviceId = iot::validation::parsePositiveId(request->getParameter("id"));
   if (!(*json)["owner_id"].isInt() || !(*json)["name"].isString() ||
       !(*json)["type"].isString()) {
     Json::Value body;
@@ -171,7 +171,7 @@ void DevicesController::updateDevice(
   const int ownerId = (*json)["owner_id"].asInt();
   const std::string name = (*json)["name"].asString();
   const std::string type = (*json)["type"].asString();
-  if (!deviceId || !iot::validation::isValidDeviceFields(ownerId, name, type)) {
+  if (deviceId <= 0 || !iot::validation::isValidDeviceFields(ownerId, name, type)) {
     Json::Value body;
     body["status"] = "error";
     body["message"] = "Expected a positive id, positive owner_id and non-empty name and type";
@@ -182,7 +182,7 @@ void DevicesController::updateDevice(
   }
 
   service_->updateById(
-      *deviceId, ownerId, name, type,
+      deviceId, ownerId, name, type,
       [callback]() {
         Json::Value body;
         body["status"] = "ok";
@@ -200,10 +200,9 @@ void DevicesController::updateDevice(
 }
 
 void DevicesController::getDevice(
-    const drogon::HttpRequestPtr &request,
+    int deviceId,
     std::function<void(const drogon::HttpResponsePtr &)> callback) {
-  const auto deviceId = iot::validation::parsePositiveId(request->getParameter("id"));
-  if (!deviceId) {
+  if (deviceId <= 0) {
     Json::Value body;
     body["status"] = "error";
     body["message"] = "Expected a positive integer id parameter";
@@ -214,7 +213,7 @@ void DevicesController::getDevice(
   }
 
   service_->getById(
-      *deviceId,
+      deviceId,
       [callback](const std::string &responseBody) {
         Json::Value body;
         Json::CharReaderBuilder builder;

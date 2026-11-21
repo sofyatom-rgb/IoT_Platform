@@ -41,7 +41,7 @@ IoT_Platform/
 │       ├── main.cpp                  # Загружает конфиги, регистрирует контроллеры, запускает Core
 │       ├── telemetry/
 │       │   ├── controllers/
-│       │   │   └── TelemetryController.cpp # HTTP-маршруты телеметрии и /ping
+│       │   │   └── TelemetryController.cpp # HTTP-маршруты телеметрии и /health
 │       │   ├── services/
 │       │   │   └── TelemetryService.cpp # Слой бизнес-логики телеметрии
 │       │   ├── clients/
@@ -311,7 +311,7 @@ export SMTP_FROM_EMAIL=notifications@example.test
 
 Для демонстрации полного уведомления создайте пользователя с `telegram_chat_id` и email, устройство для него и правило в Rule Engine. Отправьте через Adapter или Core показание, нарушающее это правило. В Telegram и/или Mailpit придёт алерт; повторы подавляются до следующего показания, которое не нарушает ни одного правила. Показание можно отправить через Postman или curl — физический датчик для демонстрации не нужен.
 
-Температурный алерт имеет уровень `WARNING`. Повторы подавляются по `device_id`, пока Rule Engine не получит показание, не нарушающее правила. Состояние хранится в памяти Notification Service и сбрасывается при его перезапуске; между перезапусками или несколькими экземплярами сервиса дедупликация не сохраняется. Обработчик `POST /notifications/email` принимает общие поля события и уровни `INFO`, `WARNING`, `CRITICAL` для дальнейшего расширения.
+Температурный алерт имеет уровень `WARNING`. Повторы подавляются по `device_id`, пока Rule Engine не получит показание, не нарушающее правила. Состояние хранится в памяти Notification Service и сбрасывается при его перезапуске; между перезапусками или несколькими экземплярами сервиса дедупликация не сохраняется. Обработчик `POST /notifications/emails` принимает общие поля события и уровни `INFO`, `WARNING`, `CRITICAL` для дальнейшего расширения.
 
 ### 4. Запустить HTTP Adapter
 
@@ -331,7 +331,7 @@ Rule Engine использует ту же PostgreSQL и Notification Service, �
 ./build/bin/rule_engine
 ```
 
-Для штатного потока запустите PostgreSQL, Notification Service, Rule Engine и Core. Создайте правило через API Rule Engine. Затем отправляйте телеметрию через Adapter (`POST /ingest`) либо напрямую в Core (`POST /telemetry`): оба пути сохранят показание и передадут его Rule Engine. `POST /telemetry` самого Rule Engine оставлен как точка тестирования проверки; он не сохраняет показание в историю.
+Для штатного потока запустите PostgreSQL, Notification Service, Rule Engine и Core. Создайте правило через API Rule Engine. Затем отправляйте телеметрию через Adapter либо напрямую в Core: оба сервиса принимают `POST /devices/{id}/telemetry`, сохраняют показание и передают событие Rule Engine. Для отдельной проверки правил используйте `POST /telemetry-events` самого Rule Engine; этот маршрут не сохраняет показание в историю.
 
 Удобно держать PostgreSQL, Core, Rule Engine, Notification Service и Adapter в отдельных терминалах. Для проверки телеметрии должны быть запущены Core и Rule Engine; для срабатываний также нужен Notification Service.
 
@@ -357,62 +357,87 @@ CMake копирует HTTP-конфиги и email-шаблоны в build-ка
 
 ## Общий сценарий использования
 
-Обычный порядок действий:
-
 1. Создать пользователя через Core и получить `user_id`.
-2. Создать устройство для пользователя и получить `device_id`.
-3. Записывать показания напрямую в Core или через Adapter.
-4. Читать показания.
-5. При необходимости удалить телеметрию, устройство или пользователя.
+2. Создать устройство пользователя и получить `device_id`.
+3. Отправлять телеметрию напрямую в Core либо через Adapter.
+4. Читать и при необходимости удалять историю показаний конкретного устройства.
+5. При необходимости получать, обновлять и удалять пользователей, устройства и правила.
 
-Все данные запросов в этом руководстве передаются **в JSON-теле** (`-d` у `curl`). Ни один идентификатор или значение не помещается в query-параметры URL. Исключение — `GET /ping`: ему тело не требуется, и он не принимает входные данные.
+Идентификаторы отдельных ресурсов передаются в пути (`/users/{id}`, `/devices/{id}`), а не в JSON-теле запроса. JSON используется для представления создаваемых и обновляемых ресурсов. Единственный query-параметр в основной таблице API — `device_id` для фильтрации коллекции правил.
 
-Для JSON-запросов используйте заголовок:
-
-```text
-Content-Type: application/json
-```
+Для JSON-запросов используйте заголовок `Content-Type: application/json`.
 
 ## HTTP API
+
+### Что изменилось относительно старых маршрутов
+
+- `GET/PUT/DELETE /users?id=...` заменены на `/users/{id}`.
+- `GET/PUT/DELETE /devices?id=...` заменены на `/devices/{id}`.
+- `POST /telemetry` заменён на `POST /devices/{id}/telemetry`. Создание, чтение и удаление телеметрии используют один ресурс; `device_id` больше не передаётся в JSON.
+- `/ingest` заменён на `POST /devices/{id}/telemetry` у Adapter.
+- `/telemetry/query` и удаление телеметрии с ID в JSON заменены на `GET/DELETE /devices/{id}/telemetry`.
+- `/ping` заменён на `GET /health`.
+- `/notifications/temperature/normal` заменён на `DELETE /notifications/temperature-alerts/{device_id}`.
+- `/notifications/email` и `/notifications/email/test` приведены к коллекциям `/notifications/emails` и `/notifications/test-emails`.
+- Rule Engine принимает телеметрические события через `POST /telemetry-events`.
+
+Старые URL больше не регистрируются. Обновите внешние клиенты и сохранённые curl/Postman-запросы.
 
 ### Сводная таблица маршрутов
 
 #### IoT Core (`http://localhost:8080`)
 
-| Метод | Путь | Тело JSON | Назначение |
+| Метод | Путь | Тело / параметры | Назначение |
 |---|---|---|---|
-| `GET` | `/ping` | нет | Проверка доступности |
-| `POST` | `/users` | `email`, `password`, `name` | Создать пользователя |
-| `DELETE` | `/users` | `user_id` | Удалить пользователя |
-| `POST` | `/devices` | `owner_id`, `name`, `type` | Создать устройство |
-| `DELETE` | `/devices` | `device_id` | Удалить устройство |
-| `POST` | `/telemetry` | `device_id`, `temperature` | Сохранить показание и передать его Rule Engine |
-| `POST` | `/telemetry/query` | `device_id` | Получить до 10 последних показаний |
-| `DELETE` | `/telemetry` | `device_id` | Удалить все показания устройства |
+| `GET` | `/health` | — | Проверка доступности |
+| `POST` | `/users` | `email`, `password`, `name`, `telegram_chat_id?` | Создать пользователя (`201 Created`) |
+| `GET` | `/users/{id}` | — | Получить пользователя |
+| `PUT` | `/users/{id}` | Полный JSON пользователя | Полностью обновить пользователя |
+| `DELETE` | `/users/{id}` | — | Удалить пользователя (`204 No Content`) |
+| `POST` | `/devices` | `owner_id`, `name`, `type` | Создать устройство (`201 Created`) |
+| `GET` | `/devices/{id}` | — | Получить устройство |
+| `PUT` | `/devices/{id}` | Полный JSON устройства | Полностью обновить устройство |
+| `DELETE` | `/devices/{id}` | — | Удалить устройство (`204 No Content`) |
+| `POST` | `/devices/{id}/telemetry` | `temperature` | Добавить показание устройству и передать его Rule Engine (`201 Created`) |
+| `GET` | `/devices/{id}/telemetry` | — | Получить последние показания устройства |
+| `DELETE` | `/devices/{id}/telemetry` | — | Удалить историю показаний устройства (`204 No Content`) |
 
 #### HTTP Adapter (`http://localhost:8081`)
 
-| Метод | Путь | Тело JSON | Назначение |
+| Метод | Путь | Тело / параметры | Назначение |
 |---|---|---|---|
-| `POST` | `/ingest` | `device_id`, `temperature` | Переслать показание в Core, который сохраняет его и вызывает Rule Engine |
-| `POST` | `/telemetry/query` | `device_id` | Получить показания через Core |
-| `DELETE` | `/telemetry` | `device_id` | Удалить показания через Core |
+| `GET` | `/health` | — | Проверка доступности |
+| `POST` | `/devices/{id}/telemetry` | `temperature` | Добавить показание устройству и передать его в Core |
+| `GET` | `/devices/{id}/telemetry` | — | Получить историю через Core |
+| `DELETE` | `/devices/{id}/telemetry` | — | Удалить историю через Core |
 
-Adapter не реализует маршруты пользователей и устройств. Их нужно создавать и удалять напрямую через Core.
+Adapter не реализует маршруты пользователей и устройств. Их нужно создавать и изменять напрямую через Core.
+
+#### Notification Service (`http://localhost:8082`)
+
+| Метод | Путь | Тело / параметры | Назначение |
+|---|---|---|---|
+| `GET` | `/health` | — | Проверка доступности |
+| `POST` | `/notifications/temperature-alerts` | Данные устройства, температура, порог и получатели | Отправить температурное уведомление |
+| `DELETE` | `/notifications/temperature-alerts/{device_id}` | — | Сбросить активное температурное уведомление устройства |
+| `POST` | `/notifications/emails` | Данные email-уведомления | Отправить email-уведомление |
+| `POST` | `/notifications/test-emails` | `email` | Отправить тестовое письмо |
 
 #### Rule Engine (`http://localhost:8083`)
 
 | Метод | Путь | Тело / параметры | Назначение |
 |---|---|---|---|
-| `GET` | `/ping` | нет | Проверка доступности |
+| `GET` | `/health` | — | Проверка доступности |
 | `POST` | `/rules` | `device_id`, `operator`, `value` | Создать правило (`>`, `<`, `=`, `!=`) |
-| `GET` | `/rules?device_id=ID` | query `device_id` | Получить правила устройства |
+| `GET` | `/rules?device_id=ID` | Query `device_id` | Получить правила устройства |
 | `GET` | `/rules/{id}` | — | Получить правило |
-| `PUT` | `/rules/{id}` | `device_id`, `operator`, `value` | Изменить правило |
+| `PUT` | `/rules/{id}` | `device_id`, `operator`, `value` | Полностью обновить правило |
 | `DELETE` | `/rules/{id}` | — | Удалить правило |
-| `POST` | `/telemetry` | `device_id`, `temperature` | Проверить показание; при срабатывании отправить уведомление |
+| `POST` | `/telemetry-events` | `device_id`, `temperature` | Передать показание на проверку правил |
 
-Правила принадлежат `device_id`. Если хотя бы одно условие истинно, Rule Engine отправляет алерт на доступные контакты владельца: Telegram и/или email. При нормальном показании он сбрасывает состояние уведомления, чтобы следующее срабатывание снова отправило алерт. Запись через Core или Adapter сохраняет показание до проверки; прямой тестовый вызов Rule Engine историю не меняет.
+`GET /rules?device_id=...` использует query-параметр как фильтр коллекции — это нормальный REST-подход. Rule Engine принимает показание как ресурс `telemetry-events`; он проверяет правила и инициирует уведомление, но сам не сохраняет историю телеметрии.
+
+Правила принадлежат `device_id`. Если хотя бы одно условие истинно, Rule Engine отправляет уведомление на доступные контакты владельца: Telegram и/или email. При нормальном показании он удаляет состояние активного уведомления через `DELETE /notifications/temperature-alerts/{device_id}`.
 
 ### Создать правило и проверить температуру
 
@@ -426,45 +451,44 @@ curl -i -X POST http://localhost:8083/rules \
   -d '{"device_id":1,"operator":">","value":30}'
 ```
 
-Успешный ответ содержит `rule_id`. Посмотреть правила устройства:
+Посмотреть правила устройства:
 
 ```sh
 curl -i 'http://localhost:8083/rules?device_id=1'
 ```
 
-В обычном сценарии отправляйте показание через Core — оно сохранится и будет передано Rule Engine:
+В обычном сценарии показание отправляется в Core и сохраняется там:
 
 ```sh
-curl -i -X POST http://localhost:8080/telemetry \
+curl -i -X POST http://localhost:8080/devices/1/telemetry \
+  -H 'Content-Type: application/json' \
+  -d '{"temperature":31.5}'
+```
+
+Для отдельной проверки правил можно отправить событие напрямую в Rule Engine. Этот запрос не сохраняет историю:
+
+```sh
+curl -i -X POST http://localhost:8083/telemetry-events \
   -H 'Content-Type: application/json' \
   -d '{"device_id":1,"temperature":31.5}'
 ```
 
-Для тестирования только правила можно отправить показание напрямую в Rule Engine; этот запрос не сохраняет телеметрию:
+Изменить правило можно через `PUT /rules/{rule_id}` с теми же полями, удалить — через `DELETE /rules/{rule_id}`.
+
+### Проверить доступность сервисов
 
 ```sh
-curl -i -X POST http://localhost:8083/telemetry \
-  -H 'Content-Type: application/json' \
-  -d '{"device_id":1,"temperature":31.5}'
+curl -i http://localhost:8080/health  # Core
+curl -i http://localhost:8081/health  # Adapter
+curl -i http://localhost:8082/health  # Notification Service
+curl -i http://localhost:8083/health  # Rule Engine
 ```
 
-Изменить правило можно через `PUT /rules/{rule_id}` с теми же полями, удалить — через `DELETE /rules/{rule_id}`. Редактирование и проверка требуют работающей БД и Notification Service; для email SMTP должен быть включён и настроен.
+Успешный ответ — JSON `{"status":"ok"}`.
 
-### Проверить Core — `GET /ping`
+### Создать, получить, обновить и удалить пользователя
 
-```sh
-curl -i http://localhost:8080/ping
-```
-
-Тело ответа:
-
-```text
-pong
-```
-
-Маршрут зарегистрирован только в Core.
-
-### Создать пользователя — `POST /users`
+Создать пользователя:
 
 ```sh
 curl -i -X POST http://localhost:8080/users \
@@ -472,42 +496,33 @@ curl -i -X POST http://localhost:8080/users \
   -d '{"email":"user@example.com","password":"secret","name":"Alex","telegram_chat_id":"123456789"}'
 ```
 
-Поля:
+Успешный ответ имеет статус `201 Created`, содержит `user_id`, а заголовок `Location` указывает на `/users/{id}`.
 
-| Поле | Тип | Значение |
-|---|---|---|
-| `email` | строка | Email; в БД должен быть уникальным |
-| `password` | строка | Пароль пользователя |
-| `name` | строка | Отображаемое имя |
-| `telegram_chat_id` | строка или целое число | Необязательный ID чата с ботом; без него уведомления отправляться не будут |
-
-Успешный ответ содержит созданный идентификатор:
-
-```json
-{"status":"ok","user_id":1}
-```
-
-При ошибке БД ответ имеет вид `{"status":"error","message":"..."}`. Например, повторный email не проходит ограничение уникальности.
-
-### Удалить пользователя — `DELETE /users`
-
-ID передаётся телом запроса, не URL:
+Получить пользователя:
 
 ```sh
-curl -i -X DELETE http://localhost:8080/users \
+curl -i http://localhost:8080/users/1
+```
+
+Полностью обновить пользователя (PUT требует полный набор обязательных полей):
+
+```sh
+curl -i -X PUT http://localhost:8080/users/1 \
   -H 'Content-Type: application/json' \
-  -d '{"user_id":1}'
+  -d '{"email":"alex@example.com","password":"new-secret","name":"Alex Updated","telegram_chat_id":"123456789"}'
 ```
 
-Успешный ответ:
+Удалить пользователя:
 
-```json
-{"status":"ok","message":"User deleted"}
+```sh
+curl -i -X DELETE http://localhost:8080/users/1
 ```
 
-При удалении пользователя PostgreSQL каскадно удаляет все его устройства и телеметрию этих устройств.
+Успешное удаление возвращает `204 No Content` без тела. PostgreSQL каскадно удаляет устройства пользователя и их телеметрию.
 
-### Создать устройство — `POST /devices`
+### Создать, получить, обновить и удалить устройство
+
+Создать устройство:
 
 ```sh
 curl -i -X POST http://localhost:8080/devices \
@@ -515,173 +530,102 @@ curl -i -X POST http://localhost:8080/devices \
   -d '{"owner_id":1,"name":"Living room sensor","type":"temperature"}'
 ```
 
-Поля:
+Ответ `201 Created` содержит `device_id`, а `Location` указывает на `/devices/{id}`.
 
-| Поле | Тип | Значение |
-|---|---|---|
-| `owner_id` | целое число | ID ранее созданного пользователя |
-| `name` | строка | Название устройства |
-| `type` | строка | Категория/тип устройства |
-
-Успешный ответ:
-
-```json
-{"status":"ok","device_id":1}
-```
-
-`owner_id` должен ссылаться на существующую строку в `users`.
-
-### Удалить устройство — `DELETE /devices`
+Получить устройство:
 
 ```sh
-curl -i -X DELETE http://localhost:8080/devices \
+curl -i http://localhost:8080/devices/1
+```
+
+Полностью обновить устройство:
+
+```sh
+curl -i -X PUT http://localhost:8080/devices/1 \
   -H 'Content-Type: application/json' \
-  -d '{"device_id":1}'
+  -d '{"owner_id":1,"name":"Kitchen sensor","type":"temperature"}'
 ```
 
-Успешный ответ:
-
-```json
-{"status":"ok","message":"Device deleted"}
-```
-
-Показания этого устройства удаляются каскадно.
-
-### Записать показание напрямую — `POST /telemetry` в Core
+Удалить устройство:
 
 ```sh
-curl -i -X POST http://localhost:8080/telemetry \
+curl -i -X DELETE http://localhost:8080/devices/1
+```
+
+Успешное удаление возвращает `204 No Content`; связанные показания удаляются каскадно.
+
+### Создать показание напрямую через Core
+
+```sh
+curl -i -X POST http://localhost:8080/devices/1/telemetry \
   -H 'Content-Type: application/json' \
-  -d '{"device_id":1,"temperature":23.5}'
+  -d '{"temperature":23.5}'
 ```
 
-Поля:
+Идентификатор устройства передаётся в URI, а JSON содержит только `temperature`. Успешное создание возвращает `201 Created` и `notification_status`. Core сохраняет запись, после чего передаёт событие Rule Engine.
 
-| Поле | Тип | Значение |
-|---|---|---|
-| `device_id` | целое число | ID существующего устройства |
-| `temperature` | число | Показание температуры |
-
-Успешный ответ:
-
-```json
-{"status":"ok","notification_status":"not_triggered"}
-```
-
-Каждый запрос вставляет **новую** запись. Время ставится базой автоматически. `device_id` должен ссылаться на существующее устройство.
-
-После сохранения Core отправляет каждое показание в Rule Engine. Rule Engine проверяет правила устройства и при срабатывании передаёт событие в Notification Service. Core не выбирает получателей и не проверяет температурный порог.
-
-В ответе Core поле `notification_status` содержит результат Rule Engine: `not_triggered`, `no_rules`, `no_recipients` либо статусы каналов, например `telegram=sent; email=sent` или `telegram=sent; email=skipped_duplicate`. Ошибка обращения к Rule Engine или Notification Service возвращается как HTTP 500, хотя запись телеметрии к этому моменту уже сохранена.
-
-### Записать показание через Adapter — `POST /ingest`
+### Передать показание через Adapter
 
 ```sh
-curl -i -X POST http://localhost:8081/ingest \
+curl -i -X POST http://localhost:8081/devices/1/telemetry \
   -H 'Content-Type: application/json' \
-  -d '{"device_id":1,"temperature":23.5}'
+  -d '{"temperature":23.5}'
 ```
 
-Тело совпадает с прямым запросом к Core. Успешный ответ Adapter:
+Идентификатор устройства передаётся в URI, а JSON содержит только `temperature` (либо зашифрованный конверт с этим полем). Adapter декодирует входной конверт (если включён codec), пересылает JSON в Core, а ответ кодирует согласно конфигурации. Успешное создание возвращает `201 Created`.
 
-```json
-{"status":"ok","message":"Data forwarded to IoT Core","notification_status":"not_triggered"}
-```
+### Получить историю показаний
 
-Adapter делает внутренний HTTP `POST /telemetry` в Core. Core сохраняет запись и вызывает Rule Engine. Если Core или downstream Rule Engine отвергает запрос, Adapter возвращает `status: error`; запись могла уже сохраниться в таблице `telemetry`, поэтому перед повтором проверьте историю.
-
-### Получить телеметрию напрямую — `POST /telemetry/query` в Core
-
-Для чтения используется `POST`, чтобы передавать `device_id` в JSON-теле: тела у `GET` не поддерживаются одинаково всеми HTTP-клиентами и промежуточными прокси.
+Core и Adapter предоставляют один и тот же ресурс:
 
 ```sh
-curl -i -X POST http://localhost:8080/telemetry/query \
+curl -i http://localhost:8080/devices/1/telemetry
+curl -i http://localhost:8081/devices/1/telemetry
+```
+
+`GET` не использует тело запроса. Ответ Core — массив последних показаний. Adapter передаёт его в своём ответе в поле `data` (либо в зашифрованном конверте, если codec включён).
+
+### Удалить историю показаний
+
+```sh
+curl -i -X DELETE http://localhost:8080/devices/1/telemetry
+curl -i -X DELETE http://localhost:8081/devices/1/telemetry
+```
+
+Успешное удаление возвращает `204 No Content`. Удаляются все показания указанного устройства.
+
+### Уведомления
+
+Отправить температурное уведомление напрямую (обычно это делает Rule Engine):
+
+```sh
+curl -i -X POST http://localhost:8082/notifications/temperature-alerts \
   -H 'Content-Type: application/json' \
-  -d '{"device_id":1}'
+  -d '{"device_id":1,"chat_id":"123456789","device_name":"Boiler","temperature":81.5,"threshold":70}'
 ```
 
-Core возвращает JSON-массив максимум из 10 последних строк, отсортированных от новых к старым:
-
-```json
-[
-  {
-    "id": 15,
-    "device_id": 1,
-    "temperature": 23.5,
-    "time": "2026-10-25 01:35:00"
-  },
-  {
-    "id": 14,
-    "device_id": 1,
-    "temperature": 22.9,
-    "time": "2026-10-25 01:30:00"
-  }
-]
-```
-
-Если записей нет, результатом будет пустой массив `[]`.
-
-### Получить телеметрию через Adapter — `POST /telemetry/query`
+Сбросить активное температурное уведомление для устройства:
 
 ```sh
-curl -i -X POST http://localhost:8081/telemetry/query \
+curl -i -X DELETE http://localhost:8082/notifications/temperature-alerts/1
+```
+
+Отправить тестовое письмо:
+
+```sh
+curl -i -X POST http://localhost:8082/notifications/test-emails \
   -H 'Content-Type: application/json' \
-  -d '{"device_id":1}'
+  -d '{"email":"owner@example.com"}'
 ```
 
-Adapter отправит запрос в Core и обернёт результат:
-
-```json
-{
-  "status": "ok",
-  "data": [
-    {
-      "id": 15,
-      "device_id": 1,
-      "temperature": 23.5,
-      "time": "2026-10-25 01:35:00"
-    }
-  ]
-}
-```
-
-### Удалить телеметрию напрямую — `DELETE /telemetry` в Core
+### Краткая последовательность запросов
 
 ```sh
-curl -i -X DELETE http://localhost:8080/telemetry \
-  -H 'Content-Type: application/json' \
-  -d '{"device_id":1}'
-```
-
-Успешный ответ:
-
-```json
-{"status":"ok","message":"Telemetry deleted"}
-```
-
-Удаляются **все показания устройства**, а не одна запись.
-
-### Удалить телеметрию через Adapter — `DELETE /telemetry`
-
-```sh
-curl -i -X DELETE http://localhost:8081/telemetry \
-  -H 'Content-Type: application/json' \
-  -d '{"device_id":1}'
-```
-
-Adapter проксирует удаление в Core. Успешный ответ:
-
-```json
-{"status":"ok","message":"Telemetry deleted via adapter"}
-```
-
-### Сводка всех примеров запросов
-
-Во всех примерах с ID запрос не содержит query-параметров; значения находятся в JSON:
-
-```sh
-# Проверка Core — у этого запроса нет входных данных
-curl http://localhost:8080/ping
+# Проверка сервисов
+curl http://localhost:8080/health
+curl http://localhost:8081/health
+curl http://localhost:8082/health
+curl http://localhost:8083/health
 
 # Создание пользователя и устройства
 curl -X POST http://localhost:8080/users -H 'Content-Type: application/json' \
@@ -689,32 +633,28 @@ curl -X POST http://localhost:8080/users -H 'Content-Type: application/json' \
 curl -X POST http://localhost:8080/devices -H 'Content-Type: application/json' \
   -d '{"owner_id":1,"name":"Sensor","type":"temperature"}'
 
-# Запись: непосредственно в Core или через Adapter
-curl -X POST http://localhost:8080/telemetry -H 'Content-Type: application/json' \
-  -d '{"device_id":1,"temperature":23.5}'
-curl -X POST http://localhost:8081/ingest -H 'Content-Type: application/json' \
-  -d '{"device_id":1,"temperature":23.5}'
+# Запись через Core или Adapter
+curl -X POST http://localhost:8080/devices/1/telemetry -H 'Content-Type: application/json' \
+  -d '{"temperature":23.5}'
+curl -X POST http://localhost:8081/devices/1/telemetry -H 'Content-Type: application/json' \
+  -d '{"temperature":23.5}'
 
-# Чтение: непосредственно из Core или через Adapter
-curl -X POST http://localhost:8080/telemetry/query -H 'Content-Type: application/json' \
-  -d '{"device_id":1}'
-curl -X POST http://localhost:8081/telemetry/query -H 'Content-Type: application/json' \
-  -d '{"device_id":1}'
+# Чтение и удаление истории
+curl http://localhost:8080/devices/1/telemetry
+curl http://localhost:8081/devices/1/telemetry
+curl -X DELETE http://localhost:8080/devices/1/telemetry
 
-# Удаление телеметрии, устройства и пользователя
-curl -X DELETE http://localhost:8080/telemetry -H 'Content-Type: application/json' \
-  -d '{"device_id":1}'
-curl -X DELETE http://localhost:8080/devices -H 'Content-Type: application/json' \
-  -d '{"device_id":1}'
-curl -X DELETE http://localhost:8080/users -H 'Content-Type: application/json' \
-  -d '{"user_id":1}'
+# Получение, обновление и удаление ресурсов
+curl http://localhost:8080/users/1
+curl -X PUT http://localhost:8080/users/1 -H 'Content-Type: application/json' \
+  -d '{"email":"user@example.com","password":"new-secret","name":"Alex"}'
+curl -X DELETE http://localhost:8080/devices/1
+curl -X DELETE http://localhost:8080/users/1
 ```
-
-Обратите внимание: удаление пользователя удалит его устройства и телеметрию, поэтому отдельный вызов удаления устройства после этого не нужен.
 
 ## Изменение и удаление данных
 
-В HTTP API реализованы создание и удаление, но **не реализованы `PUT`/`PATCH` для изменения существующего пользователя или устройства**. Отправка нового показания не меняет старое — она создаёт ещё одну строку.
+Для пользователей, устройств и правил реализованы операции `PUT` на URI конкретного ресурса. `PUT` заменяет представление ресурса целиком, поэтому обязательные поля нужно передавать полностью. Для удаления используется `DELETE` по URI ресурса. Новое показание телеметрии всегда создаёт новую запись; существующие показания через HTTP API не редактируются.
 
 Изменить отдельное показание можно напрямую SQL-командой по `id` записи:
 

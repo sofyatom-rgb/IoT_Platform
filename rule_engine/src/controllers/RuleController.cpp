@@ -2,6 +2,11 @@
 
 #include "services/RuleService.h"
 
+#include <charconv>
+#include <cmath>
+#include <string>
+#include <system_error>
+
 namespace {
 
 using Callback = std::function<void(const drogon::HttpResponsePtr &)>;
@@ -40,6 +45,14 @@ bool validOperator(const std::string &op) {
   return op == ">" || op == "<" || op == "=" || op == "!=";
 }
 
+bool parsePositiveId(const std::string &text, int &id) {
+  if (text.empty()) return false;
+  const auto *first = text.data();
+  const auto *last = first + text.size();
+  const auto [end, error] = std::from_chars(first, last, id);
+  return error == std::errc{} && end == last && id > 0;
+}
+
 }  // namespace
 
 // RuleController::RuleController(std::string notificationUrl)
@@ -54,13 +67,13 @@ void RuleController::registerRoutes() {
     return std::make_shared<RuleService>(drogon::app().getDbClient(), url);
   };
 
-  // GET /ping — проверка, что сервис жив
+  // GET /health — проверка доступности сервиса.
   drogon::app().registerHandler(
-      "/ping",
+      "/health",
       [](const drogon::HttpRequestPtr &, Callback &&cb) {
-        auto resp = drogon::HttpResponse::newHttpResponse();
-        resp->setBody("pong\n");
-        cb(resp);
+        Json::Value body;
+        body["status"] = "ok";
+        cb(drogon::HttpResponse::newHttpJsonResponse(body));
       },
       {drogon::Get});
 
@@ -80,6 +93,11 @@ void RuleController::registerRoutes() {
         int deviceId = (*json)["device_id"].asInt();
         std::string op = (*json)["operator"].asString();
         double value = (*json)["value"].asDouble();
+        if (deviceId <= 0 || !std::isfinite(value)) {
+          reply(cb, drogon::k400BadRequest,
+                errorJson("device_id must be positive and value must be finite"));
+          return;
+        }
         if (!validOperator(op)) {
           reply(cb, drogon::k400BadRequest,
                 errorJson("operator must be one of: > < = !="));
@@ -92,7 +110,10 @@ void RuleController::registerRoutes() {
               Json::Value ok;
               ok["status"] = "ok";
               ok["rule_id"] = id;
-              reply(cb, drogon::k201Created, ok);
+              auto response = drogon::HttpResponse::newHttpJsonResponse(ok);
+              response->setStatusCode(drogon::k201Created);
+              response->addHeader("Location", "/rules/" + std::to_string(id));
+              cb(response);
             },
             [cb](const std::string &msg) { replyDbError(cb, msg); });
       },
@@ -109,10 +130,9 @@ void RuleController::registerRoutes() {
           return;
         }
         int deviceId = 0;
-        try {
-          deviceId = std::stoi(idStr);
-        } catch (...) {
-          reply(cb, drogon::k400BadRequest, errorJson("device_id must be int"));
+        if (!parsePositiveId(idStr, deviceId)) {
+          reply(cb, drogon::k400BadRequest,
+                errorJson("device_id must be a positive integer"));
           return;
         }
         makeService()->getRulesForDevice(
@@ -130,6 +150,10 @@ void RuleController::registerRoutes() {
   drogon::app().registerHandler(
       "/rules/{id}",
       [makeService](const drogon::HttpRequestPtr &, Callback &&cb, int id) {
+        if (id <= 0) {
+          reply(cb, drogon::k400BadRequest, errorJson("id must be positive"));
+          return;
+        }
         makeService()->getRuleById(
             id,
             [cb](const Rule &r) { reply(cb, drogon::k200OK, ruleToJson(r)); },
@@ -147,20 +171,33 @@ void RuleController::registerRoutes() {
   drogon::app().registerHandler(
       "/rules/{id}",
       [makeService](const drogon::HttpRequestPtr &req, Callback &&cb, int id) {
+        if (id <= 0) {
+          reply(cb, drogon::k400BadRequest, errorJson("id must be positive"));
+          return;
+        }
         auto json = req->getJsonObject();
         if (!json || !json->isMember("device_id") ||
-            !json->isMember("operator") || !json->isMember("value")) {
+            !(*json)["device_id"].isInt() || !json->isMember("operator") ||
+            !(*json)["operator"].isString() || !json->isMember("value") ||
+            !(*json)["value"].isNumeric()) {
           reply(cb, drogon::k400BadRequest,
                 errorJson("device_id, operator, value are required"));
           return;
         }
+        const int deviceId = (*json)["device_id"].asInt();
         std::string op = (*json)["operator"].asString();
+        const double value = (*json)["value"].asDouble();
+        if (deviceId <= 0 || !std::isfinite(value)) {
+          reply(cb, drogon::k400BadRequest,
+                errorJson("device_id must be positive and value must be finite"));
+          return;
+        }
         if (!validOperator(op)) {
           reply(cb, drogon::k400BadRequest, errorJson("bad operator"));
           return;
         }
         makeService()->updateRule(
-            id, (*json)["device_id"].asInt(), op, (*json)["value"].asDouble(),
+            id, deviceId, op, value,
             [cb]() {
               Json::Value ok;
               ok["status"] = "ok";
@@ -174,6 +211,10 @@ void RuleController::registerRoutes() {
   drogon::app().registerHandler(
       "/rules/{id}",
       [makeService](const drogon::HttpRequestPtr &, Callback &&cb, int id) {
+        if (id <= 0) {
+          reply(cb, drogon::k400BadRequest, errorJson("id must be positive"));
+          return;
+        }
         makeService()->deleteRule(
             id,
             [cb]() {
@@ -185,9 +226,9 @@ void RuleController::registerRoutes() {
       },
       {drogon::Delete});
 
-  // POST /telemetry — проверить правила для пришедшей температуры
+  // POST /telemetry-events — обработать новое показание датчика.
   drogon::app().registerHandler(
-      "/telemetry",
+      "/telemetry-events",
       [makeService](const drogon::HttpRequestPtr &req, Callback &&cb) {
         auto json = req->getJsonObject();
         if (!json || !json->isMember("device_id") ||
@@ -200,6 +241,11 @@ void RuleController::registerRoutes() {
         }
         int deviceId = (*json)["device_id"].asInt();
         double temperature = (*json)["temperature"].asDouble();
+        if (deviceId <= 0 || !std::isfinite(temperature)) {
+          reply(cb, drogon::k400BadRequest,
+                errorJson("device_id must be positive and temperature must be finite"));
+          return;
+        }
 
         makeService()->checkAndNotify(
             deviceId, temperature,

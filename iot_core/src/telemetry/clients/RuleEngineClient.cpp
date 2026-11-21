@@ -24,7 +24,7 @@ void RuleEngineClient::checkTelemetry(
 
   iot::http::Request request;
   request.method = iot::http::Method::Post;
-  request.path = "/telemetry";
+  request.path = "/telemetry-events";
   request.jsonBody = {{"device_id", static_cast<std::int64_t>(deviceId)},
                       {"temperature", temperature}};
   transport_->send(

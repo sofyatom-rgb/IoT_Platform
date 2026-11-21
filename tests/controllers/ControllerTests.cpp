@@ -295,7 +295,7 @@ TEST_CASE(users_controller_create_forwards_valid_payload_and_returns_user_id) {
   controller.create(request, [&](const auto &value) { response = value; });
 
   EXPECT_TRUE(static_cast<bool>(response));
-  EXPECT_EQ(static_cast<int>(drogon::k200OK), statusCode(response));
+  EXPECT_EQ(static_cast<int>(drogon::k201Created), statusCode(response));
   EXPECT_EQ(1, service->saveCalls);
   EXPECT_EQ(std::string("a@example.com"), service->email);
   EXPECT_EQ(std::string("secret"), service->password);
@@ -331,23 +331,20 @@ TEST_CASE(users_controller_rejects_invalid_json_with_bad_request) {
 TEST_CASE(users_controller_rejects_non_positive_delete_id) {
   auto service = std::make_shared<FakeUsersService>();
   UsersController controller(service);
-  auto request = jsonRequest(R"({"user_id":0})");
-
   drogon::HttpResponsePtr response;
-  controller.deleteUser(request, [&](const auto &value) { response = value; });
+  controller.deleteUser(0, [&](const auto &value) { response = value; });
 
   EXPECT_EQ(static_cast<int>(drogon::k400BadRequest), statusCode(response));
   EXPECT_EQ(0, service->deleteCalls);
 }
 
-TEST_CASE(users_controller_update_rejects_partial_or_non_numeric_id_without_throwing) {
+TEST_CASE(users_controller_update_rejects_non_positive_path_id) {
   auto service = std::make_shared<FakeUsersService>();
   UsersController controller(service);
   auto request = jsonRequest(R"({"email":"a@example.com","password":"x","name":"A"})");
-  request->setParameter("id", "12oops");
 
   drogon::HttpResponsePtr response;
-  controller.updateUser(request, [&](const auto &value) { response = value; });
+  controller.updateUser(0, request, [&](const auto &value) { response = value; });
 
   EXPECT_EQ(static_cast<int>(drogon::k400BadRequest), statusCode(response));
   EXPECT_EQ(0, service->updateCalls);
@@ -356,11 +353,8 @@ TEST_CASE(users_controller_update_rejects_partial_or_non_numeric_id_without_thro
 TEST_CASE(users_controller_get_forwards_valid_id) {
   auto service = std::make_shared<FakeUsersService>();
   UsersController controller(service);
-  auto request = drogon::HttpRequest::newHttpRequest();
-  request->setParameter("id", "42");
-
   drogon::HttpResponsePtr response;
-  controller.getUser(request, [&](const auto &value) { response = value; });
+  controller.getUser(42, [&](const auto &value) { response = value; });
 
   EXPECT_EQ(42, service->requestedId);
   EXPECT_EQ(1, service->getCalls);
@@ -371,10 +365,8 @@ TEST_CASE(users_controller_get_returns_not_found_when_service_reports_missing_us
   auto service = std::make_shared<FakeUsersService>();
   service->getResponse = R"({"status":"error","message":"User not found"})";
   UsersController controller(service);
-  auto request = drogon::HttpRequest::newHttpRequest();
-  request->setParameter("id", "999999");
   drogon::HttpResponsePtr response;
-  controller.getUser(request, [&](const auto &value) { response = value; });
+  controller.getUser(999999, [&](const auto &value) { response = value; });
   EXPECT_EQ(static_cast<int>(drogon::k404NotFound), statusCode(response));
 }
 
@@ -382,10 +374,8 @@ TEST_CASE(users_controller_get_returns_server_error_for_invalid_service_json) {
   auto service = std::make_shared<FakeUsersService>();
   service->getResponse = "not-json";
   UsersController controller(service);
-  auto request = drogon::HttpRequest::newHttpRequest();
-  request->setParameter("id", "42");
   drogon::HttpResponsePtr response;
-  controller.getUser(request, [&](const auto &value) { response = value; });
+  controller.getUser(42, [&](const auto &value) { response = value; });
   EXPECT_EQ(static_cast<int>(drogon::k500InternalServerError), statusCode(response));
 }
 
@@ -413,17 +403,16 @@ TEST_CASE(devices_controller_create_forwards_valid_device) {
   EXPECT_EQ(9, service->ownerId);
   EXPECT_EQ(std::string("Boiler"), service->name);
   EXPECT_EQ(std::string("temperature"), service->type);
-  EXPECT_EQ(static_cast<int>(drogon::k200OK), statusCode(response));
+  EXPECT_EQ(static_cast<int>(drogon::k201Created), statusCode(response));
 }
 
 TEST_CASE(devices_controller_update_rejects_invalid_id_without_throwing) {
   auto service = std::make_shared<FakeDevicesService>();
   DevicesController controller(service);
   auto request = jsonRequest(R"({"owner_id":9,"name":"Boiler","type":"temperature"})");
-  request->setParameter("id", "1x");
 
   drogon::HttpResponsePtr response;
-  controller.updateDevice(request, [&](const auto &value) { response = value; });
+  controller.updateDevice(0, request, [&](const auto &value) { response = value; });
 
   EXPECT_EQ(static_cast<int>(drogon::k400BadRequest), statusCode(response));
   EXPECT_EQ(0, service->updateCalls);
@@ -432,10 +421,8 @@ TEST_CASE(devices_controller_update_rejects_invalid_id_without_throwing) {
 TEST_CASE(devices_controller_delete_rejects_negative_id) {
   auto service = std::make_shared<FakeDevicesService>();
   DevicesController controller(service);
-  auto request = jsonRequest(R"({"device_id":-3})");
-
   drogon::HttpResponsePtr response;
-  controller.deleteDevice(request, [&](const auto &value) { response = value; });
+  controller.deleteDevice(-3, [&](const auto &value) { response = value; });
 
   EXPECT_EQ(static_cast<int>(drogon::k400BadRequest), statusCode(response));
   EXPECT_EQ(0, service->deleteCalls);
@@ -445,10 +432,8 @@ TEST_CASE(devices_controller_get_returns_not_found_when_service_reports_missing_
   auto service = std::make_shared<FakeDevicesService>();
   service->getResponse = R"({"status":"error","message":"Device not found"})";
   DevicesController controller(service);
-  auto request = drogon::HttpRequest::newHttpRequest();
-  request->setParameter("id", "999999");
   drogon::HttpResponsePtr response;
-  controller.getDevice(request, [&](const auto &value) { response = value; });
+  controller.getDevice(999999, [&](const auto &value) { response = value; });
   EXPECT_EQ(static_cast<int>(drogon::k404NotFound), statusCode(response));
 }
 
@@ -456,20 +441,30 @@ TEST_CASE(devices_controller_get_returns_server_error_for_invalid_service_json) 
   auto service = std::make_shared<FakeDevicesService>();
   service->getResponse = "not-json";
   DevicesController controller(service);
-  auto request = drogon::HttpRequest::newHttpRequest();
-  request->setParameter("id", "202");
   drogon::HttpResponsePtr response;
-  controller.getDevice(request, [&](const auto &value) { response = value; });
+  controller.getDevice(202, [&](const auto &value) { response = value; });
   EXPECT_EQ(static_cast<int>(drogon::k500InternalServerError), statusCode(response));
 }
 
-TEST_CASE(telemetry_controller_create_rejects_invalid_device_id_and_temperature) {
+TEST_CASE(telemetry_controller_create_rejects_non_positive_path_id) {
   auto repository = std::make_shared<FakeTelemetryRepository>();
   TelemetryController controller(makeTelemetryService(repository));
-  auto request = jsonRequest(R"({"device_id":0,"temperature":"hot"})");
+  auto request = jsonRequest(R"({"temperature":22.5})");
 
   drogon::HttpResponsePtr response;
-  controller.create(request, [&](const auto &value) { response = value; });
+  controller.create(0, request, [&](const auto &value) { response = value; });
+
+  EXPECT_EQ(static_cast<int>(drogon::k400BadRequest), statusCode(response));
+  EXPECT_EQ(0, repository->saves);
+}
+
+TEST_CASE(telemetry_controller_create_rejects_non_numeric_temperature) {
+  auto repository = std::make_shared<FakeTelemetryRepository>();
+  TelemetryController controller(makeTelemetryService(repository));
+  auto request = jsonRequest(R"({"temperature":"hot"})");
+
+  drogon::HttpResponsePtr response;
+  controller.create(17, request, [&](const auto &value) { response = value; });
 
   EXPECT_EQ(static_cast<int>(drogon::k400BadRequest), statusCode(response));
   EXPECT_EQ(0, repository->saves);
@@ -478,24 +473,22 @@ TEST_CASE(telemetry_controller_create_rejects_invalid_device_id_and_temperature)
 TEST_CASE(telemetry_controller_create_forwards_valid_reading_to_service) {
   auto repository = std::make_shared<FakeTelemetryRepository>();
   TelemetryController controller(makeTelemetryService(repository));
-  auto request = jsonRequest(R"({"device_id":17,"temperature":22.75})");
+  auto request = jsonRequest(R"({"temperature":22.75})");
 
   drogon::HttpResponsePtr response;
-  controller.create(request, [&](const auto &value) { response = value; });
+  controller.create(17, request, [&](const auto &value) { response = value; });
 
   EXPECT_EQ(1, repository->saves);
   EXPECT_EQ(17, repository->deviceId);
   EXPECT_EQ(22.75, repository->temperature);
-  EXPECT_EQ(static_cast<int>(drogon::k200OK), statusCode(response));
+  EXPECT_EQ(static_cast<int>(drogon::k201Created), statusCode(response));
 }
 
 TEST_CASE(telemetry_controller_read_rejects_non_positive_device_id) {
   auto repository = std::make_shared<FakeTelemetryRepository>();
   TelemetryController controller(makeTelemetryService(repository));
-  auto request = jsonRequest(R"({"device_id":-1})");
-
   drogon::HttpResponsePtr response;
-  controller.getTelemetry(request, [&](const auto &value) { response = value; });
+  controller.getTelemetry(-1, [&](const auto &value) { response = value; });
 
   EXPECT_EQ(static_cast<int>(drogon::k400BadRequest), statusCode(response));
   EXPECT_EQ(0, repository->reads);
@@ -504,14 +497,12 @@ TEST_CASE(telemetry_controller_read_rejects_non_positive_device_id) {
 TEST_CASE(telemetry_controller_delete_forwards_valid_device_id) {
   auto repository = std::make_shared<FakeTelemetryRepository>();
   TelemetryController controller(makeTelemetryService(repository));
-  auto request = jsonRequest(R"({"device_id":17})");
-
   drogon::HttpResponsePtr response;
-  controller.deleteTelemetry(request, [&](const auto &value) { response = value; });
+  controller.deleteTelemetry(17, [&](const auto &value) { response = value; });
 
   EXPECT_EQ(1, repository->deletes);
   EXPECT_EQ(17, repository->deviceId);
-  EXPECT_EQ(static_cast<int>(drogon::k200OK), statusCode(response));
+  EXPECT_EQ(static_cast<int>(drogon::k204NoContent), statusCode(response));
 }
 
 TEST_CASE(notification_controller_rejects_invalid_payload_with_bad_request) {
@@ -574,9 +565,8 @@ TEST_CASE(users_controller_update_forwards_all_fields) {
   UsersController controller(service);
   auto request = jsonRequest(
       R"({"email":"new@example.com","password":"secret2","name":"New Name","telegram_chat_id":12345})");
-  request->setParameter("id", "77");
   drogon::HttpResponsePtr response;
-  controller.updateUser(request, [&](const auto &value) { response = value; });
+  controller.updateUser(77, request, [&](const auto &value) { response = value; });
   EXPECT_EQ(static_cast<int>(drogon::k200OK), statusCode(response));
   EXPECT_EQ(1, service->updateCalls);
   EXPECT_EQ(77, service->requestedId);
@@ -601,10 +591,8 @@ TEST_CASE(users_controller_maps_service_failure_to_internal_server_error) {
 TEST_CASE(users_controller_get_rejects_invalid_id) {
   auto service = std::make_shared<FakeUsersService>();
   UsersController controller(service);
-  auto request = drogon::HttpRequest::newHttpRequest();
-  request->setParameter("id", "0");
   drogon::HttpResponsePtr response;
-  controller.getUser(request, [&](const auto &value) { response = value; });
+  controller.getUser(0, [&](const auto &value) { response = value; });
   EXPECT_EQ(static_cast<int>(drogon::k400BadRequest), statusCode(response));
   EXPECT_EQ(0, service->getCalls);
 }
@@ -613,10 +601,8 @@ TEST_CASE(users_controller_maps_lookup_failure_to_internal_server_error) {
   auto service = std::make_shared<FakeUsersService>();
   service->failure = "database unavailable";
   UsersController controller(service);
-  auto request = drogon::HttpRequest::newHttpRequest();
-  request->setParameter("id", "42");
   drogon::HttpResponsePtr response;
-  controller.getUser(request, [&](const auto &value) { response = value; });
+  controller.getUser(42, [&](const auto &value) { response = value; });
   EXPECT_EQ(static_cast<int>(drogon::k500InternalServerError), statusCode(response));
   EXPECT_EQ(1, service->getCalls);
 }
@@ -626,9 +612,8 @@ TEST_CASE(devices_controller_update_forwards_valid_fields) {
   DevicesController controller(service);
   auto request = jsonRequest(
       R"({"owner_id":11,"name":"Hall sensor","type":"temperature"})");
-  request->setParameter("id", "25");
   drogon::HttpResponsePtr response;
-  controller.updateDevice(request, [&](const auto &value) { response = value; });
+  controller.updateDevice(25, request, [&](const auto &value) { response = value; });
   EXPECT_EQ(static_cast<int>(drogon::k200OK), statusCode(response));
   EXPECT_EQ(1, service->updateCalls);
   EXPECT_EQ(25, service->requestedId);
@@ -639,10 +624,8 @@ TEST_CASE(devices_controller_update_forwards_valid_fields) {
 TEST_CASE(devices_controller_get_forwards_valid_id_and_parses_json) {
   auto service = std::make_shared<FakeDevicesService>();
   DevicesController controller(service);
-  auto request = drogon::HttpRequest::newHttpRequest();
-  request->setParameter("id", "202");
   drogon::HttpResponsePtr response;
-  controller.getDevice(request, [&](const auto &value) { response = value; });
+  controller.getDevice(202, [&](const auto &value) { response = value; });
   EXPECT_EQ(static_cast<int>(drogon::k200OK), statusCode(response));
   EXPECT_EQ(1, service->getCalls);
   EXPECT_EQ(202, service->requestedId);
@@ -665,7 +648,7 @@ TEST_CASE(telemetry_controller_rejects_malformed_json) {
   TelemetryController controller(makeTelemetryService(repository));
   auto request = jsonRequest("{bad-json");
   drogon::HttpResponsePtr response;
-  controller.create(request, [&](const auto &value) { response = value; });
+  controller.create(5, request, [&](const auto &value) { response = value; });
   EXPECT_EQ(static_cast<int>(drogon::k400BadRequest), statusCode(response));
   EXPECT_EQ(0, repository->saves);
 }
@@ -673,9 +656,8 @@ TEST_CASE(telemetry_controller_rejects_malformed_json) {
 TEST_CASE(telemetry_controller_read_returns_parsed_array) {
   auto repository = std::make_shared<FakeTelemetryRepository>();
   TelemetryController controller(makeTelemetryService(repository));
-  auto request = jsonRequest(R"({"device_id":5})");
   drogon::HttpResponsePtr response;
-  controller.getTelemetry(request, [&](const auto &value) { response = value; });
+  controller.getTelemetry(5, [&](const auto &value) { response = value; });
   EXPECT_EQ(static_cast<int>(drogon::k200OK), statusCode(response));
   EXPECT_EQ(1, repository->reads);
   EXPECT_EQ(5, repository->deviceId);
@@ -685,9 +667,8 @@ TEST_CASE(telemetry_controller_maps_repository_errors_to_internal_server_error) 
   auto repository = std::make_shared<FakeTelemetryRepository>();
   repository->failure = "database unavailable";
   TelemetryController controller(makeTelemetryService(repository));
-  auto request = jsonRequest(R"({"device_id":5})");
   drogon::HttpResponsePtr response;
-  controller.getTelemetry(request, [&](const auto &value) { response = value; });
+  controller.getTelemetry(5, [&](const auto &value) { response = value; });
   EXPECT_EQ(static_cast<int>(drogon::k500InternalServerError), statusCode(response));
   EXPECT_EQ(1, repository->reads);
 }
@@ -696,20 +677,31 @@ TEST_CASE(telemetry_controller_delete_maps_repository_error_to_internal_server_e
   auto repository = std::make_shared<FakeTelemetryRepository>();
   repository->failure = "database unavailable";
   TelemetryController controller(makeTelemetryService(repository));
-  auto request = jsonRequest(R"({"device_id":5})");
   drogon::HttpResponsePtr response;
-  controller.deleteTelemetry(request, [&](const auto &value) { response = value; });
+  controller.deleteTelemetry(5, [&](const auto &value) { response = value; });
   EXPECT_EQ(static_cast<int>(drogon::k500InternalServerError), statusCode(response));
   EXPECT_EQ(1, repository->deletes);
+}
+
+TEST_CASE(ingest_controller_rejects_non_positive_path_id_without_calling_iot_core) {
+  auto client = std::make_shared<FakeIoTClient>();
+  IngestController controller(false, "test-key", client);
+  auto request = jsonRequest(R"({"temperature":20})");
+
+  drogon::HttpResponsePtr response;
+  controller.ingest(0, request, [&](const auto &value) { response = value; });
+
+  EXPECT_EQ(static_cast<int>(drogon::k400BadRequest), statusCode(response));
+  EXPECT_EQ(0, client->sendCalls);
 }
 
 TEST_CASE(ingest_controller_rejects_invalid_payload_without_calling_iot_core) {
   auto client = std::make_shared<FakeIoTClient>();
   IngestController controller(false, "test-key", client);
-  auto request = jsonRequest(R"({"device_id":0,"temperature":20})");
+  auto request = jsonRequest(R"({"temperature":"hot"})");
 
   drogon::HttpResponsePtr response;
-  controller.ingest(request, [&](const auto &value) { response = value; });
+  controller.ingest(23, request, [&](const auto &value) { response = value; });
 
   EXPECT_EQ(static_cast<int>(drogon::k400BadRequest), statusCode(response));
   EXPECT_EQ(0, client->sendCalls);
@@ -718,25 +710,25 @@ TEST_CASE(ingest_controller_rejects_invalid_payload_without_calling_iot_core) {
 TEST_CASE(ingest_controller_forwards_valid_payload_and_returns_success) {
   auto client = std::make_shared<FakeIoTClient>();
   IngestController controller(false, "test-key", client);
-  auto request = jsonRequest(R"({"device_id":23,"temperature":18.5})");
+  auto request = jsonRequest(R"({"temperature":18.5})");
 
   drogon::HttpResponsePtr response;
-  controller.ingest(request, [&](const auto &value) { response = value; });
+  controller.ingest(23, request, [&](const auto &value) { response = value; });
 
   EXPECT_EQ(1, client->sendCalls);
   EXPECT_EQ(23, client->deviceId);
   EXPECT_EQ(18.5, client->temperature);
-  EXPECT_EQ(static_cast<int>(drogon::k200OK), statusCode(response));
+  EXPECT_EQ(static_cast<int>(drogon::k201Created), statusCode(response));
 }
 
 TEST_CASE(ingest_controller_maps_iot_core_failure_to_bad_gateway) {
   auto client = std::make_shared<FakeIoTClient>();
   client->failure = "IoT Core unavailable";
   IngestController controller(false, "test-key", client);
-  auto request = jsonRequest(R"({"device_id":23,"temperature":18.5})");
+  auto request = jsonRequest(R"({"temperature":18.5})");
 
   drogon::HttpResponsePtr response;
-  controller.ingest(request, [&](const auto &value) { response = value; });
+  controller.ingest(23, request, [&](const auto &value) { response = value; });
 
   EXPECT_EQ(1, client->sendCalls);
   EXPECT_EQ(static_cast<int>(drogon::k502BadGateway), statusCode(response));
@@ -747,7 +739,7 @@ TEST_CASE(ingest_controller_rejects_malformed_json) {
   IngestController controller(false, "test-key", client);
   auto request = jsonRequest("{bad-json");
   drogon::HttpResponsePtr response;
-  controller.ingest(request, [&](const auto &value) { response = value; });
+  controller.ingest(23, request, [&](const auto &value) { response = value; });
   EXPECT_EQ(static_cast<int>(drogon::k400BadRequest), statusCode(response));
   EXPECT_EQ(0, client->sendCalls);
 }
@@ -757,7 +749,7 @@ TEST_CASE(ingest_controller_rejects_bad_envelope_when_codec_is_enabled) {
   IngestController controller(true, "test-key", client);
   auto request = jsonRequest(R"({"checksum":"bad","ciphertext":"%%%"})");
   drogon::HttpResponsePtr response;
-  controller.ingest(request, [&](const auto &value) { response = value; });
+  controller.ingest(23, request, [&](const auto &value) { response = value; });
   EXPECT_EQ(static_cast<int>(drogon::k400BadRequest), statusCode(response));
   EXPECT_EQ(0, client->sendCalls);
 }
@@ -765,9 +757,8 @@ TEST_CASE(ingest_controller_rejects_bad_envelope_when_codec_is_enabled) {
 TEST_CASE(ingest_controller_get_forwards_device_id_to_iot_client) {
   auto client = std::make_shared<FakeIoTClient>();
   IngestController controller(false, "test-key", client);
-  auto request = jsonRequest(R"({"device_id":23})");
   drogon::HttpResponsePtr response;
-  controller.getTelemetry(request, [&](const auto &value) { response = value; });
+  controller.getTelemetry(23, [&](const auto &value) { response = value; });
   EXPECT_EQ(static_cast<int>(drogon::k200OK), statusCode(response));
   EXPECT_EQ(1, client->readCalls);
   EXPECT_EQ(23, client->deviceId);
@@ -776,10 +767,9 @@ TEST_CASE(ingest_controller_get_forwards_device_id_to_iot_client) {
 TEST_CASE(ingest_controller_delete_forwards_device_id_to_iot_client) {
   auto client = std::make_shared<FakeIoTClient>();
   IngestController controller(false, "test-key", client);
-  auto request = jsonRequest(R"({"device_id":23})");
   drogon::HttpResponsePtr response;
-  controller.deleteTelemetry(request, [&](const auto &value) { response = value; });
-  EXPECT_EQ(static_cast<int>(drogon::k200OK), statusCode(response));
+  controller.deleteTelemetry(23, [&](const auto &value) { response = value; });
+  EXPECT_EQ(static_cast<int>(drogon::k204NoContent), statusCode(response));
   EXPECT_EQ(1, client->deleteCalls);
   EXPECT_EQ(23, client->deviceId);
 }

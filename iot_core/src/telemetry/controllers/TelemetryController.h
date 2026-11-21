@@ -14,15 +14,15 @@ class TelemetryController {
   void registerRoutes();
 
   void create(
-      const drogon::HttpRequestPtr &request,
+      int deviceId, const drogon::HttpRequestPtr &request,
       std::function<void(const drogon::HttpResponsePtr &)> callback);
 
   void getTelemetry(
-      const drogon::HttpRequestPtr &request,
+      int deviceId,
       std::function<void(const drogon::HttpResponsePtr &)> callback);
 
   void deleteTelemetry(
-      const drogon::HttpRequestPtr &request,
+      int deviceId,
       std::function<void(const drogon::HttpResponsePtr &)> callback);
 
  private:

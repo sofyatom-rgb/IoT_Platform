@@ -16,13 +16,13 @@ class UsersController {
   void create(const drogon::HttpRequestPtr &request,
               std::function<void(const drogon::HttpResponsePtr &)> callback);
 
-  void deleteUser(const drogon::HttpRequestPtr &request,
+  void deleteUser(int userId,
                   std::function<void(const drogon::HttpResponsePtr &)> callback);
 
-  void updateUser(const drogon::HttpRequestPtr &request,
+  void updateUser(int userId, const drogon::HttpRequestPtr &request,
                   std::function<void(const drogon::HttpResponsePtr &)> callback);
 
-  void getUser(const drogon::HttpRequestPtr &request,
+  void getUser(int userId,
                std::function<void(const drogon::HttpResponsePtr &)> callback);
 
  private:
