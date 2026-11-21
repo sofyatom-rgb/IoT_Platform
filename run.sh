@@ -81,5 +81,12 @@ sleep 1
 ./build/bin/notification_service &
 PIDS+=($!)
 
+# Ждём, пока все сервисы реально начнут слушать порты.
+for port in 8080 8081 8082 8083; do
+  until (echo > "/dev/tcp/127.0.0.1/${port}") >/dev/null 2>&1; do
+    sleep 1
+  done
+done
+
 echo "Все сервисы запущены. Нажмите Ctrl+C для остановки."
 wait
