@@ -288,7 +288,7 @@ TEST_CASE(notification_client_forwards_device_and_all_notification_recipients) {
             std::get<std::string>(lastRequest(*transport).jsonBody.at("email")));
 }
 
-TEST_CASE(notification_client_resets_deduplication_for_device) {
+TEST_CASE(notification_client_clears_temperature_alert_for_device) {
   auto transport = std::make_shared<FakeHttpTransport>();
   NotificationClient client("http://notification-service", transport);
   bool succeeded = false;

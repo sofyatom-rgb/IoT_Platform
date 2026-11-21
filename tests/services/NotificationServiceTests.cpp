@@ -82,6 +82,26 @@ TEST_CASE(notification_service_propagates_telegram_error) {
   EXPECT_EQ("Telegram is unavailable", observedError);
 }
 
+TEST_CASE(notification_service_sends_each_triggered_temperature_alert) {
+  auto client = std::make_shared<FakeTelegramClient>();
+  NotificationService service(client);
+  int successfulCalls = 0;
+  const auto onSuccess = [&](const ChannelStatuses &statuses) {
+    EXPECT_EQ("sent", statuses.telegram);
+    EXPECT_EQ("skipped", statuses.email);
+    ++successfulCalls;
+  };
+  const auto onError = [](const std::string &) { EXPECT_TRUE(false); };
+
+  service.sendTemperatureAlert(42, "chat-42", "", "Living room", 31.5, 28.0,
+                               onSuccess, onError);
+  service.sendTemperatureAlert(42, "chat-42", "", "Living room", 32.0, 28.0,
+                               onSuccess, onError);
+
+  EXPECT_EQ(2, successfulCalls);
+  EXPECT_EQ(2, client->calls);
+}
+
 TEST_CASE(telegram_templates_allow_per_message_modes_and_variables) {
   Json::Value config;
   config["version"] = 1;

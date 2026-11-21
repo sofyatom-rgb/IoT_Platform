@@ -307,11 +307,42 @@ export SMTP_FROM_EMAIL=notifications@example.test
 ./scripts/test-email.sh получатель@example.com
 ```
 
-Откройте `http://127.0.0.1:8026`, чтобы показать полученное письмо. Mailpit перехватывает почту локально и не отправляет её настоящему адресату. Также доступны внешние SMTP-серверы: для production задайте `SMTP_SECURITY=starttls` (`smtp.gmail.com:587`) или `SMTP_SECURITY=tls` (порт `465`) и используйте пароль приложения. Не включайте `SMTP_SECURITY=none` для внешних хостов.
+Откройте `http://127.0.0.1:8026`, чтобы показать полученное письмо. Mailpit перехватывает почту локально и не отправляет её настоящему адресату. Не включайте `SMTP_SECURITY=none` для внешних хостов.
 
-Для демонстрации полного уведомления создайте пользователя с `telegram_chat_id` и email, устройство для него и правило в Rule Engine. Отправьте через Adapter или Core показание, нарушающее это правило. В Telegram и/или Mailpit придёт алерт; повторы подавляются до следующего показания, которое не нарушает ни одного правила. Показание можно отправить через Postman или curl — физический датчик для демонстрации не нужен.
+**Реальная отправка через Яндекс SMTP.** Проект настроен для рекомендованного Яндексом подключения с implicit TLS: `smtp.yandex.ru:465`. Если локальный `.env` уже существует, не перезаписывайте его: добавьте в него SMTP-переменные из шаблона, сохранив `TELEGRAM_BOT_TOKEN` и другие секреты. Только для нового окружения скопируйте шаблон и заполните свои данные:
 
-Температурный алерт имеет уровень `WARNING`. Повторы подавляются по `device_id`, пока Rule Engine не получит показание, не нарушающее правила. Состояние хранится в памяти Notification Service и сбрасывается при его перезапуске; между перезапусками или несколькими экземплярами сервиса дедупликация не сохраняется. Обработчик `POST /notifications/email` принимает общие поля события и уровни `INFO`, `WARNING`, `CRITICAL` для дальнейшего расширения.
+```sh
+cp .env.yandex.example .env
+chmod 600 .env
+```
+
+В `.env` обязательно замените `SMTP_USERNAME`, `SMTP_PASSWORD` и `SMTP_FROM_EMAIL`. Логин и адрес отправителя должны быть адресом одного и того же ящика, иначе Яндекс отвергнет письмо. Затем примените переменные и запустите сервис из того же терминала:
+
+```sh
+set -a
+source .env
+set +a
+./build/bin/notification_service
+```
+
+В другом терминале отправьте реальное тестовое письмо:
+
+```sh
+./scripts/test-email.sh recipient@example.com
+```
+
+Что нужно сделать в Яндексе:
+
+1. Создать или выбрать отдельный ящик-отправитель, например `alerts@…`, и один раз войти в [Яндекс Почту](https://mail.yandex.ru/), приняв условия.
+2. В [настройках «Почтовые программы»](https://mail.yandex.ru/#setup/client) включить доступ по IMAP и опцию «Пароли приложений и OAuth-токены».
+3. В [Яндекс ID → Пароли приложений](https://passport.yandex.ru/profile/access) создать пароль типа «Почта» с названием `IoT Monitor`. Пароль показывается один раз: скопируйте его только в локальный `.env` в `SMTP_PASSWORD`.
+4. Не передавать обычный пароль Яндекс ID, пароль приложения или файл `.env` в чат, Git, логи и скриншоты.
+
+Для Яндекс 360 в `SMTP_USERNAME` указывается полный адрес ящика. Если порт 465 заблокирован сетью, можно использовать `SMTP_PORT=587` и `SMTP_SECURITY=starttls`. Официальные параметры и требования Яндекса: [настройка SMTP](https://yandex.ru/support/yandex-360/business/mail/ru/mail-clients/others), [диагностика ошибок SMTP](https://www.yandex.ru/support/yandex-360/business/mail/ru/mail-clients/mail-clients-troubleshooting).
+
+Для демонстрации полного уведомления создайте пользователя с `telegram_chat_id` и email, устройство для него и правило в Rule Engine. Отправьте через Adapter или Core показание, нарушающее это правило. Для каждого такого показания в Telegram и/или Mailpit придёт новое уведомление. Показание можно отправить через Postman или curl — физический датчик для демонстрации не нужен.
+
+Температурный алерт имеет уровень `WARNING`. Notification Service отправляет новое уведомление при каждом показании, удовлетворяющем правилу; показания, не удовлетворяющие правилам, уведомлений не вызывают. Обработчик `POST /notifications/email` принимает общие поля события и уровни `INFO`, `WARNING`, `CRITICAL` для дальнейшего расширения.
 
 ### 4. Запустить HTTP Adapter
 
@@ -345,8 +376,8 @@ Rule Engine использует ту же PostgreSQL и Notification Service, �
 - `http_adapter/src/config/AdapterConfig.json` — адрес/порт Adapter и URL Core;
 - локальный `.env` (игнорируется Git) или окружение — настройки SMTP; реальные секреты нельзя добавлять в Git;
 - `SMTP_ENABLED` — включает SMTP (по умолчанию `false`);
-- `SMTP_HOST`, `SMTP_PORT` — SMTP-сервер и порт (по умолчанию `smtp.gmail.com:587`);
-- `SMTP_SECURITY` — `starttls` (по умолчанию), implicit TLS `tls` или `none` только для `localhost`, `127.0.0.1`, `::1` и локального тестового SMTP;
+- `SMTP_HOST`, `SMTP_PORT` — SMTP-сервер и порт (по умолчанию `smtp.yandex.ru:465`);
+- `SMTP_SECURITY` — `tls` (по умолчанию для Яндекса), `starttls` или `none` только для `localhost`, `127.0.0.1`, `::1` и локального тестового SMTP;
 - `SMTP_USERNAME`, `SMTP_PASSWORD` — логин и пароль приложения;
 - `SMTP_FROM_EMAIL`, `SMTP_SENDER_NAME` — адрес и имя отправителя;
 - `SMTP_TIMEOUT_SECONDS` — сетевой таймаут (по умолчанию 20 секунд);
@@ -572,7 +603,7 @@ curl -i -X POST http://localhost:8080/telemetry \
 
 После сохранения Core отправляет каждое показание в Rule Engine. Rule Engine проверяет правила устройства и при срабатывании передаёт событие в Notification Service. Core не выбирает получателей и не проверяет температурный порог.
 
-В ответе Core поле `notification_status` содержит результат Rule Engine: `not_triggered`, `no_rules`, `no_recipients` либо статусы каналов, например `telegram=sent; email=sent` или `telegram=sent; email=skipped_duplicate`. Ошибка обращения к Rule Engine или Notification Service возвращается как HTTP 500, хотя запись телеметрии к этому моменту уже сохранена.
+В ответе Core поле `notification_status` содержит результат Rule Engine: `not_triggered`, `no_rules`, `no_recipients` либо статусы каналов, например `telegram=sent; email=sent` или `telegram=sent; email=skipped`. Ошибка обращения к Rule Engine или Notification Service возвращается как HTTP 500, хотя запись телеметрии к этому моменту уже сохранена.
 
 ### Записать показание через Adapter — `POST /ingest`
 

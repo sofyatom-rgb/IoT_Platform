@@ -2,10 +2,8 @@
 
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
-#include <unordered_set>
 
 #include "clients/ITelegramBotClient.h"
 #include "clients/WorkerThreadPool.h"
@@ -48,17 +46,8 @@ public:
                      std::function<void(const std::string &)> error) const;
 
 private:
-  struct AlertState {
-    std::mutex mutex;
-    std::unordered_set<int> activeDevices;
-  };
-
-  bool reserveTemperatureAlert(int deviceId) const;
-  void releaseTemperatureAlert(int deviceId) const;
-
   std::shared_ptr<ITelegramBotClient> telegramBotClient_;
   std::optional<EmailService> emailService_;
   std::shared_ptr<WorkerThreadPool> threadPool_;
   TelegramMessageTemplates telegramTemplates_;
-  std::shared_ptr<AlertState> alertState_ = std::make_shared<AlertState>();
 };

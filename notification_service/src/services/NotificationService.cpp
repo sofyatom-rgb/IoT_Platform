@@ -100,22 +100,8 @@ NotificationService::NotificationService(
   }
 }
 
-bool NotificationService::reserveTemperatureAlert(int deviceId) const {
-  if (deviceId <= 0)
-    return true;
-  std::lock_guard lock(alertState_->mutex);
-  return alertState_->activeDevices.insert(deviceId).second;
-}
-
-void NotificationService::releaseTemperatureAlert(int deviceId) const {
-  if (deviceId <= 0)
-    return;
-  std::lock_guard lock(alertState_->mutex);
-  alertState_->activeDevices.erase(deviceId);
-}
-
 void NotificationService::clearTemperatureAlert(int deviceId) const {
-  releaseTemperatureAlert(deviceId);
+  (void)deviceId;
 }
 
 void NotificationService::sendTemperatureAlert(
@@ -168,14 +154,6 @@ void NotificationService::sendTemperatureAlert(
     return;
   }
 
-  if (!reserveTemperatureAlert(deviceId)) {
-    initial.telegram = tryTelegram ? "skipped_duplicate" : "skipped";
-    initial.email = tryEmail ? "skipped_duplicate" : "skipped";
-    if (success)
-      success(initial);
-    return;
-  }
-
   const int total = static_cast<int>(tryTelegram) + static_cast<int>(tryEmail);
   auto completed = std::make_shared<int>(0);
   auto statuses = std::make_shared<ChannelStatuses>(initial);
@@ -191,7 +169,6 @@ void NotificationService::sendTemperatureAlert(
       return;
     }
 
-    releaseTemperatureAlert(deviceId);
     std::string details;
     if (tryTelegram)
       details = "telegram: " + statuses->telegram;

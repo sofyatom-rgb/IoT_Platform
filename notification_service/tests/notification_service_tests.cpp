@@ -56,10 +56,10 @@ void testEnvironmentDefaultsToDisabled() {
 
   const EmailConfig config = EmailConfig::fromEnvironment();
   require(!config.enabled, "SMTP must be disabled by default");
-  require(config.host == "smtp.gmail.com", "Gmail host default is missing");
-  require(config.port == 587, "Gmail STARTTLS port default is missing");
-  require(config.security == "starttls",
-          "Gmail STARTTLS security default is missing");
+  require(config.host == "smtp.yandex.ru", "Yandex host default is missing");
+  require(config.port == 465, "Yandex TLS port default is missing");
+  require(config.security == "tls",
+          "Yandex TLS security default is missing");
 }
 
 void testEnvironmentConfigurationAndValidation() {

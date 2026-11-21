@@ -4,9 +4,10 @@
 
 struct EmailConfig {
   bool enabled = false;
-  std::string host = "smtp.gmail.com";
-  unsigned port = 587;
-  std::string security = "starttls";
+  // Yandex SMTP: implicit TLS is the provider's recommended setting.
+  std::string host = "smtp.yandex.ru";
+  unsigned port = 465;
+  std::string security = "tls";
   std::string username;
   std::string password;
   std::string senderName = "IoT Monitor";

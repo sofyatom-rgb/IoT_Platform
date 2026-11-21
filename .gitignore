@@ -60,6 +60,7 @@ compile_commands.json
 .env
 .env.*
 !.env.example
+!.env.yandex.example
 
 # vcpkg
 vcpkg_installed/
