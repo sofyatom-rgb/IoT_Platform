@@ -35,6 +35,14 @@ class UsersRepository {
                   std::function<void()> success,
                   std::function<void(const std::string &)> error) const;
 
+  // Обновление профиля без смены пароля.
+  void updateProfileById(int userId,
+                         const std::string &email,
+                         const std::string &name,
+                         const std::string &telegramChatId,
+                         std::function<void()> success,
+                         std::function<void(const std::string &)> error) const;
+
   void getById(int userId,
                std::function<void(const std::string &)> success,
                std::function<void(const std::string &)> error) const;

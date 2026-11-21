@@ -6,12 +6,42 @@ const notifications = import.meta.env.VITE_NOTIFICATIONS_BASE ?? '/api/notificat
 const deviceKey = 'iot-monitor-live-device-ids';
 const ownerKey = 'iot-monitor-live-owner-id';
 const tokenKey = 'iot-monitor-live-token';
+const userKey = 'iot-monitor-user';
+
+// Auth state lives in two storages: token in sessionStorage, user in localStorage.
+// Keep both in sync so a stale user never produces tokenless API calls.
+export const AUTH_CHANGED_EVENT = 'iot-auth-changed';
+
+export function clearSession(): void {
+  sessionStorage.removeItem(tokenKey);
+  sessionStorage.removeItem(ownerKey);
+  sessionStorage.removeItem(deviceKey);
+  localStorage.removeItem(userKey);
+  window.dispatchEvent(new Event(AUTH_CHANGED_EVENT));
+}
+
+export function tokenPayload(): Record<string, unknown> | null {
+  const token = sessionStorage.getItem(tokenKey);
+  if (!token) return null;
+  try {
+    const encoded = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(encoded)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+export function hasValidToken(): boolean {
+  const payload = tokenPayload();
+  if (!payload) return false;
+  const exp = Number(payload.exp);
+  return Number.isFinite(exp) && exp > Date.now() / 1000;
+}
 
 type Json = Record<string, unknown> | unknown[];
 
 async function request<T extends Json>(base: string, path: string, init: RequestInit = {}): Promise<T> {
   const token = sessionStorage.getItem(tokenKey);
-  if (token) syncOwnerFromToken();
   const response = await fetch(`${base}${path}`, {
     ...init,
     headers: {
@@ -22,26 +52,20 @@ async function request<T extends Json>(base: string, path: string, init: Request
   });
   const text = await response.text();
   const body: unknown = text ? JSON.parse(text) : undefined;
+  if (response.status === 401 && !path.startsWith('/auth/login')) {
+    clearSession();
+    throw new Error('Сессия истекла, войдите снова');
+  }
   if (!response.ok) {
     const message = typeof body === 'object' && body !== null && 'message' in body
       ? String(body.message) : `HTTP ${response.status}`;
     throw new Error(message);
   }
-  return body as T;
-}
-
-function syncOwnerFromToken(): void {
-  const token = sessionStorage.getItem(tokenKey);
-  if (!token || sessionStorage.getItem(ownerKey)) return;
-  try {
-    const payload = JSON.parse(
-      atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')),
-    ) as Record<string, unknown>;
-    const id = Number(payload.sub);
-    if (Number.isInteger(id) && id > 0) sessionStorage.setItem(ownerKey, String(id));
-  } catch {
-    // Токен не JWT — оставляем owner_id из .env.
+  const objectBody = body as Record<string, unknown> | null;
+  if (objectBody && !Array.isArray(body) && objectBody.status === 'error') {
+    throw new Error(String(objectBody.message ?? 'Ошибка запроса'));
   }
+  return body as T;
 }
 
 function ids(): number[] { try { return JSON.parse(sessionStorage.getItem(deviceKey) ?? '[]') as number[]; } catch { return []; } }
@@ -77,17 +101,15 @@ export const liveApi = {
     return this.login(email, password);
   },
   async devices(): Promise<Device[]> {
-    const ownerId = Number(sessionStorage.getItem(ownerKey) ?? import.meta.env.VITE_LIVE_OWNER_ID);
-    if (!Number.isInteger(ownerId) || ownerId <= 0) return [];
-    const result = await request<Record<string, unknown>[]>(core, `/devices?owner_id=${ownerId}`);
+    // Список устройств определяется токеном, owner_id в запросе не нужен.
+    const result = await request<Record<string, unknown>[]>(core, '/devices');
     return result.map(deviceFrom);
   },
   async device(id: number): Promise<Device> { const result = await request<Record<string, unknown>>(core, `/devices?id=${id}`); remember(id); return deviceFrom(result); },
   async saveDevice(data: Omit<Device, 'id'|'owner_id'|'created_at'>, existing?: Device): Promise<Device> {
     if (existing) { await request(core, `/devices?id=${existing.id}`, { method: 'PUT', body: JSON.stringify({ ...data, owner_id: existing.owner_id }) }); return { ...existing, ...data }; }
-    const ownerId = Number(sessionStorage.getItem(ownerKey) ?? import.meta.env.VITE_LIVE_OWNER_ID);
-    if (!Number.isInteger(ownerId) || ownerId <= 0) throw new Error('Для live-режима задайте VITE_LIVE_OWNER_ID в frontend/.env');
-    const result = await request<Record<string, unknown>>(core, '/devices', { method: 'POST', body: JSON.stringify({ ...data, owner_id: ownerId }) });
+    const result = await request<Record<string, unknown>>(core, '/devices', { method: 'POST', body: JSON.stringify(data) });
+    const ownerId = Number(tokenPayload()?.sub ?? 0);
     const device = { ...data, id: Number(result.device_id), owner_id: ownerId, created_at: '' }; remember(device.id); return device;
   },
   async deleteDevice(id: number): Promise<void> { await request(core, '/devices', { method: 'DELETE', body: JSON.stringify({ device_id: id }) }); forget(id); },
@@ -114,7 +136,7 @@ export const liveApi = {
   },
   async send(deviceId: number, value: number): Promise<void> { await request(core, '/telemetry', { method: 'POST', body: JSON.stringify({ device_id: deviceId, temperature: value }) }); },
   async clearTelemetry(deviceId: number): Promise<void> { await request(core, '/telemetry', { method: 'DELETE', body: JSON.stringify({ device_id: deviceId }) }); },
-  async deleteUser(userId: number): Promise<void> { await request(core, '/users', { method: 'DELETE', body: JSON.stringify({ user_id: userId }) }); },
+  async deleteUser(userId: number): Promise<void> { await request(core, '/users', { method: 'DELETE', body: JSON.stringify({ user_id: userId }) }); clearSession(); },
   async sendEmailAlert(email: string): Promise<void> { await request(notifications, '/notifications/email', { method: 'POST', body: JSON.stringify({ email, event_type: 'Тестовый алерт', sensor_name: 'Тестовый датчик', sensor_id: '1', reading_value: '31.5 °C', threshold: '30.0 °C', location: 'Тестовый стенд', severity: 'WARNING', description: 'Тестовое уведомление, отправленное из интерфейса.' }) }); },
   async rules(deviceId?: number): Promise<Rule[]> {
     if (deviceId) return request<Rule[]>(rulesBase, `/rules?device_id=${deviceId}`);

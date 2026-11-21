@@ -183,11 +183,15 @@ void UsersController::updateUser(
     return;
   }
 
-  if (!(*json)["password"].isString() ||
-      (*json)["password"].asString().size() < 8) {
-    replyError(callback, drogon::k400BadRequest,
-               "password (min 8 chars) is required");
-    return;
+  // Пароль передаётся только при смене; для обычного обновления профиля он не нужен.
+  std::string password;
+  if ((*json)["password"].isString() && !(*json)["password"].asString().empty()) {
+    password = (*json)["password"].asString();
+    if (password.size() < 8) {
+      replyError(callback, drogon::k400BadRequest,
+                 "password must be at least 8 characters");
+      return;
+    }
   }
 
   const std::string userIdStr = request->getParameter("id");
@@ -209,7 +213,6 @@ void UsersController::updateUser(
   }
 
   std::string email = (*json)["email"].asString();
-  std::string password = (*json)["password"].asString();
   std::string name = (*json)["name"].asString();
   std::string telegramChatId;
   if (!getTelegramChatId(*json, telegramChatId)) {
@@ -218,24 +221,28 @@ void UsersController::updateUser(
     return;
   }
 
+  auto success = [callback]() {
+    Json::Value body;
+    body["status"] = "ok";
+    body["message"] = "User updated";
+    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+  };
+  auto failure = [callback](const std::string &error) {
+    if (error.find("unique") != std::string::npos ||
+        error.find("duplicate") != std::string::npos) {
+      replyError(callback, drogon::k409Conflict,
+                 "user with this email or telegram_chat_id already exists");
+      return;
+    }
+    replyDbError(callback, error);
+  };
+
   UsersService service(DbClientProvider::get());
-  service.updateById(
-      userId, email, password, name, telegramChatId,
-      [callback]() {
-        Json::Value body;
-        body["status"] = "ok";
-        body["message"] = "User updated";
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
-      },
-      [callback](const std::string &error) {
-        if (error.find("unique") != std::string::npos ||
-            error.find("duplicate") != std::string::npos) {
-          replyError(callback, drogon::k409Conflict,
-                     "user with this email or telegram_chat_id already exists");
-          return;
-        }
-        replyDbError(callback, error);
-      });
+  if (password.empty()) {
+    service.updateProfileById(userId, email, name, telegramChatId, success, failure);
+  } else {
+    service.updateById(userId, email, password, name, telegramChatId, success, failure);
+  }
 }
 
 void UsersController::getUser(

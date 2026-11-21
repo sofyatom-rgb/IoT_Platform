@@ -132,9 +132,11 @@ void DevicesRepository::getByOwnerId(
 void DevicesRepository::checkPermission(int userId, const std::string &method,
                                          std::function<void(bool)> success,
                                          std::function<void(const std::string &)> error) const {
-  db_->execSqlAsync(
+  // Репозиторий тоже может быть уничтожен до завершения асинхронного запроса.
+  auto db = db_;
+  db->execSqlAsync(
       "SELECT us.status FROM user_status us WHERE us.user_id = $1",
-      [this, method, success, error](const drogon::orm::Result &r) {
+      [db, method, success, error](const drogon::orm::Result &r) {
         if (r.empty()) {
           success(false);
           return;
@@ -155,7 +157,7 @@ void DevicesRepository::checkPermission(int userId, const std::string &method,
           return;
         }
 
-        db_->execSqlAsync(
+        db->execSqlAsync(
             "SELECT " + column + " FROM permissions WHERE status = $1",
             [success](const drogon::orm::Result &r) {
               if (r.empty()) {

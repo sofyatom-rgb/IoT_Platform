@@ -62,7 +62,9 @@ CREATE TABLE IF NOT EXISTS permissions (
 INSERT INTO permissions (status, can_get, can_post, can_put, can_delete)
 VALUES
     ('admin', TRUE,  TRUE,  TRUE,  TRUE),
-    ('guest', TRUE,  FALSE, FALSE, FALSE)
+    -- Обычный пользователь управляет своими устройствами; чужые устройства
+    -- защищены проверкой владельца в DevicesService.
+    ('guest', TRUE,  TRUE,  TRUE,  TRUE)
 ON CONFLICT (status) DO UPDATE SET
     can_get  = EXCLUDED.can_get,
     can_post = EXCLUDED.can_post,

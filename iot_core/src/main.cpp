@@ -112,7 +112,8 @@ int main(int, char *argv[]) {
     return 1;
   }
 
-  // db_clients уже включён в HTTPConfig.json.
+  // HTTPConfig.json содержит только HTTP-настройки; DbClient создаётся явно
+  // ниже из PostgreSQLConfig.json и сохраняется в DbClientProvider.
   drogon::app().loadConfigFile((configDirectory / "HTTPConfig.json").string());
 
   const auto &customConfig = config["custom_config"];

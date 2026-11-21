@@ -88,6 +88,20 @@ void UsersRepository::updateById(int userId,
       email, hash, salt, name, telegramChatId, userId);
 }
 
+void UsersRepository::updateProfileById(int userId,
+                                        const std::string &email,
+                                        const std::string &name,
+                                        const std::string &telegramChatId,
+                                        std::function<void()> success,
+                                        std::function<void(const std::string &)> error) const {
+  db_->execSqlAsync(
+      "UPDATE users SET email = $1, name = $2, "
+      "telegram_chat_id = NULLIF($3, '') WHERE id = $4",
+      [success](const drogon::orm::Result &) { success(); },
+      [error](const drogon::orm::DrogonDbException &e) { error(e.base().what()); },
+      email, name, telegramChatId, userId);
+}
+
 void UsersRepository::getById(
     int userId,
     std::function<void(const std::string &)> success,

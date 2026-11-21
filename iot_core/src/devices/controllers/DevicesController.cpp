@@ -69,15 +69,8 @@ void DevicesController::create(
     return;
   }
 
-  if (!(*json)["owner_id"].isInt() || (*json)["owner_id"].asInt() <= 0) {
-    Json::Value body;
-    body["status"] = "error";
-    body["message"] = "owner_id must be a positive integer";
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
-    return;
-  }
-
-  const int ownerId = (*json)["owner_id"].asInt();
+  // Владелец устройства определяется JWT, а не полем запроса.
+  const int ownerId = userId;
   std::string name = (*json)["name"].asString();
   std::string type = (*json)["type"].asString();
 
@@ -169,7 +162,7 @@ void DevicesController::updateDevice(
   }
 
   int deviceId = std::stoi(deviceIdStr);
-  int ownerId = (*json)["owner_id"].asInt();
+  int ownerId = userId;
   std::string name = (*json)["name"].asString();
   std::string type = (*json)["type"].asString();
 

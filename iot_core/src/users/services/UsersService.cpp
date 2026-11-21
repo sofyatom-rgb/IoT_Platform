@@ -32,6 +32,16 @@ void UsersService::updateById(int userId,
                          std::move(success), std::move(error));
 }
 
+void UsersService::updateProfileById(int userId,
+                                     const std::string &email,
+                                     const std::string &name,
+                                     const std::string &telegramChatId,
+                                     std::function<void()> success,
+                                     std::function<void(const std::string &)> error) const {
+  repository_.updateProfileById(userId, email, name, telegramChatId,
+                                std::move(success), std::move(error));
+}
+
 void UsersService::getById(
     int userId,
     std::function<void(const std::string &)> success,
