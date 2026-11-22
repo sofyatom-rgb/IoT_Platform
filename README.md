@@ -412,7 +412,7 @@ CMake копирует HTTP-конфиги и email-шаблоны в build-ка
 - `/notifications/email` и `/notifications/email/test` приведены к коллекциям `/notifications/emails` и `/notifications/test-emails`.
 - Rule Engine принимает телеметрические события через `POST /telemetry-events`.
 
-Старые URL больше не регистрируются. Обновите внешние клиенты и сохранённые curl/Postman-запросы. ESP32 тоже шлёт показания на REST-путь адаптера `POST /devices/{id}/telemetry` обычным JSON без шифрования.
+Старые URL больше не регистрируются. Обновите внешние клиенты и сохранённые curl/Postman-запросы. ESP32 шлёт показания на REST-путь адаптера `POST /devices/{id}/telemetry` в зашифрованном конверте `{checksum,ciphertext}`; внутри конверта — `{"temperature":T}`, а `device_id` берётся из URI.
 
 ### Сводная таблица маршрутов
 
@@ -438,7 +438,7 @@ CMake копирует HTTP-конфиги и email-шаблоны в build-ка
 | Метод | Путь | Тело / параметры | Назначение |
 |---|---|---|---|
 | `GET` | `/health` | — | Проверка доступности |
-| `POST` | `/devices/{id}/telemetry` | `temperature` | Добавить показание устройству и передать его в Core |
+| `POST` | `/devices/{id}/telemetry` | зашифрованный `{checksum,ciphertext}` с `temperature` внутри | Добавить показание устройству и передать его в Core |
 | `GET` | `/devices/{id}/telemetry` | — | Получить историю через Core |
 | `DELETE` | `/devices/{id}/telemetry` | — | Удалить историю через Core |
 
@@ -600,10 +600,10 @@ curl -i -X POST http://localhost:8080/devices/1/telemetry \
 ```sh
 curl -i -X POST http://localhost:8081/devices/1/telemetry \
   -H 'Content-Type: application/json' \
-  -d '{"temperature":23.5}'
+  -d '{"checksum":"...","ciphertext":"..."}'
 ```
 
-Идентификатор устройства передаётся в URI, а JSON содержит только `temperature` (либо зашифрованный конверт с этим полем). Adapter декодирует входной конверт (если включён codec), пересылает JSON в Core, а ответ кодирует согласно конфигурации. Успешное создание возвращает `201 Created`.
+Идентификатор устройства передаётся в URI. Adapter декодирует зашифрованный конверт, добавляет `device_id`, пересылает JSON в Core и кодирует ответ тем же кодеком. Успешная отправка возвращает `200 OK`.
 
 ### Получить историю показаний
 
@@ -614,7 +614,7 @@ curl -i http://localhost:8080/devices/1/telemetry
 curl -i http://localhost:8081/devices/1/telemetry
 ```
 
-`GET` не использует тело запроса. Ответ Core — массив последних показаний. Adapter передаёт его в своём ответе в поле `data` (либо в зашифрованном конверте, если codec включён).
+`GET` не использует тело запроса. Ответ Core и Adapter — массив последних показаний.
 
 ### Удалить историю показаний
 

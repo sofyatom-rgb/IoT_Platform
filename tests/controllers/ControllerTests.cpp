@@ -19,12 +19,13 @@ int statusCode(const drogon::HttpResponsePtr &response) {
   return static_cast<int>(response->getStatusCode());
 }
 
-/// Создаёт Drogon-запрос с JSON-телом.
-/// Создаёт HTTP-запрос с JSON-телом.
-drogon::HttpRequestPtr jsonRequest(const std::string &body) {
+/// Создаёт HTTP-запрос с JSON-телом и device_id из REST-пути.
+drogon::HttpRequestPtr jsonRequest(const std::string &body,
+                                   const std::string &deviceId = {}) {
   auto request = drogon::HttpRequest::newHttpRequest();
   request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   request->setBody(body);
+  if (!deviceId.empty()) request->setParameter("device_id", deviceId);
   return request;
 }
 
@@ -451,7 +452,7 @@ TEST_CASE(telemetry_controller_delete_maps_repository_error_to_internal_server_e
 TEST_CASE(ingest_controller_rejects_invalid_payload_without_calling_iot_core) {
   auto client = std::make_shared<test_support::IoTClientFixture>();
   IngestController controller(false, "test-key", client->shared());
-  auto request = jsonRequest(R"({"device_id":0,"temperature":20})");
+  auto request = jsonRequest(R"({"temperature":20})", "0");
 
   drogon::HttpResponsePtr response;
   controller.ingest(request, [&](const auto &value) { response = value; });
@@ -463,7 +464,7 @@ TEST_CASE(ingest_controller_rejects_invalid_payload_without_calling_iot_core) {
 TEST_CASE(ingest_controller_forwards_valid_payload_and_returns_success) {
   auto client = std::make_shared<test_support::IoTClientFixture>();
   IngestController controller(false, "test-key", client->shared());
-  auto request = jsonRequest(R"({"device_id":23,"temperature":18.5})");
+  auto request = jsonRequest(R"({"temperature":18.5})", "23");
 
   drogon::HttpResponsePtr response;
   controller.ingest(request, [&](const auto &value) { response = value; });
@@ -478,7 +479,7 @@ TEST_CASE(ingest_controller_maps_iot_core_failure_to_bad_gateway) {
   auto client = std::make_shared<test_support::IoTClientFixture>();
   client->failure = "IoT Core unavailable";
   IngestController controller(false, "test-key", client->shared());
-  auto request = jsonRequest(R"({"device_id":23,"temperature":18.5})");
+  auto request = jsonRequest(R"({"temperature":18.5})", "23");
 
   drogon::HttpResponsePtr response;
   controller.ingest(request, [&](const auto &value) { response = value; });
