@@ -1,0 +1,1016 @@
+{
+  "info": {
+    "_postman_id": "iot-platform-collection-001",
+    "name": "IoT Platform REST",
+    "description": "REST-only API без legacy-алиасов. Core (/8080) требует JWT для пользователей, устройств и телеметрии. Adapter (/8081) принимает зашифрованный конверт {checksum,ciphertext} на POST /devices/{id}/telemetry и шифрует ответ. Notification Service — /8082, Rule Engine — /8083. Сначала выполни Auth -> Login, затем используй переменные token, user_id, device_id. Пример конверта для Adapter можно получить командой: ./build/bin/codec_cli encode <codec_key> '{\"temperature\":23.5}'.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "core_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "adapter_url",
+      "value": "http://localhost:8081"
+    },
+    {
+      "key": "notify_url",
+      "value": "http://localhost:8082"
+    },
+    {
+      "key": "rule_engine_url",
+      "value": "http://localhost:8083"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "user_id",
+      "value": "1"
+    },
+    {
+      "key": "device_id",
+      "value": "1"
+    },
+    {
+      "key": "rule_id",
+      "value": "1"
+    },
+    {
+      "key": "from",
+      "value": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "key": "to",
+      "value": "2027-01-01T00:00:00.000Z"
+    },
+    {
+      "key": "after_id",
+      "value": "0"
+    },
+    {
+      "key": "all_time",
+      "value": "true"
+    },
+    {
+      "key": "telemetry_envelope",
+      "value": "{\"checksum\":\"...\",\"ciphertext\":\"...\"}"
+    }
+  ],
+  "item": [
+    {
+      "name": "Core",
+      "item": [
+        {
+          "name": "Login (get JWT)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"dimakl08@mail.ru\",\n  \"password\": \"CHANGE_ME\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{core_url}}/auth/login",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Получить JWT. Тест-скрипт сохраняет token и user_id в окружение."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  pm.environment.set(\"token\", json.token);",
+                  "  pm.environment.set(\"user_id\", String(json.user_id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{core_url}}/health",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Проверка доступности IoT Core."
+          },
+          "response": []
+        },
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"secret\",\n  \"name\": \"Alex\",\n  \"telegram_chat_id\": \"123456789\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{core_url}}/users",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "users"
+              ]
+            },
+            "description": "Создать пользователя. Успешный ответ: 201 Created; Location содержит URI созданного пользователя."
+          },
+          "response": []
+        },
+        {
+          "name": "Get User",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{core_url}}/users/{{user_id}}",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "users",
+                "{{user_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user2@example.com\",\n  \"password\": \"secret\",\n  \"name\": \"Alex Updated\",\n  \"telegram_chat_id\": \"123456789\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{core_url}}/users/{{user_id}}",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "users",
+                "{{user_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{core_url}}/users/{{user_id}}",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "users",
+                "{{user_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Device",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Living room sensor\",\n  \"type\": \"temperature\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{core_url}}/devices",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "devices"
+              ]
+            },
+            "description": "Создать устройство. Успешный ответ: 201 Created; Location содержит URI созданного устройства."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Device",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{core_url}}/devices/{{device_id}}",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Device",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Kitchen sensor\",\n  \"type\": \"temperature\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{core_url}}/devices/{{device_id}}",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Device",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{core_url}}/devices/{{device_id}}",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Save Telemetry - Core",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"temperature\": 31.0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{core_url}}/devices/{{device_id}}/telemetry",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}",
+                "telemetry"
+              ]
+            },
+            "description": "POST создаёт новое показание для устройства из URI. В теле передаётся только temperature."
+          },
+          "response": [],
+          "description": "Добавить показание в коллекцию телеметрии устройства. Идентификатор берётся из URI."
+        },
+        {
+          "name": "Delete Telemetry - Core",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{core_url}}/devices/{{device_id}}/telemetry",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}",
+                "telemetry"
+              ]
+            },
+            "description": "Удалить все показания устройства. ID указан в URI, тело запроса отсутствует; успех — 204 No Content."
+          },
+          "response": [],
+          "description": "Удалить историю показаний устройства. Идентификатор находится в URI; DELETE не использует тело запроса."
+        },
+        {
+          "name": "Get Telemetry - all_time",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{core_url}}/devices/{{device_id}}/telemetry?all_time={{all_time}}",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}",
+                "telemetry"
+              ],
+              "query": [
+                {
+                  "key": "all_time",
+                  "value": "{{all_time}}"
+                }
+              ]
+            },
+            "description": "Все показания устройства без ограничения по времени."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Telemetry - range",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{core_url}}/devices/{{device_id}}/telemetry?from={{from}}&to={{to}}",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}",
+                "telemetry"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{from}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{to}}"
+                }
+              ]
+            },
+            "description": "Диапазон в UTC с миллисекундами, например 2026-01-01T00:00:00.000Z."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Telemetry - after_id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{core_url}}/devices/{{device_id}}/telemetry?after_id={{after_id}}",
+              "host": [
+                "{{core_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}",
+                "telemetry"
+              ],
+              "query": [
+                {
+                  "key": "after_id",
+                  "value": "{{after_id}}"
+                }
+              ]
+            },
+            "description": "Курсорное чтение: только записи с id больше after_id."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Adapter",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adapter_url}}/health",
+              "host": [
+                "{{adapter_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Проверка доступности HTTP Adapter."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Telemetry via Adapter",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "\"{{telemetry_envelope}}\"",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{adapter_url}}/devices/{{device_id}}/telemetry",
+              "host": [
+                "{{adapter_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}",
+                "telemetry"
+              ]
+            },
+            "description": "Тело — зашифрованный конверт {checksum,ciphertext}. Сгенерировать: ./build/bin/codec_cli encode <codec_key> '{\"temperature\":23.5}'. Ответ тоже зашифрован; успех — 200 OK."
+          },
+          "response": [],
+          "description": "Adapter декодирует конверт, добавляет device_id из URI и отправляет показание в Core."
+        },
+        {
+          "name": "Get Device Telemetry - Adapter",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{adapter_url}}/devices/{{device_id}}/telemetry",
+              "host": [
+                "{{adapter_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}",
+                "telemetry"
+              ]
+            },
+            "description": "Получить историю показаний устройства через Core. ID указан в URI."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete via Adapter",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{adapter_url}}/devices/{{device_id}}/telemetry",
+              "host": [
+                "{{adapter_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}",
+                "telemetry"
+              ]
+            },
+            "description": "Удалить историю показаний устройства через Core. Успех — 204 No Content."
+          },
+          "response": [],
+          "description": "Удалить историю показаний устройства через Core. DELETE не использует тело запроса."
+        }
+      ]
+    },
+    {
+      "name": "Notification",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{notify_url}}/health",
+              "host": [
+                "{{notify_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Проверка доступности Notification Service."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Temperature Alert",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"device_id\": {{device_id}},\n  \"chat_id\": \"123456789\",\n  \"email\": \"owner@example.com\",\n  \"device_name\": \"Датчик в гостиной\",\n  \"temperature\": 31.5,\n  \"threshold\": 30.0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{notify_url}}/notifications/temperature-alerts",
+              "host": [
+                "{{notify_url}}"
+              ],
+              "path": [
+                "notifications",
+                "temperature-alerts"
+              ]
+            },
+            "description": "Отправляет уведомление о превышении порога температуры. device_id связывает алерт с устройством; обязателен хотя бы один контакт: chat_id или email."
+          },
+          "response": []
+        },
+        {
+          "name": "Clear Temperature Alert",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{notify_url}}/notifications/temperature-alerts/{{device_id}}",
+              "host": [
+                "{{notify_url}}"
+              ],
+              "path": [
+                "notifications",
+                "temperature-alerts",
+                "{{device_id}}"
+              ]
+            },
+            "description": "Удалить активное температурное уведомление указанного устройства. Успешный ответ: 204 No Content."
+          },
+          "response": []
+        },
+        {
+          "name": "Send Email Alert",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"owner@example.com\",\n  \"event_type\": \"temperature_threshold_exceeded\",\n  \"sensor_name\": \"Living room sensor\",\n  \"reading_value\": \"31.5\",\n  \"unit\": \"°C\",\n  \"threshold\": \"30\",\n  \"severity\": \"WARNING\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{notify_url}}/notifications/emails",
+              "host": [
+                "{{notify_url}}"
+              ],
+              "path": [
+                "notifications",
+                "emails"
+              ]
+            },
+            "description": "Отправить email-уведомление. Обязательны email, event_type, sensor_name и reading_value."
+          },
+          "response": []
+        },
+        {
+          "name": "Send Test Email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"owner@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{notify_url}}/notifications/test-emails",
+              "host": [
+                "{{notify_url}}"
+              ],
+              "path": [
+                "notifications",
+                "test-emails"
+              ]
+            },
+            "description": "Отправить тестовое письмо на указанный email."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Rule Engine",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{rule_engine_url}}/health",
+              "host": [
+                "{{rule_engine_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Проверка доступности Rule Engine."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Rule",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"device_id\": {{device_id}},\n  \"operator\": \">\",\n  \"value\": 30\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{rule_engine_url}}/rules",
+              "host": [
+                "{{rule_engine_url}}"
+              ],
+              "path": [
+                "rules"
+              ]
+            },
+            "description": "Создаёт правило температуры. Операторы: >, <, =, !=. Успешный ответ содержит rule_id; сохраните его в переменную rule_id."
+          },
+          "response": []
+        },
+        {
+          "name": "List Rules by Device",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{rule_engine_url}}/rules?device_id={{device_id}}",
+              "host": [
+                "{{rule_engine_url}}"
+              ],
+              "path": [
+                "rules"
+              ],
+              "query": [
+                {
+                  "key": "device_id",
+                  "value": "{{device_id}}"
+                }
+              ]
+            },
+            "description": "Возвращает все правила устройства."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Rule",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{rule_engine_url}}/rules/{{rule_id}}",
+              "host": [
+                "{{rule_engine_url}}"
+              ],
+              "path": [
+                "rules",
+                "{{rule_id}}"
+              ]
+            },
+            "description": "Получить одно правило по rule_id."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Rule",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"device_id\": {{device_id}},\n  \"operator\": \">\",\n  \"value\": 35\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{rule_engine_url}}/rules/{{rule_id}}",
+              "host": [
+                "{{rule_engine_url}}"
+              ],
+              "path": [
+                "rules",
+                "{{rule_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Rule",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{rule_engine_url}}/rules/{{rule_id}}",
+              "host": [
+                "{{rule_engine_url}}"
+              ],
+              "path": [
+                "rules",
+                "{{rule_id}}"
+              ]
+            },
+            "description": "Удалить правило по rule_id."
+          },
+          "response": []
+        },
+        {
+          "name": "Submit Telemetry Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"device_id\": {{device_id}},\n  \"temperature\": 31.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{rule_engine_url}}/telemetry-events",
+              "host": [
+                "{{rule_engine_url}}"
+              ],
+              "path": [
+                "telemetry-events"
+              ]
+            },
+            "description": "Проверяет температуру по правилам устройства и при срабатывании отправляет уведомление. Не сохраняет показание и не запускается автоматически при отправке через Core или Adapter."
+          },
+          "response": []
+        },
+        {
+          "name": "Reset Notification Cooldown",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"device_id\": {{device_id}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{rule_engine_url}}/notification-cooldown/reset",
+              "host": [
+                "{{rule_engine_url}}"
+              ],
+              "path": [
+                "notification-cooldown",
+                "reset"
+              ]
+            },
+            "description": "Сбросить 5-минутный тайм-аут подавления повторных уведомлений устройства."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
